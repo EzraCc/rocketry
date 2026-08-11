@@ -31,7 +31,7 @@ export function computeBarrowman(components: Component[], mach: number): Barrowm
   placed.forEach((entry, i) => {
     const c = entry.component;
     if (isBodyComponent(c)) {
-      const { cna, cpX } = symmetricComponentAero(c);
+      const { cna, cpX } = symmetricComponentAero(c, refArea);
       cnaSum += cna;
       cnaXSum += cna * (entry.x0 + cpX);
       return;
