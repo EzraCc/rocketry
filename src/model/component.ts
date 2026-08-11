@@ -49,7 +49,27 @@ export interface TrapezoidalFinSet {
   axialOffsetFromParentBottom: number;
 }
 
-export type Component = NoseCone | BodyTube | Transition | TrapezoidalFinSet;
+/**
+ * Arbitrary-outline fin (e.g. RockSim CustomFinSet / OpenRocket FreeformFinSet).
+ * `points` is the fin outline in local coordinates (x=chordwise from the root
+ * leading edge, y=spanwise from the root), matching the convention used to
+ * validate this against a real RockSim file — see scripts/validate-loc-iv.ts.
+ * The polygon closes implicitly from the last point back to the first.
+ */
+export interface FreeformFinSet {
+  type: "freeformfinset";
+  id: string;
+  name: string;
+  finCount: number;
+  points: [number, number][]; // m
+  thickness: number; // m
+  cantAngle: number; // rad
+  axialOffsetFromParentBottom: number;
+}
+
+export type FinSet = TrapezoidalFinSet | FreeformFinSet;
+
+export type Component = NoseCone | BodyTube | Transition | FinSet;
 
 export type BodyComponent = NoseCone | BodyTube | Transition;
 
@@ -57,8 +77,26 @@ export function isBodyComponent(c: Component): c is BodyComponent {
   return c.type === "nosecone" || c.type === "bodytube" || c.type === "transition";
 }
 
+export function isFinSet(c: Component): c is FinSet {
+  return c.type === "finset" || c.type === "freeformfinset";
+}
+
+/** Fin span (max spanwise extent), needed for tau/interference regardless of fin shape. */
+export function finSetSpan(f: FinSet): number {
+  if (f.type === "finset") return f.span;
+  return f.points.reduce((max, [, y]) => Math.max(max, y), 0);
+}
+
+/** Fin root chord length (x-extent along y=0), used for schematic layout/axial length accounting. */
+export function finSetRootChord(f: FinSet): number {
+  if (f.type === "finset") return f.rootChord;
+  const rootXs = f.points.filter(([, y]) => Math.abs(y) < 1e-9).map(([x]) => x);
+  if (rootXs.length === 0) return f.points.reduce((max, [x]) => Math.max(max, x), 0);
+  return Math.max(...rootXs) - Math.min(...rootXs);
+}
+
 export function componentLength(c: Component): number {
-  return c.type === "finset" ? c.rootChord : c.length;
+  return isFinSet(c) ? finSetRootChord(c) : c.length;
 }
 
 /** Radius at the fore (nose-ward) end of a body component. */

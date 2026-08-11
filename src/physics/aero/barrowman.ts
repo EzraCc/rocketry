@@ -7,6 +7,7 @@ import {
 } from "../geometry/rocket-geometry.js";
 import { symmetricComponentAero } from "./symmetric-component-calc.js";
 import { trapezoidFinAero } from "./fin-calc.js";
+import { freeformFinAero } from "./freeform-fin-calc.js";
 
 export interface BarrowmanResult {
   cna: number; // per radian, rocket total
@@ -39,7 +40,10 @@ export function computeBarrowman(components: Component[], mach: number): Barrowm
     // fin set
     if (refArea < 1e-9) return;
     const bodyRadius = finRootBodyRadius(placed, i);
-    const { cna, cpX } = trapezoidFinAero(c, bodyRadius, mach, refArea);
+    const { cna, cpX } =
+      c.type === "finset"
+        ? trapezoidFinAero(c, bodyRadius, mach, refArea)
+        : freeformFinAero(c, bodyRadius, mach, refArea);
     cnaSum += cna;
     cnaXSum += cna * (entry.x0 + cpX);
   });

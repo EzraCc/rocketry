@@ -3,6 +3,7 @@ import {
   aftRadius,
   foreRadius,
   isBodyComponent,
+  isFinSet,
   type BodyComponent,
   type Component,
 } from "../../model/component.js";
@@ -63,7 +64,7 @@ export function placeComponents(components: Component[]): PlacedComponent[] {
   let x = 0;
   let lastBodyX0 = 0;
   for (const c of components) {
-    if (c.type === "finset") {
+    if (isFinSet(c)) {
       placed.push({ component: c, x0: lastBodyX0 + c.axialOffsetFromParentBottom });
       continue;
     }
@@ -91,7 +92,7 @@ export function referenceDiameter(components: Component[]): number {
 /** Body radius at the fin set's root leading edge — needed for fin-body interference (tau). */
 export function finRootBodyRadius(placed: PlacedComponent[], finIndex: number): number {
   const fin = placed[finIndex];
-  if (!fin || fin.component.type !== "finset") return 0;
+  if (!fin || !isFinSet(fin.component)) return 0;
   // Find the body component this fin is attached to: the nearest preceding body component.
   for (let i = finIndex - 1; i >= 0; i--) {
     const entry = placed[i];

@@ -48,11 +48,7 @@ export function trapezoidFinAero(
   const macSpanPos = ((span / 3) * (1 + 2 * taper)) / (1 + taper);
   const macLead = span > 1e-12 ? macSpanPos * (sweepLength / span) : 0;
 
-  const tau = bodyRadius / (span + bodyRadius);
-  const bodyFactor = bodyFinInterferenceFactor(Number.isFinite(tau) ? tau : 0, mach);
-  const finCountFactor = multiFinInterferenceFactor(finCount);
-
-  const cna = cna1 * (finCount / 2) * finCountFactor * bodyFactor;
+  const cna = combineFinSetCna(cna1, finCount, bodyRadius, span, mach);
 
   // Subsonic CP: quarter-chord of the MAC. (Supersonic/transonic CP shift is
   // deliberately not modeled for MVP — flagged elsewhere with a Mach warning.)
@@ -62,14 +58,33 @@ export function trapezoidFinAero(
 }
 
 /** Single-fin CNa slope (subsonic-only; transonic/supersonic clamped to the M=0.9 value for MVP). */
-function finCNa1(span: number, finArea: number, cosGamma: number, mach: number, refArea: number): number {
+export function finCNa1(span: number, finArea: number, cosGamma: number, mach: number, refArea: number): number {
   const m = Math.min(mach, CNA_SUBSONIC);
   const term = (span * span) / (finArea * cosGamma);
   return (2 * Math.PI * span * span) / (1 + Math.sqrt(1 + (1 - m * m) * term * term)) / refArea;
 }
 
+/**
+ * Combines a single fin's CNa1 into the whole fin-set's CNa: the (finCount/2)
+ * aggregate (see module doc comment for why this is exact, not approximate,
+ * for N>=2 evenly-spaced fins), the multi-fin interference table, and the
+ * corrected body-interference factor.
+ */
+export function combineFinSetCna(
+  cna1: number,
+  finCount: number,
+  bodyRadius: number,
+  span: number,
+  mach: number,
+): number {
+  const tau = bodyRadius / (span + bodyRadius);
+  const bodyFactor = bodyFinInterferenceFactor(Number.isFinite(tau) ? tau : 0, mach);
+  const finCountFactor = multiFinInterferenceFactor(finCount);
+  return cna1 * (finCount / 2) * finCountFactor * bodyFactor;
+}
+
 /** Multi-fin interference factor (FinSetCalc.java: 1..4 -> 1.0, 5-8 -> table, >8 -> 0.75). */
-function multiFinInterferenceFactor(finCount: number): number {
+export function multiFinInterferenceFactor(finCount: number): number {
   switch (finCount) {
     case 1:
     case 2:

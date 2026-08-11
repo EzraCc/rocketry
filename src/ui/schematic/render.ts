@@ -1,4 +1,4 @@
-import type { Component } from "../../model/component.js";
+import { isBodyComponent, type Component } from "../../model/component.js";
 import {
   bodyComponentRadius,
   overallLength,
@@ -24,7 +24,7 @@ export function renderSchematicSvg(
   const placed = placeComponents(components);
   let maxR = 0;
   for (const entry of placed) {
-    if (entry.component.type === "finset") continue;
+    if (!isBodyComponent(entry.component)) continue;
     const c = entry.component;
     for (let i = 0; i <= 40; i++) {
       const x = (i / 40) * c.length;
@@ -46,7 +46,7 @@ export function renderSchematicSvg(
 
   for (const entry of placed) {
     const c = entry.component;
-    if (c.type === "finset") continue;
+    if (!isBodyComponent(c)) continue;
     const n = 40;
     const topPts: string[] = [];
     const bottomPts: string[] = [];
@@ -63,22 +63,25 @@ export function renderSchematicSvg(
 
   for (const entry of placed) {
     const c = entry.component;
-    if (c.type !== "finset") continue;
+    if (c.type !== "finset" && c.type !== "freeformfinset") continue;
     // Fin outline in the fin's local (chordwise x, spanwise y) plane, drawn
     // above and below the body for a schematic top+bottom fin pair.
     const rootX = toPx(entry.x0);
     const bodyR = maxR; // approximate attach point at the widest body radius for the schematic
-    const finPts = [
-      [0, 0],
-      [c.sweepLength, c.span],
-      [c.sweepLength + c.tipChord, c.span],
-      [c.rootChord, 0],
-    ];
+    const finPts: [number, number][] =
+      c.type === "finset"
+        ? [
+            [0, 0],
+            [c.sweepLength, c.span],
+            [c.sweepLength + c.tipChord, c.span],
+            [c.rootChord, 0],
+          ]
+        : c.points;
     for (const sign of [1, -1]) {
       const pts = finPts
         .map(([dx, dy]) => {
-          const px = rootX + (dx ?? 0) * scale;
-          const py = cy - sign * (bodyR + (dy ?? 0)) * scale;
+          const px = rootX + dx * scale;
+          const py = cy - sign * (bodyR + dy) * scale;
           return `${px},${py}`;
         })
         .join(" ");
