@@ -1,0 +1,26 @@
+{
+  "name": "rocketry",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Browser-based flight simulator for basic model/high-power rockets",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "jszip": "^3.10.1",
+    "uplot": "^1.6.31"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11",
+    "vitest": "^2.1.8"
+  },
+  "allowScripts": {
+    "esbuild@0.21.5": true
+  }
+}
