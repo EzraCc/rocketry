@@ -1,7 +1,7 @@
-import { isBodyComponent, type Component } from "../../model/component.js";
+import { isBodyComponent, isFinSet, type Component } from "../../model/component.js";
 import {
   bodyComponentRadius,
-  overallLength,
+  finRootBodyRadius,
   placeComponents,
 } from "../../physics/geometry/rocket-geometry.js";
 
@@ -18,27 +18,50 @@ export function renderSchematicSvg(
   widthPx = 800,
   heightPx = 200,
 ): string {
-  const length = overallLength(components);
-  if (length <= 0) return `<svg xmlns="http://www.w3.org/2000/svg" width="${widthPx}" height="${heightPx}"></svg>`;
-
   const placed = placeComponents(components);
-  let maxR = 0;
-  for (const entry of placed) {
-    if (!isBodyComponent(entry.component)) continue;
-    const c = entry.component;
-    for (let i = 0; i <= 40; i++) {
-      const x = (i / 40) * c.length;
-      maxR = Math.max(maxR, bodyComponentRadius(c, x));
-    }
+  if (placed.length === 0) {
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${widthPx}" height="${heightPx}"></svg>`;
   }
+
+  // Bounding box over EVERYTHING (bodies and fins), not just body components —
+  // fins extend both radially (span) and often axially (swept trailing edges
+  // can extend past the body's own aft end) beyond the body outline, and both
+  // need to be included or the fin geometry gets silently clipped by the SVG
+  // viewport with no visible stroke on the clipped edges.
+  let minX = 0;
+  let maxX = 0;
+  let maxR = 0;
+
+  placed.forEach((entry, i) => {
+    const c = entry.component;
+    if (isBodyComponent(c)) {
+      minX = Math.min(minX, entry.x0);
+      maxX = Math.max(maxX, entry.x0 + c.length);
+      for (let j = 0; j <= 40; j++) {
+        const x = (j / 40) * c.length;
+        maxR = Math.max(maxR, bodyComponentRadius(c, x));
+      }
+      return;
+    }
+    if (!isFinSet(c)) return;
+    const bodyR = finRootBodyRadius(placed, i);
+    const finPts = finLocalPoints(c);
+    for (const [dx, dy] of finPts) {
+      minX = Math.min(minX, entry.x0 + dx);
+      maxX = Math.max(maxX, entry.x0 + dx);
+      maxR = Math.max(maxR, bodyR + dy);
+    }
+  });
+
+  const totalLength = Math.max(maxX - minX, 1e-6);
   maxR = Math.max(maxR, 1e-6);
 
   const margin = 20;
-  const scaleX = (widthPx - 2 * margin) / length;
+  const scaleX = (widthPx - 2 * margin) / totalLength;
   const scaleY = (heightPx / 2 - margin) / maxR;
   const scale = Math.min(scaleX, scaleY);
   const cy = heightPx / 2;
-  const toPx = (x: number): number => margin + x * scale;
+  const toPx = (x: number): number => margin + (x - minX) * scale;
   const toPy = (r: number): number => cy - r * scale;
   const toPyBottom = (r: number): number => cy + r * scale;
 
@@ -61,22 +84,15 @@ export function renderSchematicSvg(
     parts.push(`<polygon points="${pts}" fill="none" stroke="#333" stroke-width="1.5" />`);
   }
 
-  for (const entry of placed) {
+  placed.forEach((entry, i) => {
     const c = entry.component;
-    if (c.type !== "finset" && c.type !== "freeformfinset") continue;
+    if (!isFinSet(c)) return;
     // Fin outline in the fin's local (chordwise x, spanwise y) plane, drawn
-    // above and below the body for a schematic top+bottom fin pair.
+    // above and below the body for a schematic top+bottom fin pair, attached
+    // at the body's actual radius at the fin's root (not an approximation).
     const rootX = toPx(entry.x0);
-    const bodyR = maxR; // approximate attach point at the widest body radius for the schematic
-    const finPts: [number, number][] =
-      c.type === "finset"
-        ? [
-            [0, 0],
-            [c.sweepLength, c.span],
-            [c.sweepLength + c.tipChord, c.span],
-            [c.rootChord, 0],
-          ]
-        : c.points;
+    const bodyR = finRootBodyRadius(placed, i);
+    const finPts = finLocalPoints(c);
     for (const sign of [1, -1]) {
       const pts = finPts
         .map(([dx, dy]) => {
@@ -87,7 +103,7 @@ export function renderSchematicSvg(
         .join(" ");
       parts.push(`<polygon points="${pts}" fill="#bcd" stroke="#333" stroke-width="1" />`);
     }
-  }
+  });
 
   if (cpX !== undefined) {
     const x = toPx(cpX);
@@ -103,7 +119,20 @@ export function renderSchematicSvg(
   }
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${widthPx}" height="${heightPx}">
-    <line x1="${margin}" y1="${cy}" x2="${widthPx - margin}" y2="${cy}" stroke="#ccc" stroke-dasharray="4 3" />
+    <line x1="${toPx(minX)}" y1="${cy}" x2="${toPx(maxX)}" y2="${cy}" stroke="#ccc" stroke-dasharray="4 3" />
     ${parts.join("\n")}
   </svg>`;
+}
+
+function finLocalPoints(
+  c: Extract<Component, { type: "finset" | "freeformfinset" }>,
+): [number, number][] {
+  return c.type === "finset"
+    ? [
+        [0, 0],
+        [c.sweepLength, c.span],
+        [c.sweepLength + c.tipChord, c.span],
+        [c.rootChord, 0],
+      ]
+    : c.points;
 }
