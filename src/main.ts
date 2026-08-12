@@ -1,6 +1,7 @@
 import "@picocss/pico/css/pico.indigo.min.css";
 import "./style.css";
 import { computeBarrowman, stabilityMargin } from "./physics/aero/barrowman.js";
+import { checkStability } from "./physics/aero/stability-check.js";
 import { renderSchematicSvg } from "./ui/schematic/render.js";
 import { defaultRocket, type Rocket, type SelectedMotor } from "./model/rocket.js";
 import type { Component } from "./model/component.js";
@@ -489,6 +490,21 @@ async function selectMotor(meta: MotorSearchResult): Promise<void> {
 }
 
 function renderFlightSimSection(rocket: Rocket): string {
+  // Stability check uses the CG AT LAUNCH (full propellant load), not the dry CG -- for a
+  // typical aft-mounted motor, CG is furthest aft (least stable) at liftoff and moves forward
+  // as propellant burns, so liftoff is the safety-relevant worst case to check, not burnout.
+  const massCurve = rocket.motor ? deriveMotorMassCurve(rocket.motor) : null;
+  const launchCgX = massCurve ? combinedMassAt(rocket, massCurve, 0).cgX : rocket.dryCg;
+  const { cpX, refDiameter } = computeBarrowman(rocket.components, 0.3);
+  const stability = checkStability(cpX, launchCgX, refDiameter, rocket.motor !== null);
+
+  const notFlyableHtml = !stability.flyable
+    ? `<p style="padding: 0.75rem; border-radius: var(--pico-border-radius); background: var(--pico-del-color, #c0392b); color: white;"><strong>⚠ ${stability.warnings[0]}</strong></p>`
+    : "";
+  const stabilityWarningsHtml = stability.flyable && stability.warnings.length
+    ? `<p>${stability.warnings.map((w) => `<mark>${w}</mark>`).join(" ")}</p>`
+    : "";
+
   const t0 = performance.now();
   const result = simulateFlight3D(rocket);
   const elapsedMs = performance.now() - t0;
@@ -499,6 +515,7 @@ function renderFlightSimSection(rocket: Rocket): string {
 
   const windLabel = rocket.windProfile ? "wind on" : "calm (no wind)";
   const stats = [
+    stat("Static margin at launch", `${stability.margin.toFixed(2)} cal`),
     stat("Apogee", `${result.apogeeAltitude.toFixed(1)} m`),
     stat("Time to apogee", `${result.apogeeTime.toFixed(2)} s`),
     stat("Max velocity", `${result.maxVelocity.toFixed(1)} m/s`),
@@ -513,6 +530,8 @@ function renderFlightSimSection(rocket: Rocket): string {
 
   return `
     <h3>Flight simulation <small>(ascent to apogee, ${windLabel} — M4)</small></h3>
+    ${notFlyableHtml}
+    ${stabilityWarningsHtml}
     <p><small>
       Tilt from vertical at burnout is the meaningful weathercocking-severity number — tilt
       naturally approaches ~90° for <em>any</em> stable rocket near its own apogee, as vertical
