@@ -1,0 +1,35 @@
+/* Small overrides on top of Pico.css — kept minimal on purpose. */
+
+.stats-grid > div {
+  text-align: center;
+  padding: 0.75rem 0.5rem;
+  border-radius: var(--pico-border-radius);
+  background: var(--pico-code-background-color);
+}
+
+.stats-grid > div strong {
+  font-size: 1.15rem;
+}
+
+.stats-grid > div small {
+  color: var(--pico-muted-color);
+}
+
+/* The schematic SVG draws its own white background (it's a technical
+   diagram, meant to look the same regardless of page theme) — frame it so
+   that's clearly intentional rather than a rendering glitch in dark mode. */
+figure.schematic {
+  border-radius: var(--pico-border-radius);
+  overflow: hidden;
+  border: var(--pico-border-width) solid var(--pico-muted-border-color);
+  margin: 1.5rem 0 0 0;
+}
+
+figure.schematic svg {
+  display: block;
+}
+
+form#motor-search-form .grid {
+  align-items: end;
+  margin-bottom: 0.5rem;
+}

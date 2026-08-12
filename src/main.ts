@@ -1,3 +1,5 @@
+import "@picocss/pico/css/pico.indigo.min.css";
+import "./style.css";
 import { computeBarrowman, stabilityMargin } from "./physics/aero/barrowman.js";
 import { renderSchematicSvg } from "./ui/schematic/render.js";
 import { defaultRocket, type Rocket, type SelectedMotor } from "./model/rocket.js";
@@ -114,66 +116,107 @@ const locIvComponents: Component[] = [
 
 const locIvRocket: Rocket = {
   ...defaultRocket(),
-  name: 'LOC Precision "PK-48 LOC-IV" (real rocket, from sim-files/LOC/PK-48 Loc-IV.rkt)',
+  name: 'LOC Precision "PK-48 LOC-IV"',
   components: locIvComponents,
   dryCg: 0, // not entered — mass/CG is manual per this tool's design; omitted here, so no stability margin is shown below
 };
 
+function stat(label: string, value: string): string {
+  return `<div><strong>${value}</strong><br /><small>${label}</small></div>`;
+}
+
 function renderRocketSection(
   rocket: Rocket,
   mach: number,
+  subtitle: string,
   knownCp?: { label: string; mm: number }[],
 ): string {
   const { cna, cpX, refDiameter } = computeBarrowman(rocket.components, mach);
   const hasCg = rocket.dryCg > 0;
   const margin = hasCg ? stabilityMargin(cpX, rocket.dryCg, refDiameter) : null;
 
+  const stats = [
+    stat("Total CNa", `${cna.toFixed(3)} /rad`),
+    stat("Computed CP", `${(cpX * 1000).toFixed(1)} mm`),
+    hasCg ? stat("CG (manual)", `${(rocket.dryCg * 1000).toFixed(1)} mm`) : "",
+    stat("Ref. diameter", `${(refDiameter * 1000).toFixed(1)} mm`),
+    margin !== null
+      ? stat(
+          "Stability margin",
+          `<span style="color: ${margin > 0 ? "var(--pico-ins-color, #2a8f4d)" : "var(--pico-del-color, #c0392b)"};">${margin.toFixed(2)} cal (${margin > 0 ? "stable" : "unstable"})</span>`,
+        )
+      : "",
+  ]
+    .filter(Boolean)
+    .join("");
+
   const knownCpRows = (knownCp ?? [])
     .map((k) => {
       const deltaMm = cpX * 1000 - k.mm;
       const deltaPct = (deltaMm / k.mm) * 100;
-      return `<li>${k.label}: ${k.mm.toFixed(1)} mm (Δ ${deltaMm >= 0 ? "+" : ""}${deltaMm.toFixed(1)} mm, ${deltaPct >= 0 ? "+" : ""}${deltaPct.toFixed(1)}%)</li>`;
+      return `<tr><td>${k.label}</td><td>${k.mm.toFixed(1)} mm</td><td>${deltaMm >= 0 ? "+" : ""}${deltaMm.toFixed(1)} mm (${deltaPct >= 0 ? "+" : ""}${deltaPct.toFixed(1)}%)</td></tr>`;
     })
     .join("");
 
   return `
-    <section style="margin-bottom: 3em;">
-      <h2>${rocket.name}</h2>
-      <p>Static Barrowman results at Mach ${mach}${hasCg ? "" : " — mass/CG not entered for this rocket, so no stability margin is shown"}</p>
-      <ul>
-        <li>Total CNa: ${cna.toFixed(3)} /rad</li>
-        <li>Computed CP: ${(cpX * 1000).toFixed(1)} mm from nose tip</li>
-        ${hasCg ? `<li>CG (manual): ${(rocket.dryCg * 1000).toFixed(1)} mm from nose tip</li>` : ""}
-        <li>Reference diameter: ${(refDiameter * 1000).toFixed(1)} mm</li>
-        ${margin !== null ? `<li>Stability margin: ${margin.toFixed(2)} calibers ${margin > 0 ? "(stable)" : "(unstable)"}</li>` : ""}
-      </ul>
-      ${knownCpRows ? `<p>Known CP values (for comparison):</p><ul>${knownCpRows}</ul>` : ""}
-      ${renderSchematicSvg(rocket.components, cpX, hasCg ? rocket.dryCg : undefined)}
-    </section>
+    <article>
+      <header>
+        <h2>${rocket.name}</h2>
+        <p>${subtitle} · static Barrowman results at Mach ${mach}${hasCg ? "" : " — mass/CG not entered, so no stability margin is shown"}</p>
+      </header>
+      <div class="grid stats-grid">${stats}</div>
+      ${
+        knownCpRows
+          ? `<figure>
+              <table>
+                <thead><tr><th>Known CP (reference)</th><th>Value</th><th>Δ vs. computed</th></tr></thead>
+                <tbody>${knownCpRows}</tbody>
+              </table>
+            </figure>`
+          : ""
+      }
+      <figure class="schematic">
+        ${renderSchematicSvg(rocket.components, cpX, hasCg ? rocket.dryCg : undefined)}
+      </figure>
+    </article>
   `;
 }
 
 const motorSectionHtml = `
-  <section style="margin-bottom: 3em;">
-    <h2>M2: Motor data (ThrustCurve.org)</h2>
-    <p>
-      Search <a href="https://www.thrustcurve.org" target="_blank" rel="noopener">ThrustCurve.org</a> live from the
-      browser (no backend — CORS is open on their API) and attach a real motor to the "${demoRocket.name}" above to
-      see its thrust curve, its derived mass curve (ThrustCurve.org has no mass-vs-time data, only total/propellant
-      weight — mass loss is derived assuming it's proportional to cumulative thrust impulse), and the combined
-      rocket mass/CG at ignition, mid-burn, and burnout.
-    </p>
+  <article>
+    <header>
+      <h2>Motor data <small>(ThrustCurve.org)</small></h2>
+      <p>
+        Search <a href="https://www.thrustcurve.org" target="_blank" rel="noopener">ThrustCurve.org</a> live from the
+        browser — no backend, CORS is open on their API — and attach a real motor to the "${demoRocket.name}" above.
+        Shows its thrust curve, its derived mass curve (ThrustCurve.org has no mass-vs-time data, only total /
+        propellant weight, so mass loss is derived assuming it's proportional to cumulative thrust impulse), and the
+        combined rocket mass/CG at ignition, mid-burn, and burnout.
+      </p>
+    </header>
     <form id="motor-search-form">
-      <label>Manufacturer: <select id="motor-mfg"><option value="">Loading...</option></select></label>
-      <label style="margin-left: 1em;">Diameter: <select id="motor-diameter"><option value="">Loading...</option></select></label>
-      <label style="margin-left: 1em;">Type: <select id="motor-type"><option value="">Loading...</option></select></label>
-      <label style="margin-left: 1em;">Impulse class: <select id="motor-impulse-class"><option value="">Loading...</option></select></label>
-      <label style="margin-left: 1em;">Designation: <input id="motor-designation" type="text" value="C6" size="8" /></label>
-      <button type="submit" style="margin-left: 1em;">Search</button>
+      <div class="grid">
+        <label>Manufacturer
+          <select id="motor-mfg" aria-busy="true"><option value="">Loading…</option></select>
+        </label>
+        <label>Diameter
+          <select id="motor-diameter" aria-busy="true"><option value="">Loading…</option></select>
+        </label>
+        <label>Type
+          <select id="motor-type" aria-busy="true"><option value="">Loading…</option></select>
+        </label>
+        <label>Impulse class
+          <select id="motor-impulse-class" aria-busy="true"><option value="">Loading…</option></select>
+        </label>
+        <label>Designation
+          <input id="motor-designation" type="text" value="C6" placeholder="e.g. C6" />
+        </label>
+      </div>
+      <button type="submit">Search</button>
     </form>
     <div id="motor-results"></div>
     <div id="motor-detail"></div>
-  </section>
+  </article>
 `;
 
 function optionsHtml(values: string[], selected?: string): string {
@@ -202,25 +245,31 @@ async function loadMotorMetadata(): Promise<void> {
     for (const el of [mfgEl, diaEl, typeEl, classEl]) {
       el.innerHTML = `<option value="">(failed to load: ${message})</option>`;
     }
+  } finally {
+    for (const el of [mfgEl, diaEl, typeEl, classEl]) {
+      el.removeAttribute("aria-busy");
+    }
   }
 }
 
 function renderMotorResults(results: MotorSearchResult[]): string {
   if (results.length === 0) return "<p>No motors found.</p>";
-  const rows = results
+  const items = results
     .map(
       (m, i) =>
-        `<li><a href="#" data-motor-index="${i}">${m.manufacturer} ${m.designation}</a>
-          — ${m.totImpulseNs} N·s, ${m.burnTimeS}s burn, ${m.totalWeightG}g total / ${m.propWeightG}g propellant</li>`,
+        `<li>
+          <a href="#" data-motor-index="${i}"><strong>${m.manufacturer} ${m.designation}</strong></a>
+          — ${m.totImpulseNs} N·s, ${m.burnTimeS}s burn, ${m.totalWeightG}g total / ${m.propWeightG}g propellant
+        </li>`,
     )
     .join("");
-  return `<ul>${rows}</ul>`;
+  return `<ul>${items}</ul>`;
 }
 
 async function selectMotor(meta: MotorSearchResult): Promise<void> {
   const detailEl = document.querySelector<HTMLDivElement>("#motor-detail");
   if (!detailEl) return;
-  detailEl.innerHTML = `<p>Loading thrust curve for ${meta.manufacturer} ${meta.designation}...</p>`;
+  detailEl.innerHTML = `<p aria-busy="true">Loading thrust curve for ${meta.manufacturer} ${meta.designation}…</p>`;
 
   try {
     const samples = await downloadThrustSamples(meta.motorId);
@@ -252,42 +301,49 @@ async function selectMotor(meta: MotorSearchResult): Promise<void> {
         Total impulse (integrated from curve): ${totalImpulse(motor).toFixed(2)} N·s
         (ThrustCurve.org reports ${meta.totImpulseNs} N·s).
         Peak thrust: ${Math.max(...samples.map((s) => s.thrust)).toFixed(1)} N.</p>
-      <table border="1" cellpadding="4" style="border-collapse: collapse;">
-        <tr><th></th><th>t=0 (ignition)</th><th>t=${midT.toFixed(2)}s (mid-burn)</th><th>t=${bt.toFixed(2)}s (burnout)</th></tr>
-        <tr>
-          <td>Thrust</td>
-          <td>${getThrustAt(motor, 0).toFixed(1)} N</td>
-          <td>${getThrustAt(motor, midT).toFixed(1)} N</td>
-          <td>${getThrustAt(motor, bt).toFixed(1)} N</td>
-        </tr>
-        <tr>
-          <td>Motor mass</td>
-          <td>${(getMotorMassAt(massCurve, 0) * 1000).toFixed(1)} g</td>
-          <td>${(getMotorMassAt(massCurve, midT) * 1000).toFixed(1)} g</td>
-          <td>${(getMotorMassAt(massCurve, bt) * 1000).toFixed(1)} g</td>
-        </tr>
-        <tr>
-          <td>Combined rocket mass</td>
-          <td>${(start.mass * 1000).toFixed(1)} g</td>
-          <td>${(mid.mass * 1000).toFixed(1)} g</td>
-          <td>${(end.mass * 1000).toFixed(1)} g</td>
-        </tr>
-        <tr>
-          <td>Combined rocket CG</td>
-          <td>${(start.cgX * 1000).toFixed(1)} mm</td>
-          <td>${(mid.cgX * 1000).toFixed(1)} mm</td>
-          <td>${(end.cgX * 1000).toFixed(1)} mm</td>
-        </tr>
-      </table>
+      <figure>
+        <table>
+          <thead>
+            <tr><th></th><th>t=0 (ignition)</th><th>t=${midT.toFixed(2)}s (mid-burn)</th><th>t=${bt.toFixed(2)}s (burnout)</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Thrust</td>
+              <td>${getThrustAt(motor, 0).toFixed(1)} N</td>
+              <td>${getThrustAt(motor, midT).toFixed(1)} N</td>
+              <td>${getThrustAt(motor, bt).toFixed(1)} N</td>
+            </tr>
+            <tr>
+              <td>Motor mass</td>
+              <td>${(getMotorMassAt(massCurve, 0) * 1000).toFixed(1)} g</td>
+              <td>${(getMotorMassAt(massCurve, midT) * 1000).toFixed(1)} g</td>
+              <td>${(getMotorMassAt(massCurve, bt) * 1000).toFixed(1)} g</td>
+            </tr>
+            <tr>
+              <td>Combined rocket mass</td>
+              <td>${(start.mass * 1000).toFixed(1)} g</td>
+              <td>${(mid.mass * 1000).toFixed(1)} g</td>
+              <td>${(end.mass * 1000).toFixed(1)} g</td>
+            </tr>
+            <tr>
+              <td>Combined rocket CG</td>
+              <td>${(start.cgX * 1000).toFixed(1)} mm</td>
+              <td>${(mid.cgX * 1000).toFixed(1)} mm</td>
+              <td>${(end.cgX * 1000).toFixed(1)} mm</td>
+            </tr>
+          </tbody>
+        </table>
+      </figure>
     `;
   } catch (err) {
-    detailEl.innerHTML = `<p style="color: #c33;">Failed to load thrust curve: ${err instanceof Error ? err.message : String(err)}</p>`;
+    detailEl.innerHTML = `<p><mark>Failed to load thrust curve: ${err instanceof Error ? err.message : String(err)}</mark></p>`;
   }
 }
 
 function wireMotorSearch(): void {
   const form = document.querySelector<HTMLFormElement>("#motor-search-form");
   const resultsEl = document.querySelector<HTMLDivElement>("#motor-results");
+  const submitBtn = form?.querySelector<HTMLButtonElement>("button[type=submit]");
   if (!form || !resultsEl) return;
 
   form.addEventListener("submit", (e) => {
@@ -298,7 +354,8 @@ function wireMotorSearch(): void {
       const type = (document.querySelector<HTMLSelectElement>("#motor-type")?.value ?? "").trim();
       const impulseClass = (document.querySelector<HTMLSelectElement>("#motor-impulse-class")?.value ?? "").trim();
       const designation = (document.querySelector<HTMLInputElement>("#motor-designation")?.value ?? "").trim();
-      resultsEl.innerHTML = "<p>Searching...</p>";
+      resultsEl.innerHTML = '<p aria-busy="true">Searching…</p>';
+      submitBtn?.setAttribute("aria-busy", "true");
       try {
         const results = await searchMotors({
           manufacturer: mfg || undefined,
@@ -317,7 +374,9 @@ function wireMotorSearch(): void {
           });
         });
       } catch (err) {
-        resultsEl.innerHTML = `<p style="color: #c33;">Search failed: ${err instanceof Error ? err.message : String(err)}</p>`;
+        resultsEl.innerHTML = `<p><mark>Search failed: ${err instanceof Error ? err.message : String(err)}</mark></p>`;
+      } finally {
+        submitBtn?.removeAttribute("aria-busy");
       }
     })();
   });
@@ -326,13 +385,18 @@ function wireMotorSearch(): void {
 const app = document.querySelector<HTMLDivElement>("#app");
 if (app) {
   app.innerHTML = `
-    <h1>rocketry — M1/M2 checkpoint</h1>
-    ${renderRocketSection(demoRocket, 0.3)}
-    ${renderRocketSection(locIvRocket, 0.001, [
-      { label: "RockSim classical Barrowman CP (BarromanXN)", mm: 899.247 },
-      { label: "RockSim proprietary extended-method CP (RockSimXN)", mm: 972.645 },
-    ])}
-    ${motorSectionHtml}
+    <main class="container">
+      <hgroup>
+        <h1>🚀 rocketry</h1>
+        <p>A from-scratch, client-side flight simulator for basic rockets — M1/M2 checkpoint</p>
+      </hgroup>
+      ${renderRocketSection(demoRocket, 0.3, "Synthetic demo rocket")}
+      ${renderRocketSection(locIvRocket, 0.001, "Real rocket, transcribed from sim-files/LOC/PK-48 Loc-IV.rkt", [
+        { label: "RockSim classical Barrowman CP (BarromanXN)", mm: 899.247 },
+        { label: "RockSim proprietary extended-method CP (RockSimXN)", mm: 972.645 },
+      ])}
+      ${motorSectionHtml}
+    </main>
   `;
   wireMotorSearch();
   void loadMotorMetadata();

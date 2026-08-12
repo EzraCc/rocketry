@@ -12,6 +12,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@picocss/pico": "^2.1.1",
     "jszip": "^3.10.1",
     "uplot": "^1.6.31"
   },
