@@ -78,7 +78,16 @@ The single-number handoff values — closest to what your current
   arc; that's expected, not an instability signal).
 - `maxVelocityMs`, `maxMach` — for context/sanity-checking.
 - `warnings` — flight-level warnings from the simulation engine itself
-  (separate from the `stability.warnings` above).
+  (separate from the `stability.warnings` above). This fixture's own boost
+  actually goes transonic (`maxMach` ≈ 1.03), which triggers one of these:
+  the aero model here is linear-subsonic Barrowman theory (extended with the
+  exact NACA 1307 Kbf/body-lift term, but still linear-subsonic), with no
+  transonic/supersonic CP-shift modeling, so stability/weathercocking
+  numbers above ~Mach 0.8 are flagged as unreliable rather than silently
+  trusted. Real high-altitude rockets on K/L/M-class motors commonly go
+  transonic during boost — this is a known, honestly-flagged limitation,
+  not a bug, and is one reason RASAero (which models this with empirically-
+  calibrated transonic/supersonic data) can be more accurate here.
 
 ### `windShear`
 Ground wind vs. wind at apogee altitude, plus the deltas. This is what makes

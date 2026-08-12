@@ -67,8 +67,26 @@ export function finCNa1(span: number, finArea: number, cosGamma: number, mach: n
 /**
  * Combines a single fin's CNa1 into the whole fin-set's CNa: the (finCount/2)
  * aggregate (see module doc comment for why this is exact, not approximate,
- * for N>=2 evenly-spaced fins), the multi-fin interference table, and the
- * corrected body-interference factor.
+ * for N>=2 evenly-spaced fins), the multi-fin interference table, the
+ * corrected fin-in-body-presence factor, and — new — the body-in-fin-presence
+ * (Kbf) contribution: normal force induced ON THE BODY by the fins, which
+ * classical Barrowman omits (see bodyInFinPresenceFactor doc comment).
+ *
+ * Kbf is applied using the same (finCount/2 * multi-fin-interference)
+ * aggregate used for the fins' own force. NACA 1307's K_B(W) is derived for
+ * a 2-panel wing-body case; there's no published N-fin generalization, so
+ * reusing the fin-side aggregation convention here is a reasonable,
+ * documented engineering extension, not directly-verified NACA 1307 content
+ * for N>2. Folded directly into this single returned CNa (rather than kept
+ * as a separate body-attributed term) as a simplification: the induced body
+ * lift is treated as acting at the fin's own CP, not the true (slightly
+ * different, Mach-cone-dependent) body-surface region NACA 1307 describes —
+ * reasonable for MVP but worth revisiting if CP accuracy near the fin root
+ * turns out to matter more than this.
+ *
+ * Kbf is subsonic-only (mach <= 0.9): the NACA 1307 closed form it comes
+ * from is only stated to hold in that regime, and extrapolating it past
+ * that without a separate validated supersonic formula would be a guess.
  */
 export function combineFinSetCna(
   cna1: number,
@@ -77,10 +95,16 @@ export function combineFinSetCna(
   span: number,
   mach: number,
 ): number {
-  const tau = bodyRadius / (span + bodyRadius);
-  const bodyFactor = bodyFinInterferenceFactor(Number.isFinite(tau) ? tau : 0, mach);
+  const tau = Number.isFinite(bodyRadius / (span + bodyRadius)) ? bodyRadius / (span + bodyRadius) : 0;
   const finCountFactor = multiFinInterferenceFactor(finCount);
-  return cna1 * (finCount / 2) * finCountFactor * bodyFactor;
+  const aggregateCna1 = cna1 * (finCount / 2) * finCountFactor;
+
+  const bodyFactor = bodyFinInterferenceFactor(tau, mach);
+  const finCna = aggregateCna1 * bodyFactor;
+
+  const bodyInducedCna = mach <= CNA_SUBSONIC ? aggregateCna1 * bodyInFinPresenceFactor(tau) : 0;
+
+  return finCna + bodyInducedCna;
 }
 
 /** Multi-fin interference factor (FinSetCalc.java: 1..4 -> 1.0, 5-8 -> table, >8 -> 0.75). */
@@ -105,19 +129,73 @@ export function multiFinInterferenceFactor(finCount: number): number {
 }
 
 /**
- * Body-fin interference correction — the CORRECTED formula (reciprocal
- * NACA-1307 identity, (1+tau)^2 subsonic) rather than OpenRocket's currently
- * shipped `1+tau`. See PR openrocket/openrocket#3220 (merged then reverted
- * for an unrelated CI issue, not a correctness issue); values verified
- * against that PR's own FinBodyInterferenceTest.java (tau=0.25 -> 1.5625 at
- * M<=0.9, 1.40625 at M=1.2, 1.25 at M>=1.5).
+ * Exact subsonic slender-body-theory fin(wing)-in-presence-of-body factor,
+ * K_W(B) — Pitts, Nielsen & Kaattari, NACA Report 1307 (1953), equation (14),
+ * transcribed directly from the report (pdas.com/refs/rep1307.pdf, p.570) —
+ * not the `(1+tau)^2` approximation this project previously used (that
+ * approximation is what OpenRocket's own PR openrocket/openrocket#3220 used
+ * as its "corrected" formula; NACA 1307's exact closed form is a further,
+ * more accurate correction beyond that PR, not a re-derivation of it).
+ * `tau` = bodyRadius/(bodyRadius+span), i.e. NACA 1307's own `r/s` (body
+ * radius to semispan-from-axis ratio) — this project's existing `tau`
+ * definition already matches that ratio exactly, no conversion needed.
+ *
+ * Numerically: at tau=0.25 this gives ~1.206, vs. ~1.563 from the old
+ * (1+tau)^2 approximation — the squared approximation was a real
+ * overestimate of the fin-in-body-presence boost, not just a rougher
+ * version of the same number.
+ *
+ * Verified against the report's own two closed-form limits: x->0 (all-fin,
+ * no body) -> 1; x->1 (vanishing exposed fin) -> 2 — see fin-calc.test.ts.
+ */
+export function finInBodyPresenceFactor(tau: number): number {
+  const x = Math.min(Math.max(tau, 0), 1);
+  if (x < 1e-6) return 1;
+  if (x > 1 - 1e-6) return 2;
+  const term1 = (1 + x ** 4) * (0.5 * Math.atan(0.5 * (1 / x - x)) + Math.PI / 4);
+  const term2 = x * x * (1 / x - x + 2 * Math.atan(x));
+  const numerator = (2 / Math.PI) * (term1 - term2);
+  const denominator = (1 - x) * (1 - x);
+  return numerator / denominator;
+}
+
+/**
+ * Exact subsonic body-in-presence-of-fin(wing) factor, K_B(W) — NACA 1307
+ * equation (21). This is "Kbf": the normal force carried onto the BODY by
+ * the fins, which classical Barrowman (and OpenRocket, by its own admission
+ * — see doc/techdoc/techdoc.pdf §3.2.2: "the normal force on the body due to
+ * the presence of fins... is therefore ignored") omits entirely.
+ *
+ * Rather than transcribe equation (21) separately, this uses the closed
+ * identity visible by comparing (14) and (21) directly (both share the same
+ * bracketed term, and (1-x^2)^2/(1-x)^2 = (1+x)^2):
+ *   K_W(B) + K_B(W) = (1+tau)^2
+ * Cross-checked against the report's own stated limits: tau->0 gives
+ * K_B(W)->0 ("combination is all wing"); tau->1 gives K_B(W)=K_W(B)=2
+ * ("lift on the body due to the wing is the same as the lift on the wing
+ * itself") — both match exactly, see fin-calc.test.ts.
+ */
+export function bodyInFinPresenceFactor(tau: number): number {
+  const x = Math.min(Math.max(tau, 0), 1);
+  return (1 + x) * (1 + x) - finInBodyPresenceFactor(x);
+}
+
+/**
+ * Body-fin interference correction for the FIN's own CNa — the CORRECTED
+ * subsonic formula (exact NACA-1307 K_W(B) above) rather than OpenRocket's
+ * currently-shipped `1+tau`, or this project's own earlier `(1+tau)^2`
+ * approximation. Transonic/supersonic blending structure is unchanged from
+ * before (still anchored on the simple `1+tau` factor at M>=1.5 — a proper
+ * supersonic K_W(B) closed form would need separate linear-supersonic-theory
+ * charts from NACA 1307 not yet transcribed here, so this project doesn't
+ * claim supersonic accuracy beyond what it already had).
  */
 export function bodyFinInterferenceFactor(tau: number, mach: number): number {
   const finInBodyFactor = 1 + tau;
   const CNA_SUPERSONIC = 1.5;
-  if (mach <= CNA_SUBSONIC) return finInBodyFactor * finInBodyFactor;
+  if (mach <= CNA_SUBSONIC) return finInBodyPresenceFactor(tau);
   if (mach >= CNA_SUPERSONIC) return finInBodyFactor;
-  const bodyInFinFactor = tau * finInBodyFactor;
+  const transonicBlendTerm = tau * finInBodyFactor;
   const weight = (CNA_SUPERSONIC - mach) / (CNA_SUPERSONIC - CNA_SUBSONIC);
-  return finInBodyFactor + weight * bodyInFinFactor;
+  return finInBodyFactor + weight * transonicBlendTerm;
 }

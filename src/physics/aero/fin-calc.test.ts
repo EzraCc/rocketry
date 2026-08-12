@@ -1,17 +1,46 @@
 import { describe, expect, it } from "vitest";
-import { bodyFinInterferenceFactor, trapezoidFinAero } from "./fin-calc.js";
+import {
+  bodyFinInterferenceFactor,
+  bodyInFinPresenceFactor,
+  finInBodyPresenceFactor,
+  trapezoidFinAero,
+} from "./fin-calc.js";
 import type { TrapezoidalFinSet } from "../../model/component.js";
 
-// Ported directly from OpenRocket's FinBodyInterferenceTest.java (PR #3220,
-// merged then reverted for an unrelated CI issue — the formula itself was
-// not disputed). tau=0.25 fixed test cases.
-describe("bodyFinInterferenceFactor (ported from FinBodyInterferenceTest.java)", () => {
+// NACA Report 1307 (Pitts, Nielsen & Kaattari, 1953), equations (14) and
+// (21), transcribed from pdas.com/refs/rep1307.pdf p.570/572. These are the
+// report's own stated closed-form limits, not values we invented — real
+// exactness checks, not just "does it run."
+describe("finInBodyPresenceFactor / bodyInFinPresenceFactor (NACA 1307 eq. 14/21 limits)", () => {
+  it("tau->0: all-fin, no body -> K_W(B)=1, K_B(W)=0", () => {
+    expect(finInBodyPresenceFactor(0)).toBeCloseTo(1, 6);
+    expect(bodyInFinPresenceFactor(0)).toBeCloseTo(0, 6);
+  });
+
+  it("tau->1: vanishing exposed fin -> K_W(B)=K_B(W)=2 (body acts as a reflection plane)", () => {
+    expect(finInBodyPresenceFactor(1)).toBeCloseTo(2, 6);
+    expect(bodyInFinPresenceFactor(1)).toBeCloseTo(2, 6);
+  });
+
+  it("satisfies the closed identity K_W(B) + K_B(W) = (1+tau)^2 at an interior point", () => {
+    const tau = 0.25;
+    expect(finInBodyPresenceFactor(tau) + bodyInFinPresenceFactor(tau)).toBeCloseTo((1 + tau) ** 2, 9);
+  });
+
+  it("at tau=0.25, is substantially below the old (1+tau)^2 approximation (~1.206 vs ~1.563)", () => {
+    // Documents the real, material change from switching to the exact formula —
+    // not a rounding difference. See fin-calc.ts doc comment.
+    expect(finInBodyPresenceFactor(0.25)).toBeCloseTo(1.2065, 3);
+  });
+});
+
+describe("bodyFinInterferenceFactor (subsonic now uses the exact NACA 1307 K_W(B))", () => {
   const TAU = 0.25;
   const EPS = 1e-9;
 
-  it("includes body contribution at subsonic speeds", () => {
-    expect(bodyFinInterferenceFactor(TAU, 0.5)).toBeCloseTo(1.5625, 9);
-    expect(bodyFinInterferenceFactor(TAU, 0.9)).toBeCloseTo(1.5625, 9);
+  it("uses the exact K_W(B) at subsonic speeds (supersedes the old (1+tau)^2 approximation)", () => {
+    expect(bodyFinInterferenceFactor(TAU, 0.5)).toBeCloseTo(finInBodyPresenceFactor(TAU), 9);
+    expect(bodyFinInterferenceFactor(TAU, 0.9)).toBeCloseTo(finInBodyPresenceFactor(TAU), 9);
   });
 
   it("blends body contribution through transonic speeds", () => {

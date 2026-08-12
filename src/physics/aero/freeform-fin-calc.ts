@@ -6,9 +6,20 @@ import type { FinAeroResult } from "./fin-calc.js";
  * Barrowman CNa/CP for an arbitrary-outline fin, by strip-integrating the
  * actual polygon (chord(y), MAC, sweep) rather than fitting a trapezoid.
  * Promoted from scripts/validate-loc-iv.ts, where this was validated against
- * a real RockSim CustomFinSet: using the classical (1+tau) body-interference
- * term (to match RockSim's own method), whole-rocket CP matched RockSim's
- * stored BarromanXN within 0.6%.
+ * a real RockSim CustomFinSet.
+ *
+ * Body-fin interference has since moved to the exact NACA 1307 K_W(B)/K_B(W)
+ * formulas (see fin-calc.ts), which include the Kbf body-lift-due-to-fins
+ * term classical Barrowman (and RockSim's own "BarromanXN") omit. Against
+ * this same LOC-IV fixture that shifts whole-rocket CP from ~0.6% off
+ * RockSim's classical BarromanXN (899.2mm, the old comparison point) to 5.2%
+ * off it (946.4mm) — but only 2.7% off RockSim's own proprietary "extended"
+ * method (RockSimXN, 972.6mm), which itself models interference beyond
+ * classical Barrowman. Moving substantially closer to the extended value
+ * while moving away from the classical one is a real signal the added
+ * physics is capturing something RockSim's extended method also captures,
+ * not just noise — but it does mean this fixture no longer cross-checks
+ * against BarromanXN as tightly as it once did, by design.
  */
 export function freeformFinAero(
   fin: FreeformFinSet,
