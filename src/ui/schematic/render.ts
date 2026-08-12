@@ -15,12 +15,12 @@ export function renderSchematicSvg(
   components: Component[],
   cpX?: number,
   cgX?: number,
-  widthPx = 800,
-  heightPx = 200,
+  widthPx = 1400,
+  heightPx = 350,
 ): string {
   const placed = placeComponents(components);
   if (placed.length === 0) {
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${widthPx}" height="${heightPx}"></svg>`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${widthPx} ${heightPx}" width="100%" style="height:auto; max-width:100%;"></svg>`;
   }
 
   // Bounding box over EVERYTHING (bodies and fins), not just body components —
@@ -56,7 +56,7 @@ export function renderSchematicSvg(
   const totalLength = Math.max(maxX - minX, 1e-6);
   maxR = Math.max(maxR, 1e-6);
 
-  const margin = 20;
+  const margin = 35;
   const scaleX = (widthPx - 2 * margin) / totalLength;
   const scaleY = (heightPx / 2 - margin) / maxR;
   const scale = Math.min(scaleX, scaleY);
@@ -81,7 +81,7 @@ export function renderSchematicSvg(
       bottomPts.unshift(`${px},${toPyBottom(r)}`);
     }
     const pts = [...topPts, ...bottomPts].join(" ");
-    parts.push(`<polygon points="${pts}" fill="none" stroke="#333" stroke-width="1.5" />`);
+    parts.push(`<polygon points="${pts}" fill="none" stroke="#222" stroke-width="3" stroke-linejoin="round" />`);
   }
 
   placed.forEach((entry, i) => {
@@ -101,25 +101,26 @@ export function renderSchematicSvg(
           return `${px},${py}`;
         })
         .join(" ");
-      parts.push(`<polygon points="${pts}" fill="#bcd" stroke="#333" stroke-width="1" />`);
+      parts.push(`<polygon points="${pts}" fill="#bcd" stroke="#222" stroke-width="2.5" stroke-linejoin="round" />`);
     }
   });
 
   if (cpX !== undefined) {
     const x = toPx(cpX);
     parts.push(
-      `<circle cx="${x}" cy="${cy}" r="5" fill="#c33" /><text x="${x}" y="${cy + 20}" font-size="10" text-anchor="middle">CP</text>`,
+      `<circle cx="${x}" cy="${cy}" r="8" fill="#c33" stroke="#fff" stroke-width="1.5" /><text x="${x}" y="${cy + 32}" font-size="16" text-anchor="middle">CP</text>`,
     );
   }
   if (cgX !== undefined) {
     const x = toPx(cgX);
     parts.push(
-      `<circle cx="${x}" cy="${cy}" r="5" fill="#36c" /><text x="${x}" y="${cy - 12}" font-size="10" text-anchor="middle">CG</text>`,
+      `<circle cx="${x}" cy="${cy}" r="8" fill="#36c" stroke="#fff" stroke-width="1.5" /><text x="${x}" y="${cy - 20}" font-size="16" text-anchor="middle">CG</text>`,
     );
   }
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${widthPx}" height="${heightPx}">
-    <line x1="${toPx(minX)}" y1="${cy}" x2="${toPx(maxX)}" y2="${cy}" stroke="#ccc" stroke-dasharray="4 3" />
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${widthPx} ${heightPx}" width="100%" style="height:auto; max-width:100%;">
+    <rect x="0" y="0" width="${widthPx}" height="${heightPx}" fill="#fff" />
+    <line x1="${toPx(minX)}" y1="${cy}" x2="${toPx(maxX)}" y2="${cy}" stroke="#ccc" stroke-width="1.5" stroke-dasharray="6 5" />
     ${parts.join("\n")}
   </svg>`;
 }
