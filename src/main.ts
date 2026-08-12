@@ -14,6 +14,8 @@ import { burnTime, getThrustAt, totalImpulse } from "./physics/motor/motor-model
 import { deriveMotorMassCurve, getMotorMassAt } from "./physics/mass/motor-mass-curve.js";
 import { combinedMassAt } from "./physics/mass/combined-mass.js";
 import { simulateAscent } from "./physics/sim/engine.js";
+import { parseSplashcastWindData, type SplashcastWindData } from "./physics/wind/splashcast-import.js";
+import { windAt } from "./model/wind.js";
 
 const MM = 0.001;
 
@@ -567,6 +569,112 @@ function wireMotorSearch(): void {
   }
 }
 
+const windSectionHtml = `
+  <article>
+    <header>
+      <h2>Wind data <small>(altitude-varying import)</small></h2>
+      <p>
+        Upload a <code>splash_zones_captured_*.json</code> file (from the splashcast launch-day
+        predictor, itself a multi-model wind ensemble pulled from Open-Meteo) to inspect its
+        altitude-varying wind profile. This is the data-import side only — not yet consumed by the
+        flight sim above, that's M4 (weathercocking), which this is prep for. A plain constant
+        wind speed/direction is just a degenerate one-sample profile of the same shape
+        (see <code>constantWindProfile()</code>).
+      </p>
+    </header>
+    <input type="file" id="wind-file-input" accept=".json,application/json" />
+    <div id="wind-controls" style="display:none; margin-top:1em;">
+      <div class="grid">
+        <label>Hour <select id="wind-hour"></select></label>
+        <label>Model <select id="wind-model"></select></label>
+      </div>
+    </div>
+    <div id="wind-result"></div>
+  </article>
+`;
+
+let currentWindData: SplashcastWindData | null = null;
+
+function renderWindProfileTable(): void {
+  const resultEl = document.querySelector<HTMLDivElement>("#wind-result");
+  const hourEl = document.querySelector<HTMLSelectElement>("#wind-hour");
+  const modelEl = document.querySelector<HTMLSelectElement>("#wind-model");
+  if (!resultEl || !hourEl || !modelEl || !currentWindData) return;
+
+  const hour = Number(hourEl.value);
+  const model = modelEl.value;
+  const profile = currentWindData.profileFor(hour, model);
+  if (!profile) {
+    resultEl.innerHTML = "<p>No profile for that hour/model.</p>";
+    return;
+  }
+
+  const rows = profile.samples
+    .map((s) => {
+      const w = windAt(profile, s.altitude);
+      return `<tr>
+        <td>${(s.altitude / 0.3048).toFixed(0)} ft (${s.altitude.toFixed(0)} m AGL)</td>
+        <td>${(w.speed / 0.44704).toFixed(1)} mph (${w.speed.toFixed(1)} m/s)</td>
+        <td>${w.directionFromDeg.toFixed(0)}°</td>
+      </tr>`;
+    })
+    .join("");
+
+  resultEl.innerHTML = `
+    <p>Site elevation: ${(currentWindData.siteElevationM / 0.3048).toFixed(0)} ft (${currentWindData.siteElevationM.toFixed(0)} m). ${profile.label}, ${profile.samples.length} altitude samples.</p>
+    <figure>
+      <table>
+        <thead><tr><th>Altitude (AGL)</th><th>Speed</th><th>Direction (from)</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </figure>
+  `;
+}
+
+function wireWindImport(): void {
+  const fileInput = document.querySelector<HTMLInputElement>("#wind-file-input");
+  const controlsEl = document.querySelector<HTMLDivElement>("#wind-controls");
+  const hourEl = document.querySelector<HTMLSelectElement>("#wind-hour");
+  const modelEl = document.querySelector<HTMLSelectElement>("#wind-model");
+  const resultEl = document.querySelector<HTMLDivElement>("#wind-result");
+  if (!fileInput || !controlsEl || !hourEl || !modelEl || !resultEl) return;
+
+  fileInput.addEventListener("change", () => {
+    const file = fileInput.files?.[0];
+    if (!file) return;
+    resultEl.innerHTML = '<p aria-busy="true">Parsing…</p>';
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const json = JSON.parse(String(reader.result));
+        currentWindData = parseSplashcastWindData(json);
+        if (currentWindData.hours.length === 0) {
+          resultEl.innerHTML = "<p><mark>No wind_hours found — is this a splashcast splash_zones_captured_*.json file?</mark></p>";
+          controlsEl.style.display = "none";
+          return;
+        }
+        hourEl.innerHTML = currentWindData.hours.map((h) => `<option value="${h}">${h}:00</option>`).join("");
+        const updateModels = () => {
+          const models = currentWindData!.modelsForHour(Number(hourEl.value));
+          modelEl.innerHTML = models.map((m) => `<option value="${m}">${m.toUpperCase()}</option>`).join("");
+        };
+        updateModels();
+        controlsEl.style.display = "";
+        hourEl.onchange = () => {
+          updateModels();
+          renderWindProfileTable();
+        };
+        modelEl.onchange = renderWindProfileTable;
+        renderWindProfileTable();
+      } catch (err) {
+        resultEl.innerHTML = `<p><mark>Failed to parse file: ${err instanceof Error ? err.message : String(err)}</mark></p>`;
+        controlsEl.style.display = "none";
+      }
+    };
+    reader.readAsText(file);
+  });
+}
+
 const app = document.querySelector<HTMLDivElement>("#app");
 if (app) {
   app.innerHTML = `
@@ -580,10 +688,12 @@ if (app) {
         { label: "RockSim classical Barrowman CP (BarromanXN)", mm: 899.247 },
         { label: "RockSim proprietary extended-method CP (RockSimXN)", mm: 972.645 },
       ])}
+      ${windSectionHtml}
       ${motorSectionHtml}
     </main>
   `;
   wireMotorSearch();
+  wireWindImport();
   const urlParams = new URLSearchParams(location.search);
   const hadUrlFilters = (Object.keys(FILTER_DEFAULTS) as FilterKey[]).some((k) => urlParams.has(k));
   void loadMotorMetadata().then(() => {
