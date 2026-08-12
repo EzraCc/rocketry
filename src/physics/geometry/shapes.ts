@@ -104,6 +104,38 @@ export function integrateVolume(
 }
 
 /**
+ * Wetted (external surface) area of the body of revolution formed by r(x)
+ * over [0, length]: integral of 2*pi*r(x)*sqrt(1+r'(x)^2)dx (arc-length
+ * weighted, i.e. the true surface area of a cone/curve, not just a cylinder
+ * approximation). Used for skin-friction drag. r'(x) is estimated by central
+ * difference since r(x) is an arbitrary function, not symbolically differentiable.
+ */
+export function integrateWettedArea(
+  radiusFn: (x: number) => number,
+  length: number,
+  divisions = 200,
+): number {
+  if (length <= 0) return 0;
+  const n = divisions % 2 === 0 ? divisions : divisions + 1;
+  const h = length / n;
+  const dx = length / (n * 50); // small step for the central-difference slope estimate
+  const areaAtX = (x: number): number => {
+    const rx = radiusFn(x);
+    const xLo = Math.max(0, x - dx);
+    const xHi = Math.min(length, x + dx);
+    const slope = xHi > xLo ? (radiusFn(xHi) - radiusFn(xLo)) / (xHi - xLo) : 0;
+    return 2 * Math.PI * rx * Math.sqrt(1 + slope * slope);
+  };
+  let sum = areaAtX(0) + areaAtX(length);
+  for (let i = 1; i < n; i++) {
+    const x = i * h;
+    const coeff = i % 2 === 0 ? 2 : 4;
+    sum += coeff * areaAtX(x);
+  }
+  return (h / 3) * sum;
+}
+
+/**
  * Planform (side-view projected) area under r(x), i.e. integral of 2*r(x)dx,
  * plus its x-weighted centroid. Used for the (optional, MVP-deferred) Galejs
  * body-lift correction — kept here so it's available if needed later.

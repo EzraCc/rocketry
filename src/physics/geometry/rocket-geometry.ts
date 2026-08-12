@@ -1,6 +1,7 @@
-import { integratePlanform, integrateVolume, shapeRadius } from "./shapes.js";
+import { integratePlanform, integrateVolume, integrateWettedArea, shapeRadius } from "./shapes.js";
 import {
   aftRadius,
+  finSetPlanformArea,
   foreRadius,
   isBodyComponent,
   isFinSet,
@@ -44,6 +45,31 @@ export function bodyComponentPlanform(
   divisions = 200,
 ): { area: number; centroid: number } {
   return integratePlanform((x) => bodyComponentRadius(c, x), c.length, divisions);
+}
+
+/** Wetted (external surface) area — used for skin-friction drag. */
+export function bodyComponentWettedArea(c: BodyComponent, divisions = 200): number {
+  return integrateWettedArea((x) => bodyComponentRadius(c, x), c.length, divisions);
+}
+
+/** Total wetted area of the rocket: body components' surface-of-revolution area + 2x each fin's planform area (both sides), times fin count. */
+export function totalWettedArea(components: Component[]): number {
+  let total = 0;
+  for (const c of components) {
+    if (isBodyComponent(c)) {
+      total += bodyComponentWettedArea(c);
+    } else if (isFinSet(c)) {
+      total += c.finCount * 2 * finSetPlanformArea(c);
+    }
+  }
+  return total;
+}
+
+/** Aft-most body radius — the "base" the rocket presents to the flow, used for base drag. */
+export function baseRadius(components: Component[]): number {
+  const bodies = components.filter(isBodyComponent);
+  const last = bodies[bodies.length - 1];
+  return last ? aftRadius(last) : 0;
 }
 
 export interface PlacedComponent {

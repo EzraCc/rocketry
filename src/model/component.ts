@@ -99,6 +99,20 @@ export function componentLength(c: Component): number {
   return isFinSet(c) ? finSetRootChord(c) : c.length;
 }
 
+/** Planform (one-side) area of a single fin — used for both CNa (via drag/fin calculators) and wetted-area drag calculations. */
+export function finSetPlanformArea(f: FinSet): number {
+  if (f.type === "finset") return (f.span * (f.rootChord + f.tipChord)) / 2;
+  // Shoelace formula for the closed polygon (last point implicitly connects back to the first).
+  const pts = f.points;
+  let sum = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const [x0, y0] = pts[i]!;
+    const [x1, y1] = pts[(i + 1) % pts.length]!;
+    sum += x0 * y1 - x1 * y0;
+  }
+  return Math.abs(sum) / 2;
+}
+
 /** Radius at the fore (nose-ward) end of a body component. */
 export function foreRadius(c: BodyComponent): number {
   if (c.type === "nosecone") return 0;

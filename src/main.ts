@@ -13,6 +13,7 @@ import {
 import { burnTime, getThrustAt, totalImpulse } from "./physics/motor/motor-model.js";
 import { deriveMotorMassCurve, getMotorMassAt } from "./physics/mass/motor-mass-curve.js";
 import { combinedMassAt } from "./physics/mass/combined-mass.js";
+import { simulateAscent } from "./physics/sim/engine.js";
 
 const MM = 0.001;
 
@@ -478,10 +479,46 @@ async function selectMotor(meta: MotorSearchResult): Promise<void> {
           </tbody>
         </table>
       </figure>
+      ${renderFlightSimSection(rocketWithMotor)}
     `;
   } catch (err) {
     detailEl.innerHTML = `<p><mark>Failed to load thrust curve: ${err instanceof Error ? err.message : String(err)}</mark></p>`;
   }
+}
+
+function renderFlightSimSection(rocket: Rocket): string {
+  const t0 = performance.now();
+  const result = simulateAscent(rocket);
+  const elapsedMs = performance.now() - t0;
+
+  const warningsHtml = result.warnings.length
+    ? `<p>${result.warnings.map((w) => `<mark>${w}</mark>`).join(" ")}</p>`
+    : "";
+
+  const stats = [
+    stat("Apogee", `${result.apogeeAltitude.toFixed(1)} m`),
+    stat("Time to apogee", `${result.apogeeTime.toFixed(2)} s`),
+    stat("Max velocity", `${result.maxVelocity.toFixed(1)} m/s`),
+    stat("Max Mach", result.maxMach.toFixed(3)),
+    stat("Max acceleration", `${(result.maxAcceleration / 9.80665).toFixed(1)} g`),
+  ].join("");
+
+  const eventsRows = result.events
+    .map((e) => `<tr><td>${e.type}</td><td>${e.time.toFixed(2)} s</td><td>${e.altitude.toFixed(1)} m</td></tr>`)
+    .join("");
+
+  return `
+    <h3>Flight simulation <small>(ascent to apogee, no wind — M3)</small></h3>
+    ${warningsHtml}
+    <div class="grid stats-grid">${stats}</div>
+    <figure>
+      <table>
+        <thead><tr><th>Event</th><th>Time</th><th>Altitude</th></tr></thead>
+        <tbody>${eventsRows}</tbody>
+      </table>
+    </figure>
+    <p><small>${result.samples.length} integration samples, computed in ${elapsedMs.toFixed(1)} ms.</small></p>
+  `;
 }
 
 async function performSearch(): Promise<void> {
