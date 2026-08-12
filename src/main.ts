@@ -1,7 +1,11 @@
 import { computeBarrowman, stabilityMargin } from "./physics/aero/barrowman.js";
 import { renderSchematicSvg } from "./ui/schematic/render.js";
-import { defaultRocket, type Rocket } from "./model/rocket.js";
+import { defaultRocket, type Rocket, type SelectedMotor } from "./model/rocket.js";
 import type { Component } from "./model/component.js";
+import { searchMotors, downloadThrustSamples, type MotorSearchResult } from "./physics/motor/thrustcurve-client.js";
+import { burnTime, getThrustAt, totalImpulse } from "./physics/motor/motor-model.js";
+import { deriveMotorMassCurve, getMotorMassAt } from "./physics/mass/motor-mass-curve.js";
+import { combinedMassAt } from "./physics/mass/combined-mass.js";
 
 const MM = 0.001;
 
@@ -47,6 +51,7 @@ const demoRocket: Rocket = {
   name: "M1 demo rocket",
   components: demoComponents,
   dryCg: 0.24,
+  motorMount: { componentId: "tube", motorOverhang: 0 },
 };
 
 // Real-world validation rocket: LOC Precision "PK-48 LOC-IV" (sim-files/LOC/PK-48 Loc-IV.rkt).
@@ -143,14 +148,148 @@ function renderRocketSection(
   `;
 }
 
+const motorSectionHtml = `
+  <section style="margin-bottom: 3em;">
+    <h2>M2: Motor data (ThrustCurve.org)</h2>
+    <p>
+      Search <a href="https://www.thrustcurve.org" target="_blank" rel="noopener">ThrustCurve.org</a> live from the
+      browser (no backend — CORS is open on their API) and attach a real motor to the "${demoRocket.name}" above to
+      see its thrust curve, its derived mass curve (ThrustCurve.org has no mass-vs-time data, only total/propellant
+      weight — mass loss is derived assuming it's proportional to cumulative thrust impulse), and the combined
+      rocket mass/CG at ignition, mid-burn, and burnout.
+    </p>
+    <form id="motor-search-form">
+      <label>Manufacturer: <input id="motor-mfg" type="text" value="Estes" size="12" /></label>
+      <label style="margin-left: 1em;">Designation: <input id="motor-designation" type="text" value="C6" size="8" /></label>
+      <button type="submit" style="margin-left: 1em;">Search</button>
+    </form>
+    <div id="motor-results"></div>
+    <div id="motor-detail"></div>
+  </section>
+`;
+
+function renderMotorResults(results: MotorSearchResult[]): string {
+  if (results.length === 0) return "<p>No motors found.</p>";
+  const rows = results
+    .map(
+      (m, i) =>
+        `<li><a href="#" data-motor-index="${i}">${m.manufacturer} ${m.designation}</a>
+          — ${m.totImpulseNs} N·s, ${m.burnTimeS}s burn, ${m.totalWeightG}g total / ${m.propWeightG}g propellant</li>`,
+    )
+    .join("");
+  return `<ul>${rows}</ul>`;
+}
+
+async function selectMotor(meta: MotorSearchResult): Promise<void> {
+  const detailEl = document.querySelector<HTMLDivElement>("#motor-detail");
+  if (!detailEl) return;
+  detailEl.innerHTML = `<p>Loading thrust curve for ${meta.manufacturer} ${meta.designation}...</p>`;
+
+  try {
+    const samples = await downloadThrustSamples(meta.motorId);
+    const motor: SelectedMotor = {
+      motorId: meta.motorId,
+      designation: meta.designation,
+      manufacturer: meta.manufacturer,
+      diameter: meta.diameter / 1000,
+      length: meta.length / 1000,
+      totalMassKg: meta.totalWeightG / 1000,
+      propellantMassKg: meta.propWeightG / 1000,
+      samples,
+      delay: 0,
+    };
+
+    const rocketWithMotor: Rocket = { ...demoRocket, motor };
+    const massCurve = deriveMotorMassCurve(motor);
+    const bt = burnTime(motor);
+    const midT = bt / 2;
+
+    const massAt = (t: number) => combinedMassAt(rocketWithMotor, massCurve, t);
+    const start = massAt(0);
+    const mid = massAt(midT);
+    const end = massAt(bt);
+
+    detailEl.innerHTML = `
+      <h3>${meta.manufacturer} ${meta.designation}</h3>
+      <p>Thrust curve: ${samples.length} samples, burn time ${bt.toFixed(2)}s.
+        Total impulse (integrated from curve): ${totalImpulse(motor).toFixed(2)} N·s
+        (ThrustCurve.org reports ${meta.totImpulseNs} N·s).
+        Peak thrust: ${Math.max(...samples.map((s) => s.thrust)).toFixed(1)} N.</p>
+      <table border="1" cellpadding="4" style="border-collapse: collapse;">
+        <tr><th></th><th>t=0 (ignition)</th><th>t=${midT.toFixed(2)}s (mid-burn)</th><th>t=${bt.toFixed(2)}s (burnout)</th></tr>
+        <tr>
+          <td>Thrust</td>
+          <td>${getThrustAt(motor, 0).toFixed(1)} N</td>
+          <td>${getThrustAt(motor, midT).toFixed(1)} N</td>
+          <td>${getThrustAt(motor, bt).toFixed(1)} N</td>
+        </tr>
+        <tr>
+          <td>Motor mass</td>
+          <td>${(getMotorMassAt(massCurve, 0) * 1000).toFixed(1)} g</td>
+          <td>${(getMotorMassAt(massCurve, midT) * 1000).toFixed(1)} g</td>
+          <td>${(getMotorMassAt(massCurve, bt) * 1000).toFixed(1)} g</td>
+        </tr>
+        <tr>
+          <td>Combined rocket mass</td>
+          <td>${(start.mass * 1000).toFixed(1)} g</td>
+          <td>${(mid.mass * 1000).toFixed(1)} g</td>
+          <td>${(end.mass * 1000).toFixed(1)} g</td>
+        </tr>
+        <tr>
+          <td>Combined rocket CG</td>
+          <td>${(start.cgX * 1000).toFixed(1)} mm</td>
+          <td>${(mid.cgX * 1000).toFixed(1)} mm</td>
+          <td>${(end.cgX * 1000).toFixed(1)} mm</td>
+        </tr>
+      </table>
+    `;
+  } catch (err) {
+    detailEl.innerHTML = `<p style="color: #c33;">Failed to load thrust curve: ${err instanceof Error ? err.message : String(err)}</p>`;
+  }
+}
+
+function wireMotorSearch(): void {
+  const form = document.querySelector<HTMLFormElement>("#motor-search-form");
+  const resultsEl = document.querySelector<HTMLDivElement>("#motor-results");
+  if (!form || !resultsEl) return;
+
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    void (async () => {
+      const mfg = (document.querySelector<HTMLInputElement>("#motor-mfg")?.value ?? "").trim();
+      const designation = (document.querySelector<HTMLInputElement>("#motor-designation")?.value ?? "").trim();
+      resultsEl.innerHTML = "<p>Searching...</p>";
+      try {
+        const results = await searchMotors({
+          manufacturer: mfg || undefined,
+          designation: designation || undefined,
+        });
+        resultsEl.innerHTML = renderMotorResults(results);
+        resultsEl.querySelectorAll<HTMLAnchorElement>("a[data-motor-index]").forEach((a) => {
+          a.addEventListener("click", (evt) => {
+            evt.preventDefault();
+            const idx = Number(a.dataset["motorIndex"]);
+            const meta = results[idx];
+            if (meta) void selectMotor(meta);
+          });
+        });
+      } catch (err) {
+        resultsEl.innerHTML = `<p style="color: #c33;">Search failed: ${err instanceof Error ? err.message : String(err)}</p>`;
+      }
+    })();
+  });
+}
+
 const app = document.querySelector<HTMLDivElement>("#app");
 if (app) {
   app.innerHTML = `
-    <h1>rocketry — M1 checkpoint</h1>
+    <h1>rocketry — M1/M2 checkpoint</h1>
     ${renderRocketSection(demoRocket, 0.3)}
     ${renderRocketSection(locIvRocket, 0.001, [
       { label: "RockSim classical Barrowman CP (BarromanXN)", mm: 899.247 },
       { label: "RockSim proprietary extended-method CP (RockSimXN)", mm: 972.645 },
     ])}
+    ${motorSectionHtml}
   `;
+  wireMotorSearch();
 }
