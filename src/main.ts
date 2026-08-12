@@ -8,6 +8,7 @@ import { isBodyComponent, type Component } from "./model/component.js";
 import { unzipOrkXml } from "./formats/ork/unzip.js";
 import { parseOrkXml } from "./formats/ork/parse.js";
 import { parseRocksimXml } from "./formats/rocksim/parse.js";
+import { parseRasaeroXml } from "./formats/rasaero/parse.js";
 import {
   searchMotors,
   downloadThrustSamples,
@@ -757,18 +758,19 @@ function wireWindImport(): void {
 const orkSectionHtml = `
   <article>
     <header>
-      <h2>Your rocket <small>(.ork / .rkt import)</small></h2>
+      <h2>Your rocket <small>(.ork / .rkt / .CDX1 import)</small></h2>
       <p>
-        Upload a real OpenRocket <code>.ork</code> or RockSim <code>.rkt</code> file to replace the
-        demo rocket below — nose cone, body tube(s), transition/boat tail, and trapezoidal or
-        freeform fins are imported (single-stage only; multi-stage files use just the
-        first/sustainer stage). Mass and CG stay manual, per this tool's design — enter them below
-        once imported. For .ork files, the file's own default motor selection pre-fills the motor
-        search further down (RockSim files carry no motor data at all, only mount geometry, so
-        you'll need to search for a motor yourself either way).
+        Upload a real OpenRocket <code>.ork</code>, RockSim <code>.rkt</code>, or RASAero
+        <code>.CDX1</code> file to replace the demo rocket below — nose cone, body tube(s),
+        transition/boat tail/fin can, and trapezoidal or freeform fins are imported (single-stage
+        only; multi-stage files use just the first/sustainer stage). Mass and CG stay manual, per
+        this tool's design — enter them below once imported. For .ork files, the file's own
+        default motor selection pre-fills the motor search further down (RockSim and RASAero files
+        carry no motor data at all, only mount geometry, so you'll need to search for a motor
+        yourself either way).
       </p>
     </header>
-    <input type="file" id="ork-file-input" accept=".ork,.rkt" />
+    <input type="file" id="ork-file-input" accept=".ork,.rkt,.CDX1" />
     <div id="ork-warnings"></div>
     <div class="grid" id="ork-mass-cg-controls" style="display:none; margin-top:1em;">
       <label>Dry mass (g) <input type="number" id="ork-dry-mass" value="50" min="0" step="1" /></label>
@@ -781,7 +783,7 @@ const orkSectionHtml = `
 function renderActiveRocketDisplay(): void {
   const el = document.querySelector<HTMLDivElement>("#active-rocket-display");
   if (!el) return;
-  const subtitle = activeRocket === demoRocket ? "Synthetic demo rocket — upload a .ork/.rkt file above to replace it" : "Imported from file";
+  const subtitle = activeRocket === demoRocket ? "Synthetic demo rocket — upload a .ork/.rkt/.CDX1 file above to replace it" : "Imported from file";
   el.innerHTML = renderRocketSection(activeRocket, 0.3, subtitle);
 }
 
@@ -806,17 +808,21 @@ function wireOrkImport(): void {
   fileInput.addEventListener("change", () => {
     const file = fileInput.files?.[0];
     if (!file) return;
-    const isRocksim = file.name.toLowerCase().endsWith(".rkt");
+    const lowerName = file.name.toLowerCase();
     warningsEl.innerHTML = '<p aria-busy="true">Parsing…</p>';
 
     void (async () => {
       try {
-        // RockSim files carry no motor data at all (only mount geometry) -- parseRocksimXml's
-        // result has no `motor` field to begin with, unlike parseOrkXml's.
+        // Only .ork carries an embedded motor reference -- RockSim and RASAero files have no
+        // motor data at all, only mount geometry (parseRocksimXml/parseRasaeroXml's results have
+        // no `motor` field to begin with).
         let parsed: { name: string; components: Component[]; warnings: string[] };
         let motor: { manufacturer: string; designation: string } | null;
-        if (isRocksim) {
+        if (lowerName.endsWith(".rkt")) {
           parsed = parseRocksimXml(await file.text());
+          motor = null;
+        } else if (lowerName.endsWith(".cdx1")) {
+          parsed = parseRasaeroXml(await file.text(), file.name);
           motor = null;
         } else {
           const orkParsed = parseOrkXml(await unzipOrkXml(await file.arrayBuffer()));
