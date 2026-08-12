@@ -4,7 +4,9 @@ import { computeBarrowman, stabilityMargin } from "./physics/aero/barrowman.js";
 import { checkStability } from "./physics/aero/stability-check.js";
 import { renderSchematicSvg } from "./ui/schematic/render.js";
 import { defaultRocket, type Rocket, type SelectedMotor } from "./model/rocket.js";
-import type { Component } from "./model/component.js";
+import { isBodyComponent, type Component } from "./model/component.js";
+import { unzipOrkXml } from "./formats/ork/unzip.js";
+import { parseOrkXml } from "./formats/ork/parse.js";
 import {
   searchMotors,
   downloadThrustSamples,
@@ -125,6 +127,16 @@ const locIvRocket: Rocket = {
   dryCg: 0, // not entered — mass/CG is manual per this tool's design; omitted here, so no stability margin is shown below
 };
 
+/**
+ * The rocket the motor-select/flight-sim section below actually runs
+ * against — starts as the demo rocket, replaced wholesale by
+ * wireOrkImport() once a user uploads a real .ork file. Kept as a single
+ * mutable binding (rather than threading a rocket parameter through
+ * selectMotor et al.) since this file's whole render flow is already
+ * imperative DOM manipulation, not a framework with real state management.
+ */
+let activeRocket: Rocket = demoRocket;
+
 function stat(label: string, value: string): string {
   return `<div><strong>${value}</strong><br /><small>${label}</small></div>`;
 }
@@ -233,7 +245,8 @@ const motorSectionHtml = `
       <h2>Motor data <small>(ThrustCurve.org)</small></h2>
       <p>
         Search <a href="https://www.thrustcurve.org" target="_blank" rel="noopener">ThrustCurve.org</a> live from the
-        browser — no backend, CORS is open on their API — and attach a real motor to the "${demoRocket.name}" above.
+        browser — no backend, CORS is open on their API — and attach a real motor to your rocket above
+        (the demo rocket by default, or whatever you imported via .ork).
         Shows its thrust curve, its derived mass curve (ThrustCurve.org has no mass-vs-time data, only total /
         propellant weight, so mass loss is derived assuming it's proportional to cumulative thrust impulse), and the
         combined rocket mass/CG at ignition, mid-burn, and burnout.
@@ -433,7 +446,7 @@ async function selectMotor(meta: MotorSearchResult): Promise<void> {
       delay: 0,
     };
 
-    const rocketWithMotor: Rocket = { ...demoRocket, motor, windProfile: activeWindProfile };
+    const rocketWithMotor: Rocket = { ...activeRocket, motor, windProfile: activeWindProfile };
     const massCurve = deriveMotorMassCurve(motor);
     const bt = burnTime(motor);
     const midT = bt / 2;
@@ -740,6 +753,103 @@ function wireWindImport(): void {
   });
 }
 
+const orkSectionHtml = `
+  <article>
+    <header>
+      <h2>Your rocket <small>(.ork import)</small></h2>
+      <p>
+        Upload a real OpenRocket <code>.ork</code> file to replace the demo rocket below — nose
+        cone, body tube(s), transition/boat tail, and trapezoidal or freeform fins are imported
+        (single-stage only; multi-stage files use just the first/sustainer stage). Mass and CG stay
+        manual, per this tool's design — enter them below once imported. The file's own default
+        motor selection pre-fills the motor search further down.
+      </p>
+    </header>
+    <input type="file" id="ork-file-input" accept=".ork" />
+    <div id="ork-warnings"></div>
+    <div class="grid" id="ork-mass-cg-controls" style="display:none; margin-top:1em;">
+      <label>Dry mass (g) <input type="number" id="ork-dry-mass" value="50" min="0" step="1" /></label>
+      <label>Dry CG (mm from nose) <input type="number" id="ork-dry-cg" value="0" min="0" step="1" /></label>
+    </div>
+    <div id="active-rocket-display"></div>
+  </article>
+`;
+
+function renderActiveRocketDisplay(): void {
+  const el = document.querySelector<HTMLDivElement>("#active-rocket-display");
+  if (!el) return;
+  const subtitle = activeRocket === demoRocket ? "Synthetic demo rocket — upload a .ork file above to replace it" : "Imported from .ork file";
+  el.innerHTML = renderRocketSection(activeRocket, 0.3, subtitle);
+}
+
+function wireOrkImport(): void {
+  const fileInput = document.querySelector<HTMLInputElement>("#ork-file-input");
+  const warningsEl = document.querySelector<HTMLDivElement>("#ork-warnings");
+  const controlsEl = document.querySelector<HTMLDivElement>("#ork-mass-cg-controls");
+  const massEl = document.querySelector<HTMLInputElement>("#ork-dry-mass");
+  const cgEl = document.querySelector<HTMLInputElement>("#ork-dry-cg");
+  if (!fileInput || !warningsEl || !controlsEl || !massEl || !cgEl) return;
+
+  const applyMassCg = (): void => {
+    if (activeRocket === demoRocket) return; // nothing imported yet
+    const massG = Number(massEl.value) || 0;
+    const cgMm = Number(cgEl.value) || 0;
+    activeRocket = { ...activeRocket, dryMass: massG / 1000, dryCg: cgMm / 1000 };
+    renderActiveRocketDisplay();
+  };
+  massEl.addEventListener("input", applyMassCg);
+  cgEl.addEventListener("input", applyMassCg);
+
+  fileInput.addEventListener("change", () => {
+    const file = fileInput.files?.[0];
+    if (!file) return;
+    warningsEl.innerHTML = '<p aria-busy="true">Parsing…</p>';
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const buffer = reader.result as ArrayBuffer;
+        const xml = await unzipOrkXml(buffer);
+        const parsed = parseOrkXml(xml);
+
+        const motorMountComponent = parsed.components.find((c) => c.type === "bodytube" && c.isMotorMount);
+        const bodyComponents = parsed.components.filter(isBodyComponent);
+        const motorMountId = motorMountComponent?.id ?? bodyComponents[bodyComponents.length - 1]?.id ?? "";
+
+        activeRocket = {
+          ...defaultRocket(),
+          name: parsed.name,
+          components: parsed.components,
+          dryMass: (Number(massEl.value) || 50) / 1000,
+          dryCg: 0, // forces the user to actually enter it -- never guessed from geometry
+          motorMount: { componentId: motorMountId, motorOverhang: 0 },
+        };
+
+        controlsEl.style.display = "";
+        const parseNote = parsed.warnings.length
+          ? parsed.warnings.map((w) => `<mark>${w}</mark>`).join(" ")
+          : `<small>Parsed ${parsed.components.length} components successfully.</small>`;
+        warningsEl.innerHTML = `<p>${parseNote}</p>`;
+
+        renderActiveRocketDisplay();
+
+        if (parsed.motor) {
+          const mfgEl = filterElement("manufacturer");
+          const desEl = filterElement("designation");
+          if (mfgEl) mfgEl.value = parsed.motor.manufacturer;
+          if (desEl) desEl.value = parsed.motor.designation;
+          syncFormToUrl();
+          void performSearch();
+          warningsEl.innerHTML += `<p><small>File's default motor was ${parsed.motor.manufacturer} ${parsed.motor.designation} — pre-filled the motor search below.</small></p>`;
+        }
+      } catch (err) {
+        warningsEl.innerHTML = `<p><mark>Failed to import: ${err instanceof Error ? err.message : String(err)}</mark></p>`;
+        controlsEl.style.display = "none";
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
 const app = document.querySelector<HTMLDivElement>("#app");
 if (app) {
   app.innerHTML = `
@@ -748,7 +858,7 @@ if (app) {
         <h1>🚀 rocketry</h1>
         <p>A from-scratch, client-side flight simulator for basic rockets — M1/M2 checkpoint</p>
       </hgroup>
-      ${renderRocketSection(demoRocket, 0.3, "Synthetic demo rocket")}
+      ${orkSectionHtml}
       ${renderRocketSection(locIvRocket, 0.001, "Real rocket, transcribed from sim-files/LOC/PK-48 Loc-IV.rkt", [
         { label: "RockSim classical Barrowman CP (BarromanXN)", mm: 899.247 },
         { label: "RockSim proprietary extended-method CP (RockSimXN)", mm: 972.645 },
@@ -757,6 +867,8 @@ if (app) {
       ${motorSectionHtml}
     </main>
   `;
+  renderActiveRocketDisplay();
+  wireOrkImport();
   wireMotorSearch();
   wireWindImport();
   const urlParams = new URLSearchParams(location.search);
