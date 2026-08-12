@@ -252,24 +252,64 @@ async function loadMotorMetadata(): Promise<void> {
   }
 }
 
+/** ThrustCurve.org numeric fields are sometimes missing and often carry float noise (e.g. 19.099999999999998) — format defensively. */
+function num(value: number | undefined | null, digits = 2, unit = ""): string {
+  if (value === undefined || value === null || Number.isNaN(value)) return "—";
+  return `${value.toFixed(digits)}${unit}`;
+}
+
 function renderMotorResults(results: MotorSearchResult[]): string {
   if (results.length === 0) return "<p>No motors found.</p>";
-  const items = results
+  const rows = results
     .map(
-      (m, i) =>
-        `<li>
-          <a href="#" data-motor-index="${i}"><strong>${m.manufacturer} ${m.designation}</strong></a>
-          — ${m.totImpulseNs} N·s, ${m.burnTimeS}s burn, ${m.totalWeightG}g total / ${m.propWeightG}g propellant
-        </li>`,
+      (m, i) => `
+        <tr>
+          <td><a href="#" data-motor-index="${i}"><strong>${m.manufacturer} ${m.designation}</strong></a></td>
+          <td>${num(m.diameter, 0, " mm")}</td>
+          <td>${m.type}</td>
+          <td>${m.impulseClass}</td>
+          <td>${num(m.totImpulseNs, 2, " N·s")}</td>
+          <td>${num(m.burnTimeS, 2, " s")}</td>
+          <td>${num(m.totalWeightG, 1, " g")}</td>
+          <td>${num(m.propWeightG, 1, " g")}</td>
+        </tr>`,
     )
     .join("");
-  return `<ul>${items}</ul>`;
+  return `
+    <figure>
+      <table>
+        <thead>
+          <tr>
+            <th>Motor</th>
+            <th>Diameter</th>
+            <th>Type</th>
+            <th>Class</th>
+            <th>Total impulse</th>
+            <th>Burn time</th>
+            <th>Total weight</th>
+            <th>Propellant weight</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </figure>
+  `;
 }
 
 async function selectMotor(meta: MotorSearchResult): Promise<void> {
   const detailEl = document.querySelector<HTMLDivElement>("#motor-detail");
   if (!detailEl) return;
   detailEl.innerHTML = `<p aria-busy="true">Loading thrust curve for ${meta.manufacturer} ${meta.designation}…</p>`;
+
+  if (
+    meta.totalWeightG === undefined ||
+    meta.totalWeightG === null ||
+    meta.propWeightG === undefined ||
+    meta.propWeightG === null
+  ) {
+    detailEl.innerHTML = `<p><mark>${meta.manufacturer} ${meta.designation} is missing weight data on ThrustCurve.org — can't compute a mass curve for it. Pick a different motor.</mark></p>`;
+    return;
+  }
 
   try {
     const samples = await downloadThrustSamples(meta.motorId);
@@ -299,7 +339,7 @@ async function selectMotor(meta: MotorSearchResult): Promise<void> {
       <h3>${meta.manufacturer} ${meta.designation}</h3>
       <p>Thrust curve: ${samples.length} samples, burn time ${bt.toFixed(2)}s.
         Total impulse (integrated from curve): ${totalImpulse(motor).toFixed(2)} N·s
-        (ThrustCurve.org reports ${meta.totImpulseNs} N·s).
+        (ThrustCurve.org reports ${num(meta.totImpulseNs, 2, " N·s")}).
         Peak thrust: ${Math.max(...samples.map((s) => s.thrust)).toFixed(1)} N.</p>
       <figure>
         <table>

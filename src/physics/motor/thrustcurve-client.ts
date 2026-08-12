@@ -24,8 +24,9 @@ export interface MotorSearchResult {
   maxThrustN: number;
   totImpulseNs: number;
   burnTimeS: number;
-  totalWeightG: number;
-  propWeightG: number;
+  // ThrustCurve.org omits these for some entries (e.g. certain very small/vintage motors) — genuinely optional.
+  totalWeightG?: number;
+  propWeightG?: number;
   delays: string;
 }
 
