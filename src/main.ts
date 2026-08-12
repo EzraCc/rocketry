@@ -7,6 +7,7 @@ import { defaultRocket, type Rocket, type SelectedMotor } from "./model/rocket.j
 import { isBodyComponent, type Component } from "./model/component.js";
 import { unzipOrkXml } from "./formats/ork/unzip.js";
 import { parseOrkXml } from "./formats/ork/parse.js";
+import { parseRocksimXml } from "./formats/rocksim/parse.js";
 import {
   searchMotors,
   downloadThrustSamples,
@@ -756,16 +757,18 @@ function wireWindImport(): void {
 const orkSectionHtml = `
   <article>
     <header>
-      <h2>Your rocket <small>(.ork import)</small></h2>
+      <h2>Your rocket <small>(.ork / .rkt import)</small></h2>
       <p>
-        Upload a real OpenRocket <code>.ork</code> file to replace the demo rocket below — nose
-        cone, body tube(s), transition/boat tail, and trapezoidal or freeform fins are imported
-        (single-stage only; multi-stage files use just the first/sustainer stage). Mass and CG stay
-        manual, per this tool's design — enter them below once imported. The file's own default
-        motor selection pre-fills the motor search further down.
+        Upload a real OpenRocket <code>.ork</code> or RockSim <code>.rkt</code> file to replace the
+        demo rocket below — nose cone, body tube(s), transition/boat tail, and trapezoidal or
+        freeform fins are imported (single-stage only; multi-stage files use just the
+        first/sustainer stage). Mass and CG stay manual, per this tool's design — enter them below
+        once imported. For .ork files, the file's own default motor selection pre-fills the motor
+        search further down (RockSim files carry no motor data at all, only mount geometry, so
+        you'll need to search for a motor yourself either way).
       </p>
     </header>
-    <input type="file" id="ork-file-input" accept=".ork" />
+    <input type="file" id="ork-file-input" accept=".ork,.rkt" />
     <div id="ork-warnings"></div>
     <div class="grid" id="ork-mass-cg-controls" style="display:none; margin-top:1em;">
       <label>Dry mass (g) <input type="number" id="ork-dry-mass" value="50" min="0" step="1" /></label>
@@ -778,7 +781,7 @@ const orkSectionHtml = `
 function renderActiveRocketDisplay(): void {
   const el = document.querySelector<HTMLDivElement>("#active-rocket-display");
   if (!el) return;
-  const subtitle = activeRocket === demoRocket ? "Synthetic demo rocket — upload a .ork file above to replace it" : "Imported from .ork file";
+  const subtitle = activeRocket === demoRocket ? "Synthetic demo rocket — upload a .ork/.rkt file above to replace it" : "Imported from file";
   el.innerHTML = renderRocketSection(activeRocket, 0.3, subtitle);
 }
 
@@ -803,13 +806,23 @@ function wireOrkImport(): void {
   fileInput.addEventListener("change", () => {
     const file = fileInput.files?.[0];
     if (!file) return;
+    const isRocksim = file.name.toLowerCase().endsWith(".rkt");
     warningsEl.innerHTML = '<p aria-busy="true">Parsing…</p>';
-    const reader = new FileReader();
-    reader.onload = async () => {
+
+    void (async () => {
       try {
-        const buffer = reader.result as ArrayBuffer;
-        const xml = await unzipOrkXml(buffer);
-        const parsed = parseOrkXml(xml);
+        // RockSim files carry no motor data at all (only mount geometry) -- parseRocksimXml's
+        // result has no `motor` field to begin with, unlike parseOrkXml's.
+        let parsed: { name: string; components: Component[]; warnings: string[] };
+        let motor: { manufacturer: string; designation: string } | null;
+        if (isRocksim) {
+          parsed = parseRocksimXml(await file.text());
+          motor = null;
+        } else {
+          const orkParsed = parseOrkXml(await unzipOrkXml(await file.arrayBuffer()));
+          parsed = orkParsed;
+          motor = orkParsed.motor;
+        }
 
         const motorMountComponent = parsed.components.find((c) => c.type === "bodytube" && c.isMotorMount);
         const bodyComponents = parsed.components.filter(isBodyComponent);
@@ -832,21 +845,20 @@ function wireOrkImport(): void {
 
         renderActiveRocketDisplay();
 
-        if (parsed.motor) {
+        if (motor) {
           const mfgEl = filterElement("manufacturer");
           const desEl = filterElement("designation");
-          if (mfgEl) mfgEl.value = parsed.motor.manufacturer;
-          if (desEl) desEl.value = parsed.motor.designation;
+          if (mfgEl) mfgEl.value = motor.manufacturer;
+          if (desEl) desEl.value = motor.designation;
           syncFormToUrl();
           void performSearch();
-          warningsEl.innerHTML += `<p><small>File's default motor was ${parsed.motor.manufacturer} ${parsed.motor.designation} — pre-filled the motor search below.</small></p>`;
+          warningsEl.innerHTML += `<p><small>File's default motor was ${motor.manufacturer} ${motor.designation} — pre-filled the motor search below.</small></p>`;
         }
       } catch (err) {
         warningsEl.innerHTML = `<p><mark>Failed to import: ${err instanceof Error ? err.message : String(err)}</mark></p>`;
         controlsEl.style.display = "none";
       }
-    };
-    reader.readAsArrayBuffer(file);
+    })();
   });
 }
 
