@@ -13,9 +13,9 @@ import {
 import { burnTime, getThrustAt, totalImpulse } from "./physics/motor/motor-model.js";
 import { deriveMotorMassCurve, getMotorMassAt } from "./physics/mass/motor-mass-curve.js";
 import { combinedMassAt } from "./physics/mass/combined-mass.js";
-import { simulateAscent } from "./physics/sim/engine.js";
+import { simulateFlight3D } from "./physics/sim/engine3d.js";
 import { parseSplashcastWindData, type SplashcastWindData } from "./physics/wind/splashcast-import.js";
-import { windAt } from "./model/wind.js";
+import { windAt, constantWindProfile, type WindProfile } from "./model/wind.js";
 
 const MM = 0.001;
 
@@ -432,7 +432,7 @@ async function selectMotor(meta: MotorSearchResult): Promise<void> {
       delay: 0,
     };
 
-    const rocketWithMotor: Rocket = { ...demoRocket, motor };
+    const rocketWithMotor: Rocket = { ...demoRocket, motor, windProfile: activeWindProfile };
     const massCurve = deriveMotorMassCurve(motor);
     const bt = burnTime(motor);
     const midT = bt / 2;
@@ -490,19 +490,21 @@ async function selectMotor(meta: MotorSearchResult): Promise<void> {
 
 function renderFlightSimSection(rocket: Rocket): string {
   const t0 = performance.now();
-  const result = simulateAscent(rocket);
+  const result = simulateFlight3D(rocket);
   const elapsedMs = performance.now() - t0;
 
   const warningsHtml = result.warnings.length
     ? `<p>${result.warnings.map((w) => `<mark>${w}</mark>`).join(" ")}</p>`
     : "";
 
+  const windLabel = rocket.windProfile ? "wind on" : "calm (no wind)";
   const stats = [
     stat("Apogee", `${result.apogeeAltitude.toFixed(1)} m`),
     stat("Time to apogee", `${result.apogeeTime.toFixed(2)} s`),
     stat("Max velocity", `${result.maxVelocity.toFixed(1)} m/s`),
     stat("Max Mach", result.maxMach.toFixed(3)),
     stat("Max acceleration", `${(result.maxAcceleration / 9.80665).toFixed(1)} g`),
+    stat("Tilt at burnout", result.tiltAtBurnoutDeg !== null ? `${result.tiltAtBurnoutDeg.toFixed(1)}°` : "—"),
   ].join("");
 
   const eventsRows = result.events
@@ -510,7 +512,13 @@ function renderFlightSimSection(rocket: Rocket): string {
     .join("");
 
   return `
-    <h3>Flight simulation <small>(ascent to apogee, no wind — M3)</small></h3>
+    <h3>Flight simulation <small>(ascent to apogee, ${windLabel} — M4)</small></h3>
+    <p><small>
+      Tilt from vertical at burnout is the meaningful weathercocking-severity number — tilt
+      naturally approaches ~90° for <em>any</em> stable rocket near its own apogee, as vertical
+      velocity vanishes and the relative airspeed becomes dominated by the horizontal wind, so
+      the flight-wide max isn't a useful stability indicator by itself.
+    </small></p>
     ${warningsHtml}
     <div class="grid stats-grid">${stats}</div>
     <figure>
@@ -572,16 +580,23 @@ function wireMotorSearch(): void {
 const windSectionHtml = `
   <article>
     <header>
-      <h2>Wind data <small>(altitude-varying import)</small></h2>
+      <h2>Wind data</h2>
       <p>
-        Upload a <code>splash_zones_captured_*.json</code> file (from the splashcast launch-day
-        predictor, itself a multi-model wind ensemble pulled from Open-Meteo) to inspect its
-        altitude-varying wind profile. This is the data-import side only — not yet consumed by the
-        flight sim above, that's M4 (weathercocking), which this is prep for. A plain constant
-        wind speed/direction is just a degenerate one-sample profile of the same shape
-        (see <code>constantWindProfile()</code>).
+        Sets the wind used by the flight simulation above (re-select a motor after changing wind
+        to re-run with the new setting). Either enter a plain constant wind, or upload a
+        <code>splash_zones_captured_*.json</code> file (from the splashcast launch-day predictor,
+        itself a multi-model wind ensemble pulled from Open-Meteo) for real altitude-varying data.
       </p>
     </header>
+    <div class="grid">
+      <label>Constant wind speed (m/s) <input type="number" id="wind-manual-speed" value="0" min="0" step="0.5" /></label>
+      <label>From direction (deg, compass) <input type="number" id="wind-manual-direction" value="0" min="0" max="360" step="5" /></label>
+      <div style="align-self: end;">
+        <button type="button" id="wind-manual-apply">Use constant wind</button>
+      </div>
+    </div>
+    <p id="wind-active-label"><small>Currently: calm (no wind).</small></p>
+    <hr />
     <input type="file" id="wind-file-input" accept=".json,application/json" />
     <div id="wind-controls" style="display:none; margin-top:1em;">
       <div class="grid">
@@ -594,6 +609,19 @@ const windSectionHtml = `
 `;
 
 let currentWindData: SplashcastWindData | null = null;
+let activeWindProfile: WindProfile | null = null;
+
+function updateActiveWindLabel(): void {
+  const labelEl = document.querySelector<HTMLParagraphElement>("#wind-active-label");
+  if (!labelEl) return;
+  if (!activeWindProfile || activeWindProfile.samples.length === 0) {
+    labelEl.innerHTML = "<small>Currently: calm (no wind).</small>";
+    return;
+  }
+  const ground = windAt(activeWindProfile, 0);
+  const label = activeWindProfile.label ?? "constant wind";
+  labelEl.innerHTML = `<small>Currently: ${label} — ${ground.speed.toFixed(1)} m/s from ${ground.directionFromDeg.toFixed(0)}° at ground level.</small>`;
+}
 
 function renderWindProfileTable(): void {
   const resultEl = document.querySelector<HTMLDivElement>("#wind-result");
@@ -637,7 +665,25 @@ function wireWindImport(): void {
   const hourEl = document.querySelector<HTMLSelectElement>("#wind-hour");
   const modelEl = document.querySelector<HTMLSelectElement>("#wind-model");
   const resultEl = document.querySelector<HTMLDivElement>("#wind-result");
-  if (!fileInput || !controlsEl || !hourEl || !modelEl || !resultEl) return;
+  const manualSpeedEl = document.querySelector<HTMLInputElement>("#wind-manual-speed");
+  const manualDirEl = document.querySelector<HTMLInputElement>("#wind-manual-direction");
+  const manualApplyBtn = document.querySelector<HTMLButtonElement>("#wind-manual-apply");
+  if (!fileInput || !controlsEl || !hourEl || !modelEl || !resultEl || !manualSpeedEl || !manualDirEl || !manualApplyBtn) return;
+
+  manualApplyBtn.addEventListener("click", () => {
+    const speed = Number(manualSpeedEl.value) || 0;
+    const direction = Number(manualDirEl.value) || 0;
+    activeWindProfile = speed > 0 ? constantWindProfile(speed, direction) : null;
+    updateActiveWindLabel();
+  });
+
+  const applySelectedProfile = (): void => {
+    if (!currentWindData) return;
+    const profile = currentWindData.profileFor(Number(hourEl.value), modelEl.value);
+    activeWindProfile = profile;
+    updateActiveWindLabel();
+    renderWindProfileTable();
+  };
 
   fileInput.addEventListener("change", () => {
     const file = fileInput.files?.[0];
@@ -662,10 +708,10 @@ function wireWindImport(): void {
         controlsEl.style.display = "";
         hourEl.onchange = () => {
           updateModels();
-          renderWindProfileTable();
+          applySelectedProfile();
         };
-        modelEl.onchange = renderWindProfileTable;
-        renderWindProfileTable();
+        modelEl.onchange = applySelectedProfile;
+        applySelectedProfile();
       } catch (err) {
         resultEl.innerHTML = `<p><mark>Failed to parse file: ${err instanceof Error ? err.message : String(err)}</mark></p>`;
         controlsEl.style.display = "none";
