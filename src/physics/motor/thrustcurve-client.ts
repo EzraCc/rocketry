@@ -36,7 +36,9 @@ interface SearchResponse {
 export async function searchMotors(query: {
   manufacturer?: string;
   designation?: string;
-  diameter?: number;
+  diameter?: number; // mm
+  type?: string;
+  impulseClass?: string;
   maxResults?: number;
 }): Promise<MotorSearchResult[]> {
   const res = await fetch(`${API_BASE}/search.json`, {
@@ -49,6 +51,36 @@ export async function searchMotors(query: {
   }
   const data = (await res.json()) as SearchResponse;
   return data.results ?? [];
+}
+
+export interface MotorMetadata {
+  manufacturers: { name: string; abbrev: string }[];
+  types: string[];
+  diameters: number[]; // mm
+  impulseClasses: string[];
+}
+
+interface MetadataResponse {
+  manufacturers: { name: string; abbrev: string }[];
+  certOrgs: { name: string; abbrev: string }[];
+  types: string[];
+  diameters: number[];
+  impulseClasses: string[];
+}
+
+/** Fetches the valid filter values for search — used to populate select boxes (manufacturer/diameter/type/impulseClass) rather than free-text guessing. */
+export async function getMotorMetadata(): Promise<MotorMetadata> {
+  const res = await fetch(`${API_BASE}/metadata.json`);
+  if (!res.ok) {
+    throw new Error(`ThrustCurve.org metadata fetch failed: ${res.status} ${res.statusText}`);
+  }
+  const data = (await res.json()) as MetadataResponse;
+  return {
+    manufacturers: data.manufacturers,
+    types: data.types,
+    diameters: data.diameters,
+    impulseClasses: data.impulseClasses,
+  };
 }
 
 export interface ThrustSample {

@@ -2,7 +2,12 @@ import { computeBarrowman, stabilityMargin } from "./physics/aero/barrowman.js";
 import { renderSchematicSvg } from "./ui/schematic/render.js";
 import { defaultRocket, type Rocket, type SelectedMotor } from "./model/rocket.js";
 import type { Component } from "./model/component.js";
-import { searchMotors, downloadThrustSamples, type MotorSearchResult } from "./physics/motor/thrustcurve-client.js";
+import {
+  searchMotors,
+  downloadThrustSamples,
+  getMotorMetadata,
+  type MotorSearchResult,
+} from "./physics/motor/thrustcurve-client.js";
 import { burnTime, getThrustAt, totalImpulse } from "./physics/motor/motor-model.js";
 import { deriveMotorMassCurve, getMotorMassAt } from "./physics/mass/motor-mass-curve.js";
 import { combinedMassAt } from "./physics/mass/combined-mass.js";
@@ -159,7 +164,10 @@ const motorSectionHtml = `
       rocket mass/CG at ignition, mid-burn, and burnout.
     </p>
     <form id="motor-search-form">
-      <label>Manufacturer: <input id="motor-mfg" type="text" value="Estes" size="12" /></label>
+      <label>Manufacturer: <select id="motor-mfg"><option value="">Loading...</option></select></label>
+      <label style="margin-left: 1em;">Diameter: <select id="motor-diameter"><option value="">Loading...</option></select></label>
+      <label style="margin-left: 1em;">Type: <select id="motor-type"><option value="">Loading...</option></select></label>
+      <label style="margin-left: 1em;">Impulse class: <select id="motor-impulse-class"><option value="">Loading...</option></select></label>
       <label style="margin-left: 1em;">Designation: <input id="motor-designation" type="text" value="C6" size="8" /></label>
       <button type="submit" style="margin-left: 1em;">Search</button>
     </form>
@@ -167,6 +175,35 @@ const motorSectionHtml = `
     <div id="motor-detail"></div>
   </section>
 `;
+
+function optionsHtml(values: string[], selected?: string): string {
+  const any = `<option value="">Any</option>`;
+  const rest = values
+    .map((v) => `<option value="${v}"${v === selected ? " selected" : ""}>${v}</option>`)
+    .join("");
+  return any + rest;
+}
+
+async function loadMotorMetadata(): Promise<void> {
+  const mfgEl = document.querySelector<HTMLSelectElement>("#motor-mfg");
+  const diaEl = document.querySelector<HTMLSelectElement>("#motor-diameter");
+  const typeEl = document.querySelector<HTMLSelectElement>("#motor-type");
+  const classEl = document.querySelector<HTMLSelectElement>("#motor-impulse-class");
+  if (!mfgEl || !diaEl || !typeEl || !classEl) return;
+
+  try {
+    const metadata = await getMotorMetadata();
+    mfgEl.innerHTML = optionsHtml(metadata.manufacturers.map((m) => m.abbrev), "Estes");
+    diaEl.innerHTML = optionsHtml(metadata.diameters.map((d) => String(d)));
+    typeEl.innerHTML = optionsHtml(metadata.types);
+    classEl.innerHTML = optionsHtml(metadata.impulseClasses);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    for (const el of [mfgEl, diaEl, typeEl, classEl]) {
+      el.innerHTML = `<option value="">(failed to load: ${message})</option>`;
+    }
+  }
+}
 
 function renderMotorResults(results: MotorSearchResult[]): string {
   if (results.length === 0) return "<p>No motors found.</p>";
@@ -256,13 +293,19 @@ function wireMotorSearch(): void {
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     void (async () => {
-      const mfg = (document.querySelector<HTMLInputElement>("#motor-mfg")?.value ?? "").trim();
+      const mfg = (document.querySelector<HTMLSelectElement>("#motor-mfg")?.value ?? "").trim();
+      const diameter = (document.querySelector<HTMLSelectElement>("#motor-diameter")?.value ?? "").trim();
+      const type = (document.querySelector<HTMLSelectElement>("#motor-type")?.value ?? "").trim();
+      const impulseClass = (document.querySelector<HTMLSelectElement>("#motor-impulse-class")?.value ?? "").trim();
       const designation = (document.querySelector<HTMLInputElement>("#motor-designation")?.value ?? "").trim();
       resultsEl.innerHTML = "<p>Searching...</p>";
       try {
         const results = await searchMotors({
           manufacturer: mfg || undefined,
           designation: designation || undefined,
+          diameter: diameter ? Number(diameter) : undefined,
+          type: type || undefined,
+          impulseClass: impulseClass || undefined,
         });
         resultsEl.innerHTML = renderMotorResults(results);
         resultsEl.querySelectorAll<HTMLAnchorElement>("a[data-motor-index]").forEach((a) => {
@@ -292,4 +335,5 @@ if (app) {
     ${motorSectionHtml}
   `;
   wireMotorSearch();
+  void loadMotorMetadata();
 }
