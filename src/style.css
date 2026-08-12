@@ -33,3 +33,13 @@ form#motor-search-form .grid {
   align-items: end;
   margin-bottom: 0.5rem;
 }
+
+th.sortable-th {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+th.sortable-th:hover {
+  color: var(--pico-primary);
+}

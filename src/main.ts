@@ -182,6 +182,47 @@ function renderRocketSection(
   `;
 }
 
+// --- Search filter defaults + URL param sync ---
+// Filters are reflected in the URL only when they differ from these
+// defaults, so a plain visit to the page keeps a clean URL, but changing any
+// filter (or loading a URL someone shared) makes the state shareable/bookmarkable.
+const FILTER_DEFAULTS = {
+  manufacturer: "AeroTech",
+  diameter: "",
+  type: "",
+  impulseClass: "",
+  designation: "",
+} as const;
+
+type FilterKey = keyof typeof FILTER_DEFAULTS;
+
+const FILTER_ELEMENT_IDS: Record<FilterKey, string> = {
+  manufacturer: "motor-mfg",
+  diameter: "motor-diameter",
+  type: "motor-type",
+  impulseClass: "motor-impulse-class",
+  designation: "motor-designation",
+};
+
+function filterElement(key: FilterKey): HTMLInputElement | HTMLSelectElement | null {
+  return document.getElementById(FILTER_ELEMENT_IDS[key]) as HTMLInputElement | HTMLSelectElement | null;
+}
+
+function urlFilterValue(key: FilterKey): string {
+  return new URLSearchParams(location.search).get(key) ?? FILTER_DEFAULTS[key];
+}
+
+/** Writes current filter values into the URL query string (via replaceState, so it doesn't spam browser history), omitting anything still at its default. */
+function syncFormToUrl(): void {
+  const params = new URLSearchParams();
+  for (const key of Object.keys(FILTER_DEFAULTS) as FilterKey[]) {
+    const value = filterElement(key)?.value.trim() ?? "";
+    if (value && value !== FILTER_DEFAULTS[key]) params.set(key, value);
+  }
+  const query = params.toString();
+  history.replaceState(null, "", query ? `${location.pathname}?${query}` : location.pathname);
+}
+
 const motorSectionHtml = `
   <article>
     <header>
@@ -209,7 +250,7 @@ const motorSectionHtml = `
           <select id="motor-impulse-class" aria-busy="true"><option value="">Loading…</option></select>
         </label>
         <label>Designation
-          <input id="motor-designation" type="text" value="C6" placeholder="e.g. C6" />
+          <input id="motor-designation" type="text" value="${urlFilterValue("designation")}" placeholder="e.g. C6" />
         </label>
       </div>
       <button type="submit">Search</button>
@@ -236,10 +277,10 @@ async function loadMotorMetadata(): Promise<void> {
 
   try {
     const metadata = await getMotorMetadata();
-    mfgEl.innerHTML = optionsHtml(metadata.manufacturers.map((m) => m.abbrev), "Estes");
-    diaEl.innerHTML = optionsHtml(metadata.diameters.map((d) => String(d)));
-    typeEl.innerHTML = optionsHtml(metadata.types);
-    classEl.innerHTML = optionsHtml(metadata.impulseClasses);
+    mfgEl.innerHTML = optionsHtml(metadata.manufacturers.map((m) => m.abbrev), urlFilterValue("manufacturer"));
+    diaEl.innerHTML = optionsHtml(metadata.diameters.map((d) => String(d)), urlFilterValue("diameter"));
+    typeEl.innerHTML = optionsHtml(metadata.types, urlFilterValue("type"));
+    classEl.innerHTML = optionsHtml(metadata.impulseClasses, urlFilterValue("impulseClass"));
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     for (const el of [mfgEl, diaEl, typeEl, classEl]) {
@@ -258,42 +299,105 @@ function num(value: number | undefined | null, digits = 2, unit = ""): string {
   return `${value.toFixed(digits)}${unit}`;
 }
 
-function renderMotorResults(results: MotorSearchResult[]): string {
-  if (results.length === 0) return "<p>No motors found.</p>";
-  const rows = results
-    .map(
-      (m, i) => `
-        <tr>
-          <td><a href="#" data-motor-index="${i}"><strong>${m.manufacturer} ${m.designation}</strong></a></td>
-          <td>${num(m.diameter, 0, " mm")}</td>
-          <td>${m.type}</td>
-          <td>${m.impulseClass}</td>
-          <td>${num(m.totImpulseNs, 2, " N·s")}</td>
-          <td>${num(m.burnTimeS, 2, " s")}</td>
-          <td>${num(m.totalWeightG, 1, " g")}</td>
-          <td>${num(m.propWeightG, 1, " g")}</td>
-        </tr>`,
-    )
+// --- Sortable results table ---
+interface MotorColumn {
+  key: string;
+  label: string;
+  format: (m: MotorSearchResult) => string;
+  value: (m: MotorSearchResult) => string | number | undefined;
+}
+
+const MOTOR_COLUMNS: MotorColumn[] = [
+  {
+    key: "motor",
+    label: "Motor",
+    format: (m) => `<a href="#" data-motor-index="__I__"><strong>${m.manufacturer} ${m.designation}</strong></a>`,
+    value: (m) => `${m.manufacturer} ${m.designation}`,
+  },
+  { key: "diameter", label: "Diameter", format: (m) => num(m.diameter, 0, " mm"), value: (m) => m.diameter },
+  { key: "type", label: "Type", format: (m) => m.type, value: (m) => m.type },
+  { key: "class", label: "Class", format: (m) => m.impulseClass, value: (m) => m.impulseClass },
+  {
+    key: "totImpulse",
+    label: "Total impulse",
+    format: (m) => num(m.totImpulseNs, 2, " N·s"),
+    value: (m) => m.totImpulseNs,
+  },
+  { key: "burnTime", label: "Burn time", format: (m) => num(m.burnTimeS, 2, " s"), value: (m) => m.burnTimeS },
+  {
+    key: "totalWeight",
+    label: "Total weight",
+    format: (m) => num(m.totalWeightG, 1, " g"),
+    value: (m) => m.totalWeightG,
+  },
+  {
+    key: "propWeight",
+    label: "Propellant weight",
+    format: (m) => num(m.propWeightG, 1, " g"),
+    value: (m) => m.propWeightG,
+  },
+];
+
+let currentResults: MotorSearchResult[] = [];
+let sortState: { key: string; dir: 1 | -1 } | null = null;
+
+function compareValues(a: string | number | undefined, b: string | number | undefined, dir: 1 | -1): number {
+  if (a === undefined && b === undefined) return 0;
+  if (a === undefined) return 1; // missing data always sorts last, regardless of direction
+  if (b === undefined) return -1;
+  if (typeof a === "number" && typeof b === "number") return (a - b) * dir;
+  return String(a).localeCompare(String(b)) * dir;
+}
+
+function sortedResults(): MotorSearchResult[] {
+  if (!sortState) return currentResults;
+  const column = MOTOR_COLUMNS.find((c) => c.key === sortState!.key);
+  if (!column) return currentResults;
+  return [...currentResults].sort((a, b) => compareValues(column.value(a), column.value(b), sortState!.dir));
+}
+
+function renderMotorResults(): string {
+  if (currentResults.length === 0) return "<p>No motors found.</p>";
+  const rows = sortedResults()
+    .map((m) => {
+      const realIndex = currentResults.indexOf(m);
+      const cells = MOTOR_COLUMNS.map((c) => `<td>${c.format(m).replace("__I__", String(realIndex))}</td>`).join("");
+      return `<tr>${cells}</tr>`;
+    })
     .join("");
+  const headers = MOTOR_COLUMNS.map((c) => {
+    const arrow = sortState?.key === c.key ? (sortState.dir === 1 ? " ▲" : " ▼") : "";
+    return `<th class="sortable-th" data-sort-key="${c.key}">${c.label}${arrow}</th>`;
+  }).join("");
   return `
     <figure>
       <table>
-        <thead>
-          <tr>
-            <th>Motor</th>
-            <th>Diameter</th>
-            <th>Type</th>
-            <th>Class</th>
-            <th>Total impulse</th>
-            <th>Burn time</th>
-            <th>Total weight</th>
-            <th>Propellant weight</th>
-          </tr>
-        </thead>
+        <thead><tr>${headers}</tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </figure>
   `;
+}
+
+function renderAndWireResults(): void {
+  const resultsEl = document.querySelector<HTMLDivElement>("#motor-results");
+  if (!resultsEl) return;
+  resultsEl.innerHTML = renderMotorResults();
+  resultsEl.querySelectorAll<HTMLAnchorElement>("a[data-motor-index]").forEach((a) => {
+    a.addEventListener("click", (evt) => {
+      evt.preventDefault();
+      const idx = Number(a.dataset["motorIndex"]);
+      const meta = currentResults[idx];
+      if (meta) void selectMotor(meta);
+    });
+  });
+  resultsEl.querySelectorAll<HTMLTableCellElement>("th[data-sort-key]").forEach((th) => {
+    th.addEventListener("click", () => {
+      const key = th.dataset["sortKey"]!;
+      sortState = sortState?.key === key ? { key, dir: sortState.dir === 1 ? -1 : 1 } : { key, dir: 1 };
+      renderAndWireResults();
+    });
+  });
 }
 
 async function selectMotor(meta: MotorSearchResult): Promise<void> {
@@ -380,46 +484,50 @@ async function selectMotor(meta: MotorSearchResult): Promise<void> {
   }
 }
 
+async function performSearch(): Promise<void> {
+  const resultsEl = document.querySelector<HTMLDivElement>("#motor-results");
+  const submitBtn = document.querySelector<HTMLButtonElement>("#motor-search-form button[type=submit]");
+  if (!resultsEl) return;
+
+  const mfg = filterElement("manufacturer")?.value.trim() ?? "";
+  const diameter = filterElement("diameter")?.value.trim() ?? "";
+  const type = filterElement("type")?.value.trim() ?? "";
+  const impulseClass = filterElement("impulseClass")?.value.trim() ?? "";
+  const designation = filterElement("designation")?.value.trim() ?? "";
+
+  resultsEl.innerHTML = '<p aria-busy="true">Searching…</p>';
+  submitBtn?.setAttribute("aria-busy", "true");
+  try {
+    currentResults = await searchMotors({
+      manufacturer: mfg || undefined,
+      designation: designation || undefined,
+      diameter: diameter ? Number(diameter) : undefined,
+      type: type || undefined,
+      impulseClass: impulseClass || undefined,
+    });
+    sortState = null;
+    renderAndWireResults();
+  } catch (err) {
+    resultsEl.innerHTML = `<p><mark>Search failed: ${err instanceof Error ? err.message : String(err)}</mark></p>`;
+  } finally {
+    submitBtn?.removeAttribute("aria-busy");
+  }
+}
+
 function wireMotorSearch(): void {
   const form = document.querySelector<HTMLFormElement>("#motor-search-form");
-  const resultsEl = document.querySelector<HTMLDivElement>("#motor-results");
-  const submitBtn = form?.querySelector<HTMLButtonElement>("button[type=submit]");
-  if (!form || !resultsEl) return;
+  if (!form) return;
 
   form.addEventListener("submit", (e) => {
     e.preventDefault();
-    void (async () => {
-      const mfg = (document.querySelector<HTMLSelectElement>("#motor-mfg")?.value ?? "").trim();
-      const diameter = (document.querySelector<HTMLSelectElement>("#motor-diameter")?.value ?? "").trim();
-      const type = (document.querySelector<HTMLSelectElement>("#motor-type")?.value ?? "").trim();
-      const impulseClass = (document.querySelector<HTMLSelectElement>("#motor-impulse-class")?.value ?? "").trim();
-      const designation = (document.querySelector<HTMLInputElement>("#motor-designation")?.value ?? "").trim();
-      resultsEl.innerHTML = '<p aria-busy="true">Searching…</p>';
-      submitBtn?.setAttribute("aria-busy", "true");
-      try {
-        const results = await searchMotors({
-          manufacturer: mfg || undefined,
-          designation: designation || undefined,
-          diameter: diameter ? Number(diameter) : undefined,
-          type: type || undefined,
-          impulseClass: impulseClass || undefined,
-        });
-        resultsEl.innerHTML = renderMotorResults(results);
-        resultsEl.querySelectorAll<HTMLAnchorElement>("a[data-motor-index]").forEach((a) => {
-          a.addEventListener("click", (evt) => {
-            evt.preventDefault();
-            const idx = Number(a.dataset["motorIndex"]);
-            const meta = results[idx];
-            if (meta) void selectMotor(meta);
-          });
-        });
-      } catch (err) {
-        resultsEl.innerHTML = `<p><mark>Search failed: ${err instanceof Error ? err.message : String(err)}</mark></p>`;
-      } finally {
-        submitBtn?.removeAttribute("aria-busy");
-      }
-    })();
+    syncFormToUrl();
+    void performSearch();
   });
+
+  for (const key of Object.keys(FILTER_DEFAULTS) as FilterKey[]) {
+    const el = filterElement(key);
+    el?.addEventListener(el.tagName === "SELECT" ? "change" : "input", syncFormToUrl);
+  }
 }
 
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -439,5 +547,10 @@ if (app) {
     </main>
   `;
   wireMotorSearch();
-  void loadMotorMetadata();
+  const urlParams = new URLSearchParams(location.search);
+  const hadUrlFilters = (Object.keys(FILTER_DEFAULTS) as FilterKey[]).some((k) => urlParams.has(k));
+  void loadMotorMetadata().then(() => {
+    // A shared/bookmarked search URL should actually run the search, not just preselect the filters.
+    if (hadUrlFilters) void performSearch();
+  });
 }
