@@ -330,6 +330,10 @@ function wireMassStatEdit(): void {
     activeDryMassKg = Math.max(motor ? enteredKg - motor.totalMassKg : enteredKg, 0);
     rederiveDryCg();
     renderActiveRocketDisplay();
+    // The motor search table's T:W column is computed against activeDryMassKg (see
+    // computeThrustToWeight) -- refresh it too, or it'd keep flagging ratios against the stale
+    // pre-edit mass.
+    renderAndWireResults();
     if (lastMotorSelection) {
       const detailEl = document.querySelector<HTMLDivElement>("#motor-detail");
       if (detailEl) {
@@ -610,6 +614,31 @@ interface MotorColumn {
   value: (m: MotorSearchResult) => string | number | undefined;
 }
 
+const STANDARD_GRAVITY = 9.80665; // m/s^2 -- for converting loaded mass to weight (thrust:weight ratio is a force:force comparison, not force:mass)
+
+/**
+ * Thrust:weight ratio using loaded weight (this rocket's current dry mass + the row's own motor
+ * mass) and the motor's peak thrust ("initial thrust" per the safety-rule convention this is
+ * checked against — the worst-case moment right off the pad, not the burn-averaged figure).
+ * Thresholds are the standard hobby-rocketry safety guidance: below 3:1 the rocket may not clear
+ * the launch rod with stable velocity (a real hazard, not just underperformance) — nogo. 3-5:1 is
+ * flyable but marginal. 5-7:1 is a normal, unremarkable ratio. Above 7:1 is comfortably brisk.
+ * Returns null when the motor's weight isn't published (unusual, but ThrustCurve.org does omit it
+ * for some entries) — nothing to flag without a real number.
+ */
+function computeThrustToWeight(m: MotorSearchResult): { ratio: number; label: string; color: string } | null {
+  if (m.totalWeightG === undefined || m.totalWeightG === null || Number.isNaN(m.totalWeightG)) return null;
+  if (m.maxThrustN === undefined || m.maxThrustN === null || Number.isNaN(m.maxThrustN)) return null;
+  const loadedMassKg = activeDryMassKg + m.totalWeightG / 1000;
+  const loadedWeightN = loadedMassKg * STANDARD_GRAVITY;
+  if (loadedWeightN <= 0) return null;
+  const ratio = m.maxThrustN / loadedWeightN;
+  if (ratio < 3) return { ratio, label: "nogo", color: "var(--pico-del-color, #c0392b)" };
+  if (ratio < 5) return { ratio, label: "marginal", color: "#b8860b" };
+  if (ratio <= 7) return { ratio, label: "ok", color: "inherit" };
+  return { ratio, label: "good", color: "var(--pico-ins-color, #2a8f4d)" };
+}
+
 const MOTOR_COLUMNS: MotorColumn[] = [
   {
     key: "motor",
@@ -639,10 +668,25 @@ const MOTOR_COLUMNS: MotorColumn[] = [
     value: (m) => m.totalWeightG,
   },
   {
-    key: "propWeight",
-    label: "Propellant weight",
-    format: (m) => (m.propWeightG === undefined || m.propWeightG === null || Number.isNaN(m.propWeightG) ? "—" : fmtMass(m.propWeightG / 1000)),
-    value: (m) => m.propWeightG,
+    key: "avgThrust",
+    label: "Avg thrust",
+    format: (m) => (m.avgThrustN === undefined || m.avgThrustN === null || Number.isNaN(m.avgThrustN) ? "—" : fmtForce(m.avgThrustN)),
+    value: (m) => m.avgThrustN,
+  },
+  {
+    key: "peakThrust",
+    label: "Peak (initial) thrust",
+    format: (m) => (m.maxThrustN === undefined || m.maxThrustN === null || Number.isNaN(m.maxThrustN) ? "—" : fmtForce(m.maxThrustN)),
+    value: (m) => m.maxThrustN,
+  },
+  {
+    key: "thrustToWeight",
+    label: "T:W (loaded)",
+    format: (m) => {
+      const tw = computeThrustToWeight(m);
+      return tw ? `<span style="color: ${tw.color};">${tw.ratio.toFixed(1)}:1 — ${tw.label}</span>` : "—";
+    },
+    value: (m) => computeThrustToWeight(m)?.ratio,
   },
 ];
 
@@ -1160,6 +1204,7 @@ function wireOrkImport(): void {
 
         syncCgInputFromActiveRocket();
         renderActiveRocketDisplay();
+        renderAndWireResults(); // this rocket's dry mass changed -- keep the motor table's T:W column in sync
 
         if (motor) {
           const mfgEl = filterElement("manufacturer");
@@ -1318,6 +1363,7 @@ async function selectLibraryEntry(entry: LibraryManifestEntry): Promise<void> {
     if (pickerEl) pickerEl.open = false;
     syncCgInputFromActiveRocket();
     renderActiveRocketDisplay();
+    renderAndWireResults(); // this rocket's dry mass changed -- keep the motor table's T:W column in sync
   } catch (err) {
     if (warningsEl) warningsEl.innerHTML = `<p><mark>Failed to load ${entry.name}: ${err instanceof Error ? err.message : String(err)}</mark></p>`;
   }
