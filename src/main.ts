@@ -1,7 +1,7 @@
 import "@picocss/pico/css/pico.indigo.min.css";
 import "./style.css";
 import { computeBarrowman, stabilityMargin } from "./physics/aero/barrowman.js";
-import { overallLength } from "./physics/geometry/rocket-geometry.js";
+import { overallLength, referenceDiameter } from "./physics/geometry/rocket-geometry.js";
 import { checkStability } from "./physics/aero/stability-check.js";
 import { renderSchematicSvg } from "./ui/schematic/render.js";
 import { defaultRocket, type Rocket, type SelectedMotor } from "./model/rocket.js";
@@ -123,7 +123,7 @@ async function loadLibraryManifest(): Promise<LibraryManifestEntry[]> {
  * estimatedDryMassKg over the generic placeholder when available).
  */
 function applyParsedRocket(
-  parsed: { name: string; components: Component[]; estimatedDryMassKg?: number },
+  parsed: { name: string; components: Component[]; estimatedDryMassKg?: number; motorMountDiameterM?: number },
   source: string,
   knownCp?: { label: string; mm: number }[],
   displayName?: string,
@@ -134,6 +134,13 @@ function applyParsedRocket(
   const massEl = document.querySelector<HTMLInputElement>("#ork-dry-mass");
   const dryMass =
     parsed.estimatedDryMassKg && parsed.estimatedDryMassKg > 0 ? parsed.estimatedDryMassKg : massFromInput(Number(massEl?.value) || 50);
+
+  // Only .rkt files carry a real motor-mount-tube diameter (see parseRocksimXml's
+  // motorMountDiameterM doc comment) -- .ork/.CDX1 uploads and files with no separately-flagged
+  // inner tube fall back to the reference (outer body) diameter, which for a minimum-diameter
+  // build genuinely IS what the motor sits in.
+  activeMotorMountDiameterMm = (parsed.motorMountDiameterM ?? referenceDiameter(parsed.components)) * 1000;
+  syncMotorMountUi();
 
   activeRocket = {
     ...defaultRocket(),
@@ -165,6 +172,8 @@ let activeRocket: Rocket = defaultRocket();
 /** Reference CP values to show alongside the active rocket, when it came from a library entry with known-good values to compare against — cleared when a file is uploaded instead. */
 let activeKnownCp: { label: string; mm: number }[] | undefined;
 let activeRocketSource = "Loading the rocket library…";
+/** Set by applyParsedRocket — the actual motor-fitting diameter (mm), used to pre-fill and constrain the motor search's diameter filter. Real value when available, else the rocket's own reference (outer body) diameter. */
+let activeMotorMountDiameterMm: number | null = null;
 
 function stat(label: string, value: string, infoTooltip?: string): string {
   const info = infoTooltip
@@ -303,6 +312,11 @@ const motorSectionHtml = `
           <input id="motor-common-name" type="text" value="${urlFilterValue("commonName")}" placeholder="e.g. C6, K400" />
         </label>
       </div>
+      <p id="motor-mount-note"><small></small></p>
+      <label>
+        <input type="checkbox" id="motor-adapter-checkbox" />
+        Use motor adapter — allow smaller motors too (e.g. a 75mm mount can adapt down to 54 or 38mm)
+      </label>
       <button type="submit">Search</button>
     </form>
     <div id="motor-results"></div>
@@ -318,6 +332,44 @@ function optionsHtml(values: string[], selected?: string): string {
   return any + rest;
 }
 
+/**
+ * ThrustCurve.org's own metadata.diameters includes a handful of clearly-bogus entries (values
+ * like 10100, 13000mm — over a meter across, not a real motor size, presumably a data-entry
+ * error for a specific listing) alongside the real standard case sizes (6mm up through 161mm).
+ * Filtering to <200mm is a real, verified sanity bound (checked live against the actual API
+ * response), not an arbitrary guess -- every genuine motor diameter is well under that.
+ */
+let standardMotorDiametersMm: number[] = [];
+
+/** Nearest entry in standardMotorDiametersMm to a raw (e.g. geometry-derived) mm value — needed because ThrustCurve.org's diameter filter only matches its own exact standard values, not arbitrary measured numbers. */
+function nearestStandardDiameterMm(mm: number): number | null {
+  if (standardMotorDiametersMm.length === 0) return null;
+  return standardMotorDiametersMm.reduce((best, d) => (Math.abs(d - mm) < Math.abs(best - mm) ? d : best));
+}
+
+/** Standard diameters at or below a mount size, largest first — the search space for "use motor adapter" (a motor sized for a smaller mount always fits a bigger one via an adapter). */
+function standardDiametersAtOrBelow(mm: number): number[] {
+  const nearest = nearestStandardDiameterMm(mm);
+  if (nearest === null) return [];
+  return standardMotorDiametersMm.filter((d) => d <= nearest).sort((a, b) => b - a);
+}
+
+/** Updates the motor-mount note text and (re)syncs the Diameter select to the active rocket's mount — called whenever a rocket loads or the metadata (hence the select's options) finishes loading, so whichever happens first still ends up consistent. */
+function syncMotorMountUi(): void {
+  const noteEl = document.querySelector<HTMLElement>("#motor-mount-note small");
+  const diaEl = document.querySelector<HTMLSelectElement>("#motor-diameter");
+  if (!noteEl) return;
+  if (activeMotorMountDiameterMm === null) {
+    noteEl.textContent = "";
+    return;
+  }
+  const nearest = nearestStandardDiameterMm(activeMotorMountDiameterMm);
+  noteEl.textContent = `Motor mount: ${fmtLength(activeMotorMountDiameterMm / 1000)} — diameter filter set to the closest standard size${nearest !== null ? ` (${nearest}mm)` : ""}. Check "use motor adapter" to also allow smaller motors.`;
+  if (diaEl && nearest !== null && [...diaEl.options].some((o) => o.value === String(nearest))) {
+    diaEl.value = String(nearest);
+  }
+}
+
 async function loadMotorMetadata(): Promise<void> {
   const mfgEl = document.querySelector<HTMLSelectElement>("#motor-mfg");
   const diaEl = document.querySelector<HTMLSelectElement>("#motor-diameter");
@@ -331,6 +383,8 @@ async function loadMotorMetadata(): Promise<void> {
     diaEl.innerHTML = optionsHtml(metadata.diameters.map((d) => String(d)), urlFilterValue("diameter"));
     typeEl.innerHTML = optionsHtml(metadata.types, urlFilterValue("type"));
     classEl.innerHTML = optionsHtml(metadata.impulseClasses, urlFilterValue("impulseClass"));
+    standardMotorDiametersMm = metadata.diameters.filter((d) => d < 200).sort((a, b) => a - b);
+    syncMotorMountUi();
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     for (const el of [mfgEl, diaEl, typeEl, classEl]) {
@@ -673,17 +727,33 @@ async function performSearch(): Promise<void> {
   const type = filterElement("type")?.value.trim() ?? "";
   const impulseClass = filterElement("impulseClass")?.value.trim() ?? "";
   const commonName = filterElement("commonName")?.value.trim() ?? "";
+  const useAdapter = document.querySelector<HTMLInputElement>("#motor-adapter-checkbox")?.checked ?? false;
+
+  const baseQuery = {
+    manufacturer: mfg || undefined,
+    commonName: commonName || undefined,
+    type: type || undefined,
+    impulseClass: impulseClass || undefined,
+  };
 
   resultsEl.innerHTML = '<p aria-busy="true">Searching…</p>';
   submitBtn?.setAttribute("aria-busy", "true");
   try {
-    currentResults = await searchMotors({
-      manufacturer: mfg || undefined,
-      commonName: commonName || undefined,
-      diameter: diameter ? Number(diameter) : undefined,
-      type: type || undefined,
-      impulseClass: impulseClass || undefined,
-    });
+    // "Use motor adapter": ThrustCurve.org's diameter filter only accepts one exact value per
+    // request (confirmed against the live API — no array/range support), so searching "this mount
+    // size or smaller" means one request per standard diameter at or below the mount, merged and
+    // deduped by motorId. Ignores the plain Diameter select in that case (adapter is the broader
+    // query); with it unchecked, behaves exactly as before -- a single request at whatever
+    // diameter is selected.
+    if (useAdapter && activeMotorMountDiameterMm !== null) {
+      const candidates = standardDiametersAtOrBelow(activeMotorMountDiameterMm);
+      const resultSets = await Promise.all(candidates.map((d) => searchMotors({ ...baseQuery, diameter: d })));
+      const merged = new Map<string, MotorSearchResult>();
+      for (const results of resultSets) for (const r of results) merged.set(r.motorId, r);
+      currentResults = [...merged.values()];
+    } else {
+      currentResults = await searchMotors({ ...baseQuery, diameter: diameter ? Number(diameter) : undefined });
+    }
     sortState = null;
     renderAndWireResults();
   } catch (err) {
