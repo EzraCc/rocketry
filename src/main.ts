@@ -45,131 +45,101 @@ import {
 const MM = 0.001;
 
 /**
- * A curated, pre-vetted rocket a user can pick from a dropdown instead of
- * needing their own .ork/.rkt/.CDX1 file — the point being mobile users
- * (for whom "upload a file" is often awkward) and anyone who just wants to
- * try the tool can test a real, known rocket immediately. Compiled from
- * vendor-published files with permission; start small (just LOC-IV, already
- * validated elsewhere in this project against RockSim's own stored CP) and
- * grow over time.
+ * One entry in the pre-generated `public/library/manifest.json` — a small
+ * index (name/vendor/path/rounded dimensions) covering every curated
+ * vendor rocket, loaded eagerly so the browse/filter UI is instant, while
+ * the actual per-rocket geometry (a real .rkt file, fetched and parsed on
+ * demand — see applyParsedRocket) is only fetched once a user actually
+ * selects that entry. Compiled from vendor-published files with
+ * permission: LOC Precision (1), Apogee (2), Mach1 (108 after removing
+ * exact-duplicate saves), Wildman (153 after content-based dedup — see the
+ * curation notes in this project's session history for why a naive
+ * filename or overall-size dedup would have wrongly merged distinct
+ * rockets that happen to share a common airframe tube).
  */
-interface RocketLibraryEntry {
+interface LibraryManifestEntry {
   id: string;
+  vendor: string;
   name: string;
-  source: string;
-  components: Component[];
-  /**
-   * kg — real, sourced dry mass (never the generic defaultRocket() 50g
-   * placeholder, which is 20x+ too light for anything but a very small
-   * rocket and produces absurd thrust-to-weight/altitude results on a real
-   * motor). CG is deliberately not included here — see the .rkt upload
-   * path's identical reasoning (main.ts's fileInput handler / parse.ts's
-   * doc comment): every part's CG in the source file is local to that
-   * part's own coordinate frame, and correctly resolving nested/internal
-   * parts' frames wasn't done, so CG stays 0 (unset), forcing the user to
-   * enter it rather than shipping a confidently-wrong number.
-   */
-  dryMassKg: number;
-  knownCp?: { label: string; mm: number }[];
+  path: string; // relative to the site root, e.g. "library/apogee/Zephyr.rkt"
+  diameterMm: number;
+  lengthMm: number;
+  warnings: boolean;
 }
 
-// LOC Precision "PK-48 LOC-IV" (sim-files/LOC/PK-48 Loc-IV.rkt). Geometry
-// transcribed from that RockSim file; the fin is a RockSim CustomFinSet (a
-// 5-point clipped-delta polygon), carried through exactly via
-// FreeformFinSet rather than approximated as a trapezoid. See
-// scripts/validate-loc-iv.ts for the original derivation and
-// src/physics/aero/freeform-fin-calc.test.ts for the regression fixture.
-const locIvComponents: Component[] = [
-  {
-    type: "nosecone",
-    id: "loc-nose",
-    name: "Nose cone",
-    shape: "ogive",
-    shapeParameter: 1,
-    length: 325.12 * MM,
-    aftRadius: (101.6 / 2) * MM,
-    thickness: 3.175 * MM,
-  },
-  {
-    type: "bodytube",
-    id: "loc-tube1",
-    name: "Body tube (fwd)",
-    length: 279.4 * MM,
-    radius: (101.6 / 2) * MM,
-    thickness: 0,
-    isMotorMount: false,
-  },
-  {
-    type: "bodytube",
-    id: "loc-tube2",
-    name: "Body tube (aft, carries fins)",
-    length: 584.2 * MM,
-    radius: (101.6 / 2) * MM,
-    thickness: 0,
-    isMotorMount: false,
-  },
-  {
-    type: "freeformfinset",
-    id: "loc-fins",
-    name: "Fin set (RockSim CustomFinSet)",
-    finCount: 3,
-    points: [
-      [171.45 * MM, 0],
-      [206.375 * MM, 31.75 * MM],
-      [206.375 * MM, 107.95 * MM],
-      [142.875 * MM, 107.95 * MM],
-      [0, 0],
-    ],
-    thickness: 3 * MM,
-    cantAngle: 0,
-    axialOffsetFromParentBottom: 412.75 * MM,
-  },
-];
+let libraryManifest: LibraryManifestEntry[] = [];
 
-const ROCKET_LIBRARY: RocketLibraryEntry[] = [
-  {
-    id: "loc-iv",
-    name: 'LOC Precision "PK-48 LOC-IV"',
-    source: "Transcribed from sim-files/LOC/PK-48 Loc-IV.rkt",
-    components: locIvComponents,
-    // Sum of that file's own 12 <CalcMass> entries (verified in
-    // src/formats/rocksim/parse.test.ts against the same fixture via
-    // parseRocksimXml's estimatedDryMassKg) — a real ~4in/1.2m rocket's
-    // structural mass, not the ~50g a blank-rocket default would imply.
-    dryMassKg: 1.10517226,
-    knownCp: [
-      { label: "RockSim classical Barrowman CP (BarromanXN)", mm: 899.247 },
-      { label: "RockSim proprietary extended-method CP (RockSimXN)", mm: 972.645 },
-    ],
-  },
-];
+/** Reference CP values to show for library entries with a known-good independent value to compare against (currently just LOC-IV, validated elsewhere in this project against RockSim's own stored CP) — keyed by manifest id, absent for everything else. */
+const LIBRARY_KNOWN_CP: Record<string, { label: string; mm: number }[]> = {
+  "loc-0": [
+    { label: "RockSim classical Barrowman CP (BarromanXN)", mm: 899.247 },
+    { label: "RockSim proprietary extended-method CP (RockSimXN)", mm: 972.645 },
+  ],
+};
 
-function rocketFromLibraryEntry(entry: RocketLibraryEntry): Rocket {
-  const motorMountComponent = entry.components.find((c) => c.type === "bodytube" && c.isMotorMount);
-  const bodyComponents = entry.components.filter(isBodyComponent);
+/**
+ * Nearest half-inch nominal tube size. Rockets built on "the same" nominal
+ * diameter still measure a millimeter or two apart depending on
+ * construction (cardboard vs. fiberglass, thin- vs. thick-wall) — bucketing
+ * at half-inch resolution collapses that construction noise into one
+ * filterable category instead of spawning a near-duplicate 0.0x" bucket per
+ * rocket, while still keeping genuinely different tube sizes (which differ
+ * by much more than half an inch in this library) apart.
+ */
+function nominalDiameterIn(mm: number): number {
+  return Math.round((mm / 25.4) * 2) / 2;
+}
+
+async function loadLibraryManifest(): Promise<LibraryManifestEntry[]> {
+  const res = await fetch("library/manifest.json");
+  if (!res.ok) throw new Error(`Failed to load the rocket library manifest (HTTP ${res.status})`);
+  return (await res.json()) as LibraryManifestEntry[];
+}
+
+/**
+ * Builds and sets activeRocket from a freshly-parsed .rkt/.ork/.CDX1 result
+ * — shared by both the library-select path (fetch + parseRocksimXml) and
+ * the file-upload path, since both need the identical motor-mount
+ * detection and mass-prefill rules (never guess CG; prefer a file's own
+ * estimatedDryMassKg over the generic placeholder when available).
+ */
+function applyParsedRocket(
+  parsed: { name: string; components: Component[]; estimatedDryMassKg?: number },
+  source: string,
+  knownCp?: { label: string; mm: number }[],
+): void {
+  const motorMountComponent = parsed.components.find((c) => c.type === "bodytube" && c.isMotorMount);
+  const bodyComponents = parsed.components.filter(isBodyComponent);
   const motorMountId = motorMountComponent?.id ?? bodyComponents[bodyComponents.length - 1]?.id ?? "";
-  return {
+  const massEl = document.querySelector<HTMLInputElement>("#ork-dry-mass");
+  const dryMass =
+    parsed.estimatedDryMassKg && parsed.estimatedDryMassKg > 0 ? parsed.estimatedDryMassKg : massFromInput(Number(massEl?.value) || 50);
+
+  activeRocket = {
     ...defaultRocket(),
-    name: entry.name,
-    components: entry.components,
-    dryMass: entry.dryMassKg,
+    name: parsed.name,
+    components: parsed.components,
+    dryMass,
+    dryCg: 0, // forces the user to actually enter it -- never guessed from geometry
     motorMount: { componentId: motorMountId, motorOverhang: 0 },
   };
+  activeKnownCp = knownCp;
+  activeRocketSource = source;
 }
 
 /**
  * The rocket the motor-select/flight-sim section below actually runs
- * against — starts as the first library entry, replaced wholesale either by
- * picking a different library entry or by uploading a real
- * .ork/.rkt/.CDX1 file. Kept as a single mutable binding (rather than
- * threading a rocket parameter through selectMotor et al.) since this
- * file's whole render flow is already imperative DOM manipulation, not a
- * framework with real state management.
+ * against — starts empty (see initLibrary, which loads a real default
+ * asynchronously) and is replaced wholesale by picking a library entry or
+ * uploading a real .ork/.rkt/.CDX1 file. Kept as a single mutable binding
+ * (rather than threading a rocket parameter through selectMotor et al.)
+ * since this file's whole render flow is already imperative DOM
+ * manipulation, not a framework with real state management.
  */
-let activeRocket: Rocket = rocketFromLibraryEntry(ROCKET_LIBRARY[0]!);
+let activeRocket: Rocket = defaultRocket();
 /** Reference CP values to show alongside the active rocket, when it came from a library entry with known-good values to compare against — cleared when a file is uploaded instead. */
-let activeKnownCp: { label: string; mm: number }[] | undefined = ROCKET_LIBRARY[0]!.knownCp;
-let activeRocketSource = `From the library: ${ROCKET_LIBRARY[0]!.source}`;
+let activeKnownCp: { label: string; mm: number }[] | undefined;
+let activeRocketSource = "Loading the rocket library…";
 
 function stat(label: string, value: string): string {
   return `<div><strong>${value}</strong><br /><small>${label}</small></div>`;
@@ -882,12 +852,16 @@ const orkSectionHtml = `
         data at all, only mount geometry, so you'll need to search for a motor yourself either way).
       </p>
     </header>
-    <div class="grid">
-      <label>Library
-        <select id="rocket-library-select">
-          ${ROCKET_LIBRARY.map((entry, i) => `<option value="${i}">${entry.name}</option>`).join("")}
-        </select>
-      </label>
+    <details id="library-picker">
+      <summary role="button" class="outline">Browse the rocket library</summary>
+      <div class="grid">
+        <label>Vendor <select id="lib-filter-vendor"><option value="">Any</option></select></label>
+        <label>Diameter <select id="lib-filter-diameter"><option value="">Any</option></select></label>
+        <label>Name <input type="text" id="lib-filter-name" placeholder="e.g. Darkstar" /></label>
+      </div>
+      <div id="library-results"><p><small>Filter by vendor, diameter, or name above to browse.</small></p></div>
+    </details>
+    <div class="grid" style="margin-top:1em;">
       <label>Or upload a file
         <input type="file" id="ork-file-input" accept=".ork,.rkt,.CDX1" />
       </label>
@@ -917,12 +891,11 @@ function syncMassCgInputsFromActiveRocket(): void {
 
 function wireOrkImport(): void {
   const fileInput = document.querySelector<HTMLInputElement>("#ork-file-input");
-  const librarySelect = document.querySelector<HTMLSelectElement>("#rocket-library-select");
   const warningsEl = document.querySelector<HTMLDivElement>("#ork-warnings");
   const controlsEl = document.querySelector<HTMLDivElement>("#ork-mass-cg-controls");
   const massEl = document.querySelector<HTMLInputElement>("#ork-dry-mass");
   const cgEl = document.querySelector<HTMLInputElement>("#ork-dry-cg");
-  if (!fileInput || !librarySelect || !warningsEl || !controlsEl || !massEl || !cgEl) return;
+  if (!fileInput || !warningsEl || !controlsEl || !massEl || !cgEl) return;
 
   const applyMassCg = (): void => {
     const dryMass = massFromInput(Number(massEl.value) || 0);
@@ -932,17 +905,6 @@ function wireOrkImport(): void {
   };
   massEl.addEventListener("input", applyMassCg);
   cgEl.addEventListener("input", applyMassCg);
-
-  librarySelect.addEventListener("change", () => {
-    const entry = ROCKET_LIBRARY[Number(librarySelect.value)];
-    if (!entry) return;
-    activeRocket = rocketFromLibraryEntry(entry);
-    activeKnownCp = entry.knownCp;
-    activeRocketSource = `From the library: ${entry.source}`;
-    syncMassCgInputsFromActiveRocket();
-    warningsEl.innerHTML = `<p><small>Loaded "${entry.name}" from the library (${entry.source}).</small></p>`;
-    renderActiveRocketDisplay();
-  });
 
   fileInput.addEventListener("change", () => {
     const file = fileInput.files?.[0];
@@ -969,27 +931,7 @@ function wireOrkImport(): void {
           motor = orkParsed.motor;
         }
 
-        const motorMountComponent = parsed.components.find((c) => c.type === "bodytube" && c.isMotorMount);
-        const bodyComponents = parsed.components.filter(isBodyComponent);
-        const motorMountId = motorMountComponent?.id ?? bodyComponents[bodyComponents.length - 1]?.id ?? "";
-
-        // RockSim files carry a real, sourced mass estimate (sum of the file's own per-part
-        // <CalcMass> — see parseRocksimXml's doc comment); prefer it over the generic
-        // fallback/placeholder, which is wildly wrong for anything but a very light rocket. CG has
-        // no equivalent — stays 0 (unset) so the UI forces the user to actually enter it.
-        const dryMass =
-          parsed.estimatedDryMassKg && parsed.estimatedDryMassKg > 0 ? parsed.estimatedDryMassKg : massFromInput(Number(massEl.value) || 50);
-
-        activeRocket = {
-          ...defaultRocket(),
-          name: parsed.name,
-          components: parsed.components,
-          dryMass,
-          dryCg: 0, // forces the user to actually enter it -- never guessed from geometry
-          motorMount: { componentId: motorMountId, motorOverhang: 0 },
-        };
-        activeKnownCp = undefined; // no reference values for an uploaded file
-        activeRocketSource = `Uploaded: ${file.name}`;
+        applyParsedRocket(parsed, `Uploaded: ${file.name}`, undefined);
 
         controlsEl.style.display = "";
         const massNote =
@@ -1023,6 +965,136 @@ function wireOrkImport(): void {
   });
 }
 
+/** Populates the vendor/diameter filter <select>s from whatever's actually in the loaded manifest — never hardcoded, so a future library addition (new vendor, new diameter class) just works without a UI change. */
+function populateLibraryFilterOptions(): void {
+  const vendorSelect = document.querySelector<HTMLSelectElement>("#lib-filter-vendor");
+  const diameterSelect = document.querySelector<HTMLSelectElement>("#lib-filter-diameter");
+  if (!vendorSelect || !diameterSelect) return;
+
+  const vendors = [...new Set(libraryManifest.map((e) => e.vendor))].sort();
+  vendorSelect.innerHTML = `<option value="">Any</option>${vendors.map((v) => `<option value="${v}">${v}</option>`).join("")}`;
+
+  const diameters = [...new Set(libraryManifest.map((e) => nominalDiameterIn(e.diameterMm)))].sort((a, b) => a - b);
+  diameterSelect.innerHTML = `<option value="">Any</option>${diameters.map((d) => `<option value="${d}">${d}" (${(d * 25.4).toFixed(0)}mm class)</option>`).join("")}`;
+}
+
+/**
+ * Live client-side filter over the already-loaded manifest (no network
+ * round-trip per keystroke, unlike the ThrustCurve.org motor search) —
+ * shows nothing until at least one filter is active, per this library's
+ * design: with 260+ entries, an unfiltered dump isn't useful, and the
+ * empty state should read as "search me," not "broken."
+ */
+function renderLibraryResults(): void {
+  const resultsEl = document.querySelector<HTMLDivElement>("#library-results");
+  const vendorSelect = document.querySelector<HTMLSelectElement>("#lib-filter-vendor");
+  const diameterSelect = document.querySelector<HTMLSelectElement>("#lib-filter-diameter");
+  const nameInput = document.querySelector<HTMLInputElement>("#lib-filter-name");
+  if (!resultsEl || !vendorSelect || !diameterSelect || !nameInput) return;
+
+  const vendor = vendorSelect.value;
+  const diameter = diameterSelect.value ? Number(diameterSelect.value) : null;
+  const nameQuery = nameInput.value.trim().toLowerCase();
+
+  if (!vendor && diameter === null && !nameQuery) {
+    resultsEl.innerHTML = "<p><small>Filter by vendor, diameter, or name above to browse.</small></p>";
+    return;
+  }
+
+  const matches = libraryManifest.filter((e) => {
+    if (vendor && e.vendor !== vendor) return false;
+    if (diameter !== null && nominalDiameterIn(e.diameterMm) !== diameter) return false;
+    if (nameQuery && !e.name.toLowerCase().includes(nameQuery)) return false;
+    return true;
+  });
+
+  if (matches.length === 0) {
+    resultsEl.innerHTML = "<p><small>No matches.</small></p>";
+    return;
+  }
+
+  const rows = matches
+    .slice(0, 200) // a broad filter (e.g. vendor-only) can still match 100+; cap the DOM cost, name/diameter narrows it down fast
+    .map(
+      (e) =>
+        `<tr><td>${e.vendor}</td><td>${e.name}</td><td>${nominalDiameterIn(e.diameterMm)}"</td><td>${fmtAltitude(e.lengthMm / 1000)}</td><td><a href="#" data-lib-id="${e.id}">Select</a></td></tr>`,
+    )
+    .join("");
+  const truncatedNote = matches.length > 200 ? `<p><small>${matches.length} matches, showing first 200 — narrow the filter to see more.</small></p>` : "";
+
+  resultsEl.innerHTML = `
+    ${truncatedNote}
+    <figure>
+      <table>
+        <thead><tr><th>Vendor</th><th>Name</th><th>Diameter</th><th>Length</th><th></th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </figure>
+  `;
+
+  resultsEl.querySelectorAll<HTMLAnchorElement>("a[data-lib-id]").forEach((a) => {
+    a.addEventListener("click", (evt) => {
+      evt.preventDefault();
+      const entry = libraryManifest.find((e) => e.id === a.dataset["libId"]);
+      if (entry) void selectLibraryEntry(entry);
+    });
+  });
+}
+
+/** Fetches and parses the selected library entry's real .rkt file (only now, not for all 260+ entries up front) and makes it the active rocket. */
+async function selectLibraryEntry(entry: LibraryManifestEntry): Promise<void> {
+  const warningsEl = document.querySelector<HTMLDivElement>("#ork-warnings");
+  const controlsEl = document.querySelector<HTMLDivElement>("#ork-mass-cg-controls");
+  const pickerEl = document.querySelector<HTMLDetailsElement>("#library-picker");
+  if (warningsEl) warningsEl.innerHTML = `<p aria-busy="true">Loading ${entry.name}…</p>`;
+
+  try {
+    const res = await fetch(entry.path);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const parsed = parseRocksimXml(await res.text());
+    applyParsedRocket(parsed, `From the library: ${entry.vendor} — ${entry.name}`, LIBRARY_KNOWN_CP[entry.id]);
+
+    if (controlsEl) controlsEl.style.display = "";
+    if (warningsEl) {
+      const parseNote = parsed.warnings.length
+        ? parsed.warnings.map((w) => `<mark>${w}</mark>`).join(" ")
+        : `<small>Loaded "${entry.name}" from the library.</small>`;
+      warningsEl.innerHTML = `<p>${parseNote}</p>`;
+    }
+    if (pickerEl) pickerEl.open = false;
+    syncMassCgInputsFromActiveRocket();
+    renderActiveRocketDisplay();
+  } catch (err) {
+    if (warningsEl) warningsEl.innerHTML = `<p><mark>Failed to load ${entry.name}: ${err instanceof Error ? err.message : String(err)}</mark></p>`;
+  }
+}
+
+function wireLibraryPicker(): void {
+  const vendorSelect = document.querySelector<HTMLSelectElement>("#lib-filter-vendor");
+  const diameterSelect = document.querySelector<HTMLSelectElement>("#lib-filter-diameter");
+  const nameInput = document.querySelector<HTMLInputElement>("#lib-filter-name");
+  if (!vendorSelect || !diameterSelect || !nameInput) return;
+
+  vendorSelect.addEventListener("change", renderLibraryResults);
+  diameterSelect.addEventListener("change", renderLibraryResults);
+  nameInput.addEventListener("input", renderLibraryResults);
+}
+
+/** Loads the manifest, populates the browse UI, and picks LOC-IV as the initial active rocket (the one entry with independently-verified known-good CP values to show alongside this tool's own computed CP by default) — runs once at startup. */
+async function initLibrary(): Promise<void> {
+  try {
+    libraryManifest = await loadLibraryManifest();
+    populateLibraryFilterOptions();
+    wireLibraryPicker();
+
+    const defaultEntry = libraryManifest.find((e) => e.id === "loc-0") ?? libraryManifest[0];
+    if (defaultEntry) await selectLibraryEntry(defaultEntry);
+  } catch (err) {
+    activeRocketSource = `Failed to load the rocket library: ${err instanceof Error ? err.message : String(err)} — upload a file instead.`;
+    renderActiveRocketDisplay();
+  }
+}
+
 // --- Metric/imperial toggle ---
 const unitToggleHtml = `
   <div role="group" id="unit-toggle" style="display:inline-flex; margin-top:0.5em;">
@@ -1040,6 +1112,7 @@ function refreshAllUnitDisplays(): void {
   syncMassCgInputsFromActiveRocket();
 
   renderActiveRocketDisplay();
+  if (libraryManifest.length > 0) renderLibraryResults();
   renderAndWireResults();
   if (lastMotorSelection) {
     const detailEl = document.querySelector<HTMLDivElement>("#motor-detail");
@@ -1086,6 +1159,7 @@ if (app) {
   wireMotorSearch();
   wireWindImport();
   wireUnitToggle();
+  void initLibrary();
   const urlParams = new URLSearchParams(location.search);
   const hadUrlFilters = (Object.keys(FILTER_DEFAULTS) as FilterKey[]).some((k) => urlParams.has(k));
   void loadMotorMetadata().then(() => {
