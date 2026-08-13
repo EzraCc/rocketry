@@ -14,6 +14,7 @@ import {
   downloadThrustSamples,
   getMotorMetadata,
   type MotorSearchResult,
+  type ThrustSample,
 } from "./physics/motor/thrustcurve-client.js";
 import { burnTime, getThrustAt, totalImpulse } from "./physics/motor/motor-model.js";
 import { deriveMotorMassCurve, getMotorMassAt } from "./physics/mass/motor-mass-curve.js";
@@ -21,57 +22,46 @@ import { combinedMassAt } from "./physics/mass/combined-mass.js";
 import { simulateFlight3D } from "./physics/sim/engine3d.js";
 import { parseSplashcastWindData, type SplashcastWindData } from "./physics/wind/splashcast-import.js";
 import { windAt, constantWindProfile, type WindProfile } from "./model/wind.js";
+import {
+  getUnitSystem,
+  setUnitSystem,
+  type UnitSystem,
+  fmtLength,
+  fmtAltitude,
+  fmtMass,
+  fmtVelocity,
+  fmtForce,
+  fmtImpulse,
+  massInputUnitLabel,
+  massToInput,
+  massFromInput,
+  lengthInputUnitLabel,
+  lengthToInput,
+  lengthFromInput,
+} from "./ui/units.js";
 
 const MM = 0.001;
 
-// M1 demo rocket: ogive nose + body tube + 3 trapezoidal fins. Static
-// CP/stability only — no motor, no flight sim yet (that's M2/M3).
-const demoComponents: Component[] = [
-  {
-    type: "nosecone",
-    id: "nose",
-    name: "Nose cone",
-    shape: "ogive",
-    shapeParameter: 1,
-    length: 0.1,
-    aftRadius: 0.0125,
-    thickness: 0.002,
-  },
-  {
-    type: "bodytube",
-    id: "tube",
-    name: "Body tube",
-    length: 0.3,
-    radius: 0.0125,
-    thickness: 0.001,
-    isMotorMount: true,
-  },
-  {
-    type: "finset",
-    id: "fins",
-    name: "Fins",
-    finCount: 3,
-    rootChord: 0.05,
-    tipChord: 0.03,
-    sweepLength: 0.02,
-    span: 0.05,
-    thickness: 0.003,
-    cantAngle: 0,
-    axialOffsetFromParentBottom: 0.25,
-  },
-];
+/**
+ * A curated, pre-vetted rocket a user can pick from a dropdown instead of
+ * needing their own .ork/.rkt/.CDX1 file — the point being mobile users
+ * (for whom "upload a file" is often awkward) and anyone who just wants to
+ * try the tool can test a real, known rocket immediately. Compiled from
+ * vendor-published files with permission; start small (just LOC-IV, already
+ * validated elsewhere in this project against RockSim's own stored CP) and
+ * grow over time.
+ */
+interface RocketLibraryEntry {
+  id: string;
+  name: string;
+  source: string;
+  components: Component[];
+  knownCp?: { label: string; mm: number }[];
+}
 
-const demoRocket: Rocket = {
-  ...defaultRocket(),
-  name: "M1 demo rocket",
-  components: demoComponents,
-  dryCg: 0.24,
-  motorMount: { componentId: "tube", motorOverhang: 0 },
-};
-
-// Real-world validation rocket: LOC Precision "PK-48 LOC-IV" (sim-files/LOC/PK-48 Loc-IV.rkt).
-// Geometry transcribed from that RockSim file; the fin is a RockSim
-// CustomFinSet (a 5-point clipped-delta polygon), carried through exactly via
+// LOC Precision "PK-48 LOC-IV" (sim-files/LOC/PK-48 Loc-IV.rkt). Geometry
+// transcribed from that RockSim file; the fin is a RockSim CustomFinSet (a
+// 5-point clipped-delta polygon), carried through exactly via
 // FreeformFinSet rather than approximated as a trapezoid. See
 // scripts/validate-loc-iv.ts for the original derivation and
 // src/physics/aero/freeform-fin-calc.test.ts for the regression fixture.
@@ -122,42 +112,59 @@ const locIvComponents: Component[] = [
   },
 ];
 
-const locIvRocket: Rocket = {
-  ...defaultRocket(),
-  name: 'LOC Precision "PK-48 LOC-IV"',
-  components: locIvComponents,
-  dryCg: 0, // not entered — mass/CG is manual per this tool's design; omitted here, so no stability margin is shown below
-};
+const ROCKET_LIBRARY: RocketLibraryEntry[] = [
+  {
+    id: "loc-iv",
+    name: 'LOC Precision "PK-48 LOC-IV"',
+    source: "Transcribed from sim-files/LOC/PK-48 Loc-IV.rkt",
+    components: locIvComponents,
+    knownCp: [
+      { label: "RockSim classical Barrowman CP (BarromanXN)", mm: 899.247 },
+      { label: "RockSim proprietary extended-method CP (RockSimXN)", mm: 972.645 },
+    ],
+  },
+];
+
+function rocketFromLibraryEntry(entry: RocketLibraryEntry): Rocket {
+  const motorMountComponent = entry.components.find((c) => c.type === "bodytube" && c.isMotorMount);
+  const bodyComponents = entry.components.filter(isBodyComponent);
+  const motorMountId = motorMountComponent?.id ?? bodyComponents[bodyComponents.length - 1]?.id ?? "";
+  return {
+    ...defaultRocket(),
+    name: entry.name,
+    components: entry.components,
+    motorMount: { componentId: motorMountId, motorOverhang: 0 },
+  };
+}
 
 /**
  * The rocket the motor-select/flight-sim section below actually runs
- * against — starts as the demo rocket, replaced wholesale by
- * wireOrkImport() once a user uploads a real .ork file. Kept as a single
- * mutable binding (rather than threading a rocket parameter through
- * selectMotor et al.) since this file's whole render flow is already
- * imperative DOM manipulation, not a framework with real state management.
+ * against — starts as the first library entry, replaced wholesale either by
+ * picking a different library entry or by uploading a real
+ * .ork/.rkt/.CDX1 file. Kept as a single mutable binding (rather than
+ * threading a rocket parameter through selectMotor et al.) since this
+ * file's whole render flow is already imperative DOM manipulation, not a
+ * framework with real state management.
  */
-let activeRocket: Rocket = demoRocket;
+let activeRocket: Rocket = rocketFromLibraryEntry(ROCKET_LIBRARY[0]!);
+/** Reference CP values to show alongside the active rocket, when it came from a library entry with known-good values to compare against — cleared when a file is uploaded instead. */
+let activeKnownCp: { label: string; mm: number }[] | undefined = ROCKET_LIBRARY[0]!.knownCp;
+let activeRocketSource = `From the library: ${ROCKET_LIBRARY[0]!.source}`;
 
 function stat(label: string, value: string): string {
   return `<div><strong>${value}</strong><br /><small>${label}</small></div>`;
 }
 
-function renderRocketSection(
-  rocket: Rocket,
-  mach: number,
-  subtitle: string,
-  knownCp?: { label: string; mm: number }[],
-): string {
+function renderRocketSection(rocket: Rocket, mach: number, subtitle: string, knownCp?: { label: string; mm: number }[]): string {
   const { cna, cpX, refDiameter } = computeBarrowman(rocket.components, mach);
   const hasCg = rocket.dryCg > 0;
   const margin = hasCg ? stabilityMargin(cpX, rocket.dryCg, refDiameter) : null;
 
   const stats = [
     stat("Total CNa", `${cna.toFixed(3)} /rad`),
-    stat("Computed CP", `${(cpX * 1000).toFixed(1)} mm`),
-    hasCg ? stat("CG (manual)", `${(rocket.dryCg * 1000).toFixed(1)} mm`) : "",
-    stat("Ref. diameter", `${(refDiameter * 1000).toFixed(1)} mm`),
+    stat("Computed CP", fmtLength(cpX)),
+    hasCg ? stat("CG (manual)", fmtLength(rocket.dryCg)) : "",
+    stat("Ref. diameter", fmtLength(refDiameter)),
     margin !== null
       ? stat(
           "Stability margin",
@@ -170,9 +177,10 @@ function renderRocketSection(
 
   const knownCpRows = (knownCp ?? [])
     .map((k) => {
-      const deltaMm = cpX * 1000 - k.mm;
-      const deltaPct = (deltaMm / k.mm) * 100;
-      return `<tr><td>${k.label}</td><td>${k.mm.toFixed(1)} mm</td><td>${deltaMm >= 0 ? "+" : ""}${deltaMm.toFixed(1)} mm (${deltaPct >= 0 ? "+" : ""}${deltaPct.toFixed(1)}%)</td></tr>`;
+      const kM = k.mm * MM;
+      const deltaM = cpX - kM;
+      const deltaPct = (deltaM / kM) * 100;
+      return `<tr><td>${k.label}</td><td>${fmtLength(kM)}</td><td>${deltaM >= 0 ? "+" : ""}${fmtLength(deltaM)} (${deltaPct >= 0 ? "+" : ""}${deltaPct.toFixed(1)}%)</td></tr>`;
     })
     .join("");
 
@@ -248,7 +256,7 @@ const motorSectionHtml = `
       <p>
         Search <a href="https://www.thrustcurve.org" target="_blank" rel="noopener">ThrustCurve.org</a> live from the
         browser — no backend, CORS is open on their API — and attach a real motor to your rocket above
-        (the demo rocket by default, or whatever you imported via .ork).
+        (the library selection by default, or whatever you imported).
         Shows its thrust curve, its derived mass curve (ThrustCurve.org has no mass-vs-time data, only total /
         propellant weight, so mass loss is derived assuming it's proportional to cumulative thrust impulse), and the
         combined rocket mass/CG at ignition, mid-burn, and burnout.
@@ -259,7 +267,7 @@ const motorSectionHtml = `
         <label>Manufacturer
           <select id="motor-mfg" aria-busy="true"><option value="">Loading…</option></select>
         </label>
-        <label>Diameter
+        <label>Diameter (mm)
           <select id="motor-diameter" aria-busy="true"><option value="">Loading…</option></select>
         </label>
         <label>Type
@@ -333,26 +341,31 @@ const MOTOR_COLUMNS: MotorColumn[] = [
     format: (m) => `<a href="#" data-motor-index="__I__"><strong>${m.manufacturer} ${m.designation}</strong></a>`,
     value: (m) => `${m.manufacturer} ${m.designation}`,
   },
-  { key: "diameter", label: "Diameter", format: (m) => num(m.diameter, 0, " mm"), value: (m) => m.diameter },
+  {
+    key: "diameter",
+    label: "Diameter",
+    format: (m) => (m.diameter === undefined || m.diameter === null || Number.isNaN(m.diameter) ? "—" : fmtLength(m.diameter / 1000, 0)),
+    value: (m) => m.diameter,
+  },
   { key: "type", label: "Type", format: (m) => m.type, value: (m) => m.type },
   { key: "class", label: "Class", format: (m) => m.impulseClass, value: (m) => m.impulseClass },
   {
     key: "totImpulse",
     label: "Total impulse",
-    format: (m) => num(m.totImpulseNs, 2, " N·s"),
+    format: (m) => (m.totImpulseNs === undefined || m.totImpulseNs === null || Number.isNaN(m.totImpulseNs) ? "—" : fmtImpulse(m.totImpulseNs)),
     value: (m) => m.totImpulseNs,
   },
   { key: "burnTime", label: "Burn time", format: (m) => num(m.burnTimeS, 2, " s"), value: (m) => m.burnTimeS },
   {
     key: "totalWeight",
     label: "Total weight",
-    format: (m) => num(m.totalWeightG, 1, " g"),
+    format: (m) => (m.totalWeightG === undefined || m.totalWeightG === null || Number.isNaN(m.totalWeightG) ? "—" : fmtMass(m.totalWeightG / 1000)),
     value: (m) => m.totalWeightG,
   },
   {
     key: "propWeight",
     label: "Propellant weight",
-    format: (m) => num(m.propWeightG, 1, " g"),
+    format: (m) => (m.propWeightG === undefined || m.propWeightG === null || Number.isNaN(m.propWeightG) ? "—" : fmtMass(m.propWeightG / 1000)),
     value: (m) => m.propWeightG,
   },
 ];
@@ -419,6 +432,75 @@ function renderAndWireResults(): void {
   });
 }
 
+/** The last motor a user actually selected, cached so a unit-toggle can re-render its detail panel without re-fetching from ThrustCurve.org. */
+let lastMotorSelection: { meta: MotorSearchResult; samples: ThrustSample[] } | null = null;
+
+function renderMotorDetailHtml(meta: MotorSearchResult, samples: ThrustSample[]): string {
+  const motor: SelectedMotor = {
+    motorId: meta.motorId,
+    designation: meta.designation,
+    manufacturer: meta.manufacturer,
+    diameter: (meta.diameter ?? 0) / 1000,
+    length: (meta.length ?? 0) / 1000,
+    totalMassKg: (meta.totalWeightG ?? 0) / 1000,
+    propellantMassKg: (meta.propWeightG ?? 0) / 1000,
+    samples,
+    delay: 0,
+  };
+
+  const rocketWithMotor: Rocket = { ...activeRocket, motor, windProfile: activeWindProfile };
+  const massCurve = deriveMotorMassCurve(motor);
+  const bt = burnTime(motor);
+  const midT = bt / 2;
+
+  const massAt = (t: number) => combinedMassAt(rocketWithMotor, massCurve, t);
+  const start = massAt(0);
+  const mid = massAt(midT);
+  const end = massAt(bt);
+
+  return `
+    <h3>${meta.manufacturer} ${meta.designation}</h3>
+    <p>Thrust curve: ${samples.length} samples, burn time ${bt.toFixed(2)}s.
+      Total impulse (integrated from curve): ${fmtImpulse(totalImpulse(motor))}
+      (ThrustCurve.org reports ${meta.totImpulseNs === undefined || meta.totImpulseNs === null ? "—" : fmtImpulse(meta.totImpulseNs)}).
+      Peak thrust: ${fmtForce(Math.max(...samples.map((s) => s.thrust)))}.</p>
+    <figure>
+      <table>
+        <thead>
+          <tr><th></th><th>t=0 (ignition)</th><th>t=${midT.toFixed(2)}s (mid-burn)</th><th>t=${bt.toFixed(2)}s (burnout)</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Thrust</td>
+            <td>${fmtForce(getThrustAt(motor, 0))}</td>
+            <td>${fmtForce(getThrustAt(motor, midT))}</td>
+            <td>${fmtForce(getThrustAt(motor, bt))}</td>
+          </tr>
+          <tr>
+            <td>Motor mass</td>
+            <td>${fmtMass(getMotorMassAt(massCurve, 0))}</td>
+            <td>${fmtMass(getMotorMassAt(massCurve, midT))}</td>
+            <td>${fmtMass(getMotorMassAt(massCurve, bt))}</td>
+          </tr>
+          <tr>
+            <td>Combined rocket mass</td>
+            <td>${fmtMass(start.mass)}</td>
+            <td>${fmtMass(mid.mass)}</td>
+            <td>${fmtMass(end.mass)}</td>
+          </tr>
+          <tr>
+            <td>Combined rocket CG</td>
+            <td>${fmtLength(start.cgX)}</td>
+            <td>${fmtLength(mid.cgX)}</td>
+            <td>${fmtLength(end.cgX)}</td>
+          </tr>
+        </tbody>
+      </table>
+    </figure>
+    ${renderFlightSimSection(rocketWithMotor)}
+  `;
+}
+
 async function selectMotor(meta: MotorSearchResult): Promise<void> {
   const detailEl = document.querySelector<HTMLDivElement>("#motor-detail");
   if (!detailEl) return;
@@ -436,69 +518,8 @@ async function selectMotor(meta: MotorSearchResult): Promise<void> {
 
   try {
     const samples = await downloadThrustSamples(meta.motorId);
-    const motor: SelectedMotor = {
-      motorId: meta.motorId,
-      designation: meta.designation,
-      manufacturer: meta.manufacturer,
-      diameter: meta.diameter / 1000,
-      length: meta.length / 1000,
-      totalMassKg: meta.totalWeightG / 1000,
-      propellantMassKg: meta.propWeightG / 1000,
-      samples,
-      delay: 0,
-    };
-
-    const rocketWithMotor: Rocket = { ...activeRocket, motor, windProfile: activeWindProfile };
-    const massCurve = deriveMotorMassCurve(motor);
-    const bt = burnTime(motor);
-    const midT = bt / 2;
-
-    const massAt = (t: number) => combinedMassAt(rocketWithMotor, massCurve, t);
-    const start = massAt(0);
-    const mid = massAt(midT);
-    const end = massAt(bt);
-
-    detailEl.innerHTML = `
-      <h3>${meta.manufacturer} ${meta.designation}</h3>
-      <p>Thrust curve: ${samples.length} samples, burn time ${bt.toFixed(2)}s.
-        Total impulse (integrated from curve): ${totalImpulse(motor).toFixed(2)} N·s
-        (ThrustCurve.org reports ${num(meta.totImpulseNs, 2, " N·s")}).
-        Peak thrust: ${Math.max(...samples.map((s) => s.thrust)).toFixed(1)} N.</p>
-      <figure>
-        <table>
-          <thead>
-            <tr><th></th><th>t=0 (ignition)</th><th>t=${midT.toFixed(2)}s (mid-burn)</th><th>t=${bt.toFixed(2)}s (burnout)</th></tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>Thrust</td>
-              <td>${getThrustAt(motor, 0).toFixed(1)} N</td>
-              <td>${getThrustAt(motor, midT).toFixed(1)} N</td>
-              <td>${getThrustAt(motor, bt).toFixed(1)} N</td>
-            </tr>
-            <tr>
-              <td>Motor mass</td>
-              <td>${(getMotorMassAt(massCurve, 0) * 1000).toFixed(1)} g</td>
-              <td>${(getMotorMassAt(massCurve, midT) * 1000).toFixed(1)} g</td>
-              <td>${(getMotorMassAt(massCurve, bt) * 1000).toFixed(1)} g</td>
-            </tr>
-            <tr>
-              <td>Combined rocket mass</td>
-              <td>${(start.mass * 1000).toFixed(1)} g</td>
-              <td>${(mid.mass * 1000).toFixed(1)} g</td>
-              <td>${(end.mass * 1000).toFixed(1)} g</td>
-            </tr>
-            <tr>
-              <td>Combined rocket CG</td>
-              <td>${(start.cgX * 1000).toFixed(1)} mm</td>
-              <td>${(mid.cgX * 1000).toFixed(1)} mm</td>
-              <td>${(end.cgX * 1000).toFixed(1)} mm</td>
-            </tr>
-          </tbody>
-        </table>
-      </figure>
-      ${renderFlightSimSection(rocketWithMotor)}
-    `;
+    lastMotorSelection = { meta, samples };
+    detailEl.innerHTML = renderMotorDetailHtml(meta, samples);
   } catch (err) {
     detailEl.innerHTML = `<p><mark>Failed to load thrust curve: ${err instanceof Error ? err.message : String(err)}</mark></p>`;
   }
@@ -531,16 +552,16 @@ function renderFlightSimSection(rocket: Rocket): string {
   const windLabel = rocket.windProfile ? "wind on" : "calm (no wind)";
   const stats = [
     stat("Static margin at launch", `${stability.margin.toFixed(2)} cal`),
-    stat("Apogee", `${result.apogeeAltitude.toFixed(1)} m`),
+    stat("Apogee", fmtAltitude(result.apogeeAltitude)),
     stat("Time to apogee", `${result.apogeeTime.toFixed(2)} s`),
-    stat("Max velocity", `${result.maxVelocity.toFixed(1)} m/s`),
+    stat("Max velocity", fmtVelocity(result.maxVelocity)),
     stat("Max Mach", result.maxMach.toFixed(3)),
     stat("Max acceleration", `${(result.maxAcceleration / 9.80665).toFixed(1)} g`),
     stat("Tilt at burnout", result.tiltAtBurnoutDeg !== null ? `${result.tiltAtBurnoutDeg.toFixed(1)}°` : "—"),
   ].join("");
 
   const eventsRows = result.events
-    .map((e) => `<tr><td>${e.type}</td><td>${e.time.toFixed(2)} s</td><td>${e.altitude.toFixed(1)} m</td></tr>`)
+    .map((e) => `<tr><td>${e.type}</td><td>${e.time.toFixed(2)} s</td><td>${fmtAltitude(e.altitude)}</td></tr>`)
     .join("");
 
   return `
@@ -619,11 +640,13 @@ const windSectionHtml = `
         Sets the wind used by the flight simulation above (re-select a motor after changing wind
         to re-run with the new setting). Either enter a plain constant wind, or upload a
         <code>splash_zones_captured_*.json</code> file (from the splashcast launch-day predictor,
-        itself a multi-model wind ensemble pulled from Open-Meteo) for real altitude-varying data.
+        itself a multi-model wind ensemble pulled from Open-Meteo) for real altitude-varying data —
+        this upload is a stand-in for testing only; once wired into splashcast, splashcast pulls
+        real wind data itself and passes it to this tool's library API directly, no file needed.
       </p>
     </header>
     <div class="grid">
-      <label>Constant wind speed (m/s) <input type="number" id="wind-manual-speed" value="0" min="0" step="0.5" /></label>
+      <label>Constant wind speed (<span id="wind-speed-unit-label">m/s</span>) <input type="number" id="wind-manual-speed" value="0" min="0" step="0.5" /></label>
       <label>From direction (deg, compass) <input type="number" id="wind-manual-direction" value="0" min="0" max="360" step="5" /></label>
       <div style="align-self: end;">
         <button type="button" id="wind-manual-apply">Use constant wind</button>
@@ -654,7 +677,22 @@ function updateActiveWindLabel(): void {
   }
   const ground = windAt(activeWindProfile, 0);
   const label = activeWindProfile.label ?? "constant wind";
-  labelEl.innerHTML = `<small>Currently: ${label} — ${ground.speed.toFixed(1)} m/s from ${ground.directionFromDeg.toFixed(0)}° at ground level.</small>`;
+  labelEl.innerHTML = `<small>Currently: ${label} — ${fmtVelocity(ground.speed)} from ${ground.directionFromDeg.toFixed(0)}° at ground level.</small>`;
+}
+
+/** Updates the wind-speed input's unit label and converts its current value to the new unit system, preserving the underlying wind (doesn't change what "apply" would set). */
+function updateWindManualUnitDisplay(): void {
+  const labelEl = document.querySelector<HTMLSpanElement>("#wind-speed-unit-label");
+  const speedEl = document.querySelector<HTMLInputElement>("#wind-manual-speed");
+  if (!labelEl || !speedEl) return;
+  labelEl.textContent = getUnitSystem() === "metric" ? "m/s" : "mph";
+  // If a wind profile is actually active, that's the authoritative source for what number to
+  // show (converted to the new unit). If not (nothing applied yet), there's no committed value
+  // to convert from -- leave the field's raw number as-is, only the label changes.
+  if (activeWindProfile) {
+    const ms = windAt(activeWindProfile, 0).speed;
+    speedEl.value = (getUnitSystem() === "metric" ? ms : ms * 2.23694).toFixed(1);
+  }
 }
 
 function renderWindProfileTable(): void {
@@ -675,15 +713,15 @@ function renderWindProfileTable(): void {
     .map((s) => {
       const w = windAt(profile, s.altitude);
       return `<tr>
-        <td>${(s.altitude / 0.3048).toFixed(0)} ft (${s.altitude.toFixed(0)} m AGL)</td>
-        <td>${(w.speed / 0.44704).toFixed(1)} mph (${w.speed.toFixed(1)} m/s)</td>
+        <td>${fmtAltitude(s.altitude)} AGL</td>
+        <td>${fmtVelocity(w.speed)}</td>
         <td>${w.directionFromDeg.toFixed(0)}°</td>
       </tr>`;
     })
     .join("");
 
   resultEl.innerHTML = `
-    <p>Site elevation: ${(currentWindData.siteElevationM / 0.3048).toFixed(0)} ft (${currentWindData.siteElevationM.toFixed(0)} m). ${profile.label}, ${profile.samples.length} altitude samples.</p>
+    <p>Site elevation: ${fmtAltitude(currentWindData.siteElevationM)}. ${profile.label}, ${profile.samples.length} altitude samples.</p>
     <figure>
       <table>
         <thead><tr><th>Altitude (AGL)</th><th>Speed</th><th>Direction (from)</th></tr></thead>
@@ -705,9 +743,10 @@ function wireWindImport(): void {
   if (!fileInput || !controlsEl || !hourEl || !modelEl || !resultEl || !manualSpeedEl || !manualDirEl || !manualApplyBtn) return;
 
   manualApplyBtn.addEventListener("click", () => {
-    const speed = Number(manualSpeedEl.value) || 0;
+    const rawSpeed = Number(manualSpeedEl.value) || 0;
+    const speedMs = getUnitSystem() === "metric" ? rawSpeed : rawSpeed * 0.44704;
     const direction = Number(manualDirEl.value) || 0;
-    activeWindProfile = speed > 0 ? constantWindProfile(speed, direction) : null;
+    activeWindProfile = speedMs > 0 ? constantWindProfile(speedMs, direction) : null;
     updateActiveWindLabel();
   });
 
@@ -758,23 +797,31 @@ function wireWindImport(): void {
 const orkSectionHtml = `
   <article>
     <header>
-      <h2>Your rocket <small>(.ork / .rkt / .CDX1 import)</small></h2>
+      <h2>Your rocket</h2>
       <p>
-        Upload a real OpenRocket <code>.ork</code>, RockSim <code>.rkt</code>, or RASAero
-        <code>.CDX1</code> file to replace the demo rocket below — nose cone, body tube(s),
+        Pick a known rocket from the library, or upload a real OpenRocket <code>.ork</code>, RockSim
+        <code>.rkt</code>, or RASAero <code>.CDX1</code> file — nose cone, body tube(s),
         transition/boat tail/fin can, and trapezoidal or freeform fins are imported (single-stage
         only; multi-stage files use just the first/sustainer stage). Mass and CG stay manual, per
-        this tool's design — enter them below once imported. For .ork files, the file's own
-        default motor selection pre-fills the motor search further down (RockSim and RASAero files
-        carry no motor data at all, only mount geometry, so you'll need to search for a motor
-        yourself either way).
+        this tool's design — enter them below. For .ork files, the file's own default motor
+        selection pre-fills the motor search further down (RockSim and RASAero files carry no motor
+        data at all, only mount geometry, so you'll need to search for a motor yourself either way).
       </p>
     </header>
-    <input type="file" id="ork-file-input" accept=".ork,.rkt,.CDX1" />
+    <div class="grid">
+      <label>Library
+        <select id="rocket-library-select">
+          ${ROCKET_LIBRARY.map((entry, i) => `<option value="${i}">${entry.name}</option>`).join("")}
+        </select>
+      </label>
+      <label>Or upload a file
+        <input type="file" id="ork-file-input" accept=".ork,.rkt,.CDX1" />
+      </label>
+    </div>
     <div id="ork-warnings"></div>
-    <div class="grid" id="ork-mass-cg-controls" style="display:none; margin-top:1em;">
-      <label>Dry mass (g) <input type="number" id="ork-dry-mass" value="50" min="0" step="1" /></label>
-      <label>Dry CG (mm from nose) <input type="number" id="ork-dry-cg" value="0" min="0" step="1" /></label>
+    <div class="grid" id="ork-mass-cg-controls" style="margin-top:1em;">
+      <label>Dry mass (<span id="mass-unit-label">g</span>) <input type="number" id="ork-dry-mass" value="50" min="0" step="1" /></label>
+      <label>Dry CG (<span id="length-unit-label">mm</span> from nose) <input type="number" id="ork-dry-cg" value="0" min="0" step="1" /></label>
     </div>
     <div id="active-rocket-display"></div>
   </article>
@@ -783,27 +830,45 @@ const orkSectionHtml = `
 function renderActiveRocketDisplay(): void {
   const el = document.querySelector<HTMLDivElement>("#active-rocket-display");
   if (!el) return;
-  const subtitle = activeRocket === demoRocket ? "Synthetic demo rocket — upload a .ork/.rkt/.CDX1 file above to replace it" : "Imported from file";
-  el.innerHTML = renderRocketSection(activeRocket, 0.3, subtitle);
+  el.innerHTML = renderRocketSection(activeRocket, 0.3, activeRocketSource, activeKnownCp);
+}
+
+/** Sets the mass/CG input fields' displayed values from the active rocket's stored SI values, in whatever unit system is currently selected. */
+function syncMassCgInputsFromActiveRocket(): void {
+  const massEl = document.querySelector<HTMLInputElement>("#ork-dry-mass");
+  const cgEl = document.querySelector<HTMLInputElement>("#ork-dry-cg");
+  if (massEl) massEl.value = massToInput(activeRocket.dryMass).toFixed(2);
+  if (cgEl) cgEl.value = activeRocket.dryCg > 0 ? lengthToInput(activeRocket.dryCg).toFixed(2) : "0";
 }
 
 function wireOrkImport(): void {
   const fileInput = document.querySelector<HTMLInputElement>("#ork-file-input");
+  const librarySelect = document.querySelector<HTMLSelectElement>("#rocket-library-select");
   const warningsEl = document.querySelector<HTMLDivElement>("#ork-warnings");
   const controlsEl = document.querySelector<HTMLDivElement>("#ork-mass-cg-controls");
   const massEl = document.querySelector<HTMLInputElement>("#ork-dry-mass");
   const cgEl = document.querySelector<HTMLInputElement>("#ork-dry-cg");
-  if (!fileInput || !warningsEl || !controlsEl || !massEl || !cgEl) return;
+  if (!fileInput || !librarySelect || !warningsEl || !controlsEl || !massEl || !cgEl) return;
 
   const applyMassCg = (): void => {
-    if (activeRocket === demoRocket) return; // nothing imported yet
-    const massG = Number(massEl.value) || 0;
-    const cgMm = Number(cgEl.value) || 0;
-    activeRocket = { ...activeRocket, dryMass: massG / 1000, dryCg: cgMm / 1000 };
+    const dryMass = massFromInput(Number(massEl.value) || 0);
+    const dryCg = lengthFromInput(Number(cgEl.value) || 0);
+    activeRocket = { ...activeRocket, dryMass, dryCg };
     renderActiveRocketDisplay();
   };
   massEl.addEventListener("input", applyMassCg);
   cgEl.addEventListener("input", applyMassCg);
+
+  librarySelect.addEventListener("change", () => {
+    const entry = ROCKET_LIBRARY[Number(librarySelect.value)];
+    if (!entry) return;
+    activeRocket = rocketFromLibraryEntry(entry);
+    activeKnownCp = entry.knownCp;
+    activeRocketSource = `From the library: ${entry.source}`;
+    syncMassCgInputsFromActiveRocket();
+    warningsEl.innerHTML = `<p><small>Loaded "${entry.name}" from the library (${entry.source}).</small></p>`;
+    renderActiveRocketDisplay();
+  });
 
   fileInput.addEventListener("change", () => {
     const file = fileInput.files?.[0];
@@ -838,10 +903,12 @@ function wireOrkImport(): void {
           ...defaultRocket(),
           name: parsed.name,
           components: parsed.components,
-          dryMass: (Number(massEl.value) || 50) / 1000,
+          dryMass: massFromInput(Number(massEl.value) || 50),
           dryCg: 0, // forces the user to actually enter it -- never guessed from geometry
           motorMount: { componentId: motorMountId, motorOverhang: 0 },
         };
+        activeKnownCp = undefined; // no reference values for an uploaded file
+        activeRocketSource = `Uploaded: ${file.name}`;
 
         controlsEl.style.display = "";
         const parseNote = parsed.warnings.length
@@ -849,6 +916,7 @@ function wireOrkImport(): void {
           : `<small>Parsed ${parsed.components.length} components successfully.</small>`;
         warningsEl.innerHTML = `<p>${parseNote}</p>`;
 
+        syncMassCgInputsFromActiveRocket();
         renderActiveRocketDisplay();
 
         if (motor) {
@@ -870,6 +938,46 @@ function wireOrkImport(): void {
   });
 }
 
+// --- Metric/imperial toggle ---
+const unitToggleHtml = `
+  <div role="group" id="unit-toggle" style="display:inline-flex; margin-top:0.5em;">
+    <button type="button" data-unit="metric" aria-current="true">Metric</button>
+    <button type="button" data-unit="imperial">Imperial</button>
+  </div>
+`;
+
+/** Updates the mass/CG input unit labels + values (without changing the underlying rocket) and re-renders every currently-populated section so a unit toggle takes effect everywhere at once. */
+function refreshAllUnitDisplays(): void {
+  const massLabelEl = document.querySelector<HTMLSpanElement>("#mass-unit-label");
+  const lengthLabelEl = document.querySelector<HTMLSpanElement>("#length-unit-label");
+  if (massLabelEl) massLabelEl.textContent = massInputUnitLabel();
+  if (lengthLabelEl) lengthLabelEl.textContent = lengthInputUnitLabel();
+  syncMassCgInputsFromActiveRocket();
+
+  renderActiveRocketDisplay();
+  renderAndWireResults();
+  if (lastMotorSelection) {
+    const detailEl = document.querySelector<HTMLDivElement>("#motor-detail");
+    if (detailEl) detailEl.innerHTML = renderMotorDetailHtml(lastMotorSelection.meta, lastMotorSelection.samples);
+  }
+  updateWindManualUnitDisplay();
+  updateActiveWindLabel();
+  if (currentWindData) renderWindProfileTable();
+}
+
+function wireUnitToggle(): void {
+  const buttons = document.querySelectorAll<HTMLButtonElement>("#unit-toggle button[data-unit]");
+  buttons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const system = btn.dataset["unit"] as UnitSystem;
+      if (system === getUnitSystem()) return;
+      setUnitSystem(system);
+      buttons.forEach((b) => b.setAttribute("aria-current", String(b === btn)));
+      refreshAllUnitDisplays();
+    });
+  });
+}
+
 const app = document.querySelector<HTMLDivElement>("#app");
 if (app) {
   app.innerHTML = `
@@ -877,20 +985,19 @@ if (app) {
       <hgroup>
         <h1>🚀 rocketry</h1>
         <p>A from-scratch, client-side flight simulator for basic rockets — M1/M2 checkpoint</p>
+        ${unitToggleHtml}
       </hgroup>
       ${orkSectionHtml}
-      ${renderRocketSection(locIvRocket, 0.001, "Real rocket, transcribed from sim-files/LOC/PK-48 Loc-IV.rkt", [
-        { label: "RockSim classical Barrowman CP (BarromanXN)", mm: 899.247 },
-        { label: "RockSim proprietary extended-method CP (RockSimXN)", mm: 972.645 },
-      ])}
       ${windSectionHtml}
       ${motorSectionHtml}
     </main>
   `;
+  syncMassCgInputsFromActiveRocket();
   renderActiveRocketDisplay();
   wireOrkImport();
   wireMotorSearch();
   wireWindImport();
+  wireUnitToggle();
   const urlParams = new URLSearchParams(location.search);
   const hadUrlFilters = (Object.keys(FILTER_DEFAULTS) as FilterKey[]).some((k) => urlParams.has(k));
   void loadMotorMetadata().then(() => {
