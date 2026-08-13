@@ -87,6 +87,74 @@ describe("computeDrag — sanity", () => {
   });
 });
 
+describe("computeDrag — pressure/wave drag (transonic bug fix)", () => {
+  // Real regression coverage for the missing-transonic-drag bug: a user reported a flight
+  // reaching Mach 3 / 40km on a motor that "couldn't do that on its own." Root cause: this
+  // project's drag model had zero nose/transition pressure (wave) drag at any Mach, so total CD
+  // barely changed near Mach 1 instead of rising sharply -- letting simulated rockets keep
+  // accelerating well past what a real rocket on the same motor could achieve.
+  const tangentOgiveRocket = (): Component[] => [
+    { type: "nosecone", id: "n", name: "n", shape: "ogive", shapeParameter: 1, length: 0.32512, aftRadius: 0.0508, thickness: 0.003 },
+    { type: "bodytube", id: "t", name: "t", length: 0.8, radius: 0.0508, thickness: 0.002, isMotorMount: true },
+  ];
+
+  it("has zero pressure drag for a constant-radius body tube (no shape change -> no pressure drag)", () => {
+    const tubeOnly: Component[] = [{ type: "bodytube", id: "t", name: "t", length: 0.3, radius: 0.0125, thickness: 0.001, isMotorMount: true }];
+    const result = computeDrag(tubeOnly, 300, 0.9, atm.at(0));
+    expect(result.cdPressure).toBe(0);
+  });
+
+  it("real transonic bug fix: pressure drag is genuinely nonzero right around Mach 1 for a real tangent-ogive nose, even though the naive endpoint values there are both ~0", () => {
+    // This is the exact regression the bug fix targets: a tangent ogive (shapeParameter=1, the
+    // most common real nose cone parameterization -- e.g. this project's own LOC-IV fixture) has
+    // sinphi very close to 0, so a value-only interpolation between its M=1 and M=1.3 anchors
+    // would come out ~0 throughout -- missing the real "sound barrier" drag rise entirely, which
+    // instead comes from a large, sinphi-independent DERIVATIVE at M=1 (see
+    // growingShapePressureCd's doc comment). Assert the actual physical signature: pressure drag
+    // rises well above its own M=1 endpoint value somewhere in the transonic bulge.
+    const components = tangentOgiveRocket();
+    const atMach1 = computeDrag(components, 340, 1.0, atm.at(0));
+    const atBulgePeak = computeDrag(components, 340 * 1.08, 1.08, atm.at(0));
+    expect(atBulgePeak.cdPressure).toBeGreaterThan(atMach1.cdPressure * 5);
+    expect(atBulgePeak.cdPressure).toBeGreaterThan(0.01);
+  });
+
+  it("total CD is noticeably higher at the transonic peak than at a matched subsonic point (the qualitative fix: drag should rise sharply approaching Mach 1, not stay flat)", () => {
+    const components = tangentOgiveRocket();
+    const subsonic = computeDrag(components, 340 * 0.5, 0.5, atm.at(0));
+    const transonicPeak = computeDrag(components, 340 * 1.08, 1.08, atm.at(0));
+    expect(transonicPeak.cd).toBeGreaterThan(subsonic.cd * 1.1);
+  });
+
+  it("pressure drag is continuous (no jump) across the M=1.3 boundary between the Hermite blend and the exact supersonic formula", () => {
+    const components = tangentOgiveRocket();
+    const justBelow = computeDrag(components, 340 * 1.2999, 1.2999, atm.at(0));
+    const justAbove = computeDrag(components, 340 * 1.3001, 1.3001, atm.at(0));
+    expect(justBelow.cdPressure).toBeCloseTo(justAbove.cdPressure, 3);
+  });
+
+  it("boat tail (narrowing transition) pressure drag: zero for a long/slender fineness ratio >= 3, matching OR's own cutoff", () => {
+    const withLongBoattail: Component[] = [
+      { type: "bodytube", id: "t", name: "t", length: 0.3, radius: 0.05, thickness: 0.002, isMotorMount: true },
+      { type: "transition", id: "bt", name: "bt", shape: "conical", shapeParameter: 0, length: 0.5, foreRadius: 0.05, aftRadius: 0.03, thickness: 0.002 }, // fineness = 0.5/(2*0.02) = 12.5
+    ];
+    const result = computeDrag(withLongBoattail, 340, 1.0, atm.at(0));
+    // Isolate the boattail's own contribution: compare against the same rocket without it.
+    const withoutBoattail: Component[] = [withLongBoattail[0]!];
+    const base = computeDrag(withoutBoattail, 340, 1.0, atm.at(0));
+    expect(result.cdPressure).toBeCloseTo(base.cdPressure, 6);
+  });
+
+  it("boat tail pressure drag is nonzero for a stubby (low fineness ratio) boat tail", () => {
+    const withStubbyBoattail: Component[] = [
+      { type: "bodytube", id: "t", name: "t", length: 0.3, radius: 0.05, thickness: 0.002, isMotorMount: true },
+      { type: "transition", id: "bt", name: "bt", shape: "conical", shapeParameter: 0, length: 0.02, foreRadius: 0.05, aftRadius: 0.03, thickness: 0.002 }, // fineness = 0.02/(2*0.02) = 0.5
+    ];
+    const result = computeDrag(withStubbyBoattail, 340, 1.0, atm.at(0));
+    expect(result.cdPressure).toBeGreaterThan(0);
+  });
+});
+
 describe("computeDrag — wetted area sanity (via analytic body shapes)", () => {
   it("a constant-radius body tube's wetted area matches the exact cylinder lateral-area formula (2*pi*r*L)", () => {
     // Isolate the tube: same total-wetted-area machinery, single component.
