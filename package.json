@@ -1,7 +1,7 @@
 {
   "name": "rocketry",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "Browser-based flight simulator for basic model/high-power rockets",
   "scripts": {
