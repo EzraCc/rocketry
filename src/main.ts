@@ -1,6 +1,7 @@
 import "@picocss/pico/css/pico.indigo.min.css";
 import "./style.css";
 import { computeBarrowman, stabilityMargin } from "./physics/aero/barrowman.js";
+import { overallLength } from "./physics/geometry/rocket-geometry.js";
 import { checkStability } from "./physics/aero/stability-check.js";
 import { renderSchematicSvg } from "./ui/schematic/render.js";
 import { defaultRocket, type Rocket, type SelectedMotor } from "./model/rocket.js";
@@ -22,7 +23,6 @@ import { combinedMassAt } from "./physics/mass/combined-mass.js";
 import type { SimResult3D } from "./physics/sim/types3d.js";
 import { renderFlightChart } from "./ui/charts/flight-chart.js";
 import { simulateFlight3DInWorker } from "./worker/sim-worker-client.js";
-import { parseSplashcastWindData, type SplashcastWindData } from "./physics/wind/splashcast-import.js";
 import { windAt, constantWindProfile, type WindProfile } from "./model/wind.js";
 import {
   getUnitSystem,
@@ -30,6 +30,7 @@ import {
   type UnitSystem,
   fmtLength,
   fmtAltitude,
+  fmtRocketLength,
   fmtMass,
   fmtVelocity,
   fmtForce,
@@ -155,8 +156,11 @@ let activeRocket: Rocket = defaultRocket();
 let activeKnownCp: { label: string; mm: number }[] | undefined;
 let activeRocketSource = "Loading the rocket library…";
 
-function stat(label: string, value: string): string {
-  return `<div><strong>${value}</strong><br /><small>${label}</small></div>`;
+function stat(label: string, value: string, infoTooltip?: string): string {
+  const info = infoTooltip
+    ? ` <span tabindex="0" data-tooltip="${infoTooltip.replace(/"/g, "&quot;")}" data-placement="bottom" style="cursor:help;" aria-label="What does this mean?">ⓘ</span>`
+    : "";
+  return `<div><strong>${value}</strong><br /><small>${label}${info}</small></div>`;
 }
 
 function renderRocketSection(rocket: Rocket, mach: number, subtitle: string, knownCp?: { label: string; mm: number }[]): string {
@@ -165,7 +169,13 @@ function renderRocketSection(rocket: Rocket, mach: number, subtitle: string, kno
   const margin = hasCg ? stabilityMargin(cpX, rocket.dryCg, refDiameter) : null;
 
   const stats = [
-    stat("Computed CP", fmtLength(cpX)),
+    stat("Length", fmtRocketLength(overallLength(rocket.components))),
+    stat("Dry mass", fmtMass(rocket.dryMass)),
+    stat(
+      "Computed CP",
+      fmtLength(cpX),
+      "Always computed independently from this rocket's geometry — never read from the source file (.ork/.rkt/.CDX1), regardless of format. Method: classical Barrowman component buildup (nose/transition/tube + fin CNa/CP) with a corrected fin-body interference factor; no Galejs body-lift term and no supersonic K1/K2/K3 fin corrections, hence the Mach-validity warning above ~0.8-0.9. RockSim's own stored CP is shown as a reference comparison only where available (e.g. the LOC-IV library entry), not used as the computed value.",
+    ),
     hasCg ? stat("CG (manual)", fmtLength(rocket.dryCg)) : "",
     stat("Ref. diameter", fmtLength(refDiameter)),
     margin !== null
@@ -695,11 +705,9 @@ const windSectionHtml = `
       <h2>Wind data</h2>
       <p>
         Sets the wind used by the flight simulation above (re-select a motor after changing wind
-        to re-run with the new setting). Either enter a plain constant wind, or upload a
-        <code>splash_zones_captured_*.json</code> file (from the splashcast launch-day predictor,
-        itself a multi-model wind ensemble pulled from Open-Meteo) for real altitude-varying data —
-        this upload is a stand-in for testing only; once wired into splashcast, splashcast pulls
-        real wind data itself and passes it to this tool's library API directly, no file needed.
+        to re-run with the new setting) — a plain constant wind for now. Real altitude-varying wind
+        will come from splashcast (the launch-day wind/drift predictor) once it's wired in directly
+        through this tool's library API, replacing manual entry rather than adding a file to upload.
       </p>
     </header>
     <div class="grid">
@@ -710,19 +718,9 @@ const windSectionHtml = `
       </div>
     </div>
     <p id="wind-active-label"><small>Currently: calm (no wind).</small></p>
-    <hr />
-    <input type="file" id="wind-file-input" accept=".json,application/json" />
-    <div id="wind-controls" style="display:none; margin-top:1em;">
-      <div class="grid">
-        <label>Hour <select id="wind-hour"></select></label>
-        <label>Model <select id="wind-model"></select></label>
-      </div>
-    </div>
-    <div id="wind-result"></div>
   </article>
 `;
 
-let currentWindData: SplashcastWindData | null = null;
 let activeWindProfile: WindProfile | null = null;
 
 function updateActiveWindLabel(): void {
@@ -752,52 +750,11 @@ function updateWindManualUnitDisplay(): void {
   }
 }
 
-function renderWindProfileTable(): void {
-  const resultEl = document.querySelector<HTMLDivElement>("#wind-result");
-  const hourEl = document.querySelector<HTMLSelectElement>("#wind-hour");
-  const modelEl = document.querySelector<HTMLSelectElement>("#wind-model");
-  if (!resultEl || !hourEl || !modelEl || !currentWindData) return;
-
-  const hour = Number(hourEl.value);
-  const model = modelEl.value;
-  const profile = currentWindData.profileFor(hour, model);
-  if (!profile) {
-    resultEl.innerHTML = "<p>No profile for that hour/model.</p>";
-    return;
-  }
-
-  const rows = profile.samples
-    .map((s) => {
-      const w = windAt(profile, s.altitude);
-      return `<tr>
-        <td>${fmtAltitude(s.altitude)} AGL</td>
-        <td>${fmtVelocity(w.speed)}</td>
-        <td>${w.directionFromDeg.toFixed(0)}°</td>
-      </tr>`;
-    })
-    .join("");
-
-  resultEl.innerHTML = `
-    <p>Site elevation: ${fmtAltitude(currentWindData.siteElevationM)}. ${profile.label}, ${profile.samples.length} altitude samples.</p>
-    <figure>
-      <table>
-        <thead><tr><th>Altitude (AGL)</th><th>Speed</th><th>Direction (from)</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </figure>
-  `;
-}
-
 function wireWindImport(): void {
-  const fileInput = document.querySelector<HTMLInputElement>("#wind-file-input");
-  const controlsEl = document.querySelector<HTMLDivElement>("#wind-controls");
-  const hourEl = document.querySelector<HTMLSelectElement>("#wind-hour");
-  const modelEl = document.querySelector<HTMLSelectElement>("#wind-model");
-  const resultEl = document.querySelector<HTMLDivElement>("#wind-result");
   const manualSpeedEl = document.querySelector<HTMLInputElement>("#wind-manual-speed");
   const manualDirEl = document.querySelector<HTMLInputElement>("#wind-manual-direction");
   const manualApplyBtn = document.querySelector<HTMLButtonElement>("#wind-manual-apply");
-  if (!fileInput || !controlsEl || !hourEl || !modelEl || !resultEl || !manualSpeedEl || !manualDirEl || !manualApplyBtn) return;
+  if (!manualSpeedEl || !manualDirEl || !manualApplyBtn) return;
 
   manualApplyBtn.addEventListener("click", () => {
     const rawSpeed = Number(manualSpeedEl.value) || 0;
@@ -805,49 +762,6 @@ function wireWindImport(): void {
     const direction = Number(manualDirEl.value) || 0;
     activeWindProfile = speedMs > 0 ? constantWindProfile(speedMs, direction) : null;
     updateActiveWindLabel();
-  });
-
-  const applySelectedProfile = (): void => {
-    if (!currentWindData) return;
-    const profile = currentWindData.profileFor(Number(hourEl.value), modelEl.value);
-    activeWindProfile = profile;
-    updateActiveWindLabel();
-    renderWindProfileTable();
-  };
-
-  fileInput.addEventListener("change", () => {
-    const file = fileInput.files?.[0];
-    if (!file) return;
-    resultEl.innerHTML = '<p aria-busy="true">Parsing…</p>';
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const json = JSON.parse(String(reader.result));
-        currentWindData = parseSplashcastWindData(json);
-        if (currentWindData.hours.length === 0) {
-          resultEl.innerHTML = "<p><mark>No wind_hours found — is this a splashcast splash_zones_captured_*.json file?</mark></p>";
-          controlsEl.style.display = "none";
-          return;
-        }
-        hourEl.innerHTML = currentWindData.hours.map((h) => `<option value="${h}">${h}:00</option>`).join("");
-        const updateModels = () => {
-          const models = currentWindData!.modelsForHour(Number(hourEl.value));
-          modelEl.innerHTML = models.map((m) => `<option value="${m}">${m.toUpperCase()}</option>`).join("");
-        };
-        updateModels();
-        controlsEl.style.display = "";
-        hourEl.onchange = () => {
-          updateModels();
-          applySelectedProfile();
-        };
-        modelEl.onchange = applySelectedProfile;
-        applySelectedProfile();
-      } catch (err) {
-        resultEl.innerHTML = `<p><mark>Failed to parse file: ${err instanceof Error ? err.message : String(err)}</mark></p>`;
-        controlsEl.style.display = "none";
-      }
-    };
-    reader.readAsText(file);
   });
 }
 
@@ -1030,7 +944,7 @@ function renderLibraryResults(): void {
     .slice(0, 200) // a broad filter (e.g. vendor-only) can still match 100+; cap the DOM cost, name/diameter narrows it down fast
     .map(
       (e) =>
-        `<tr><td>${e.vendor}</td><td>${e.name}</td><td>${nominalDiameterIn(e.diameterMm)}"</td><td>${fmtAltitude(e.lengthMm / 1000)}</td><td><a href="#" data-lib-id="${e.id}">Select</a></td></tr>`,
+        `<tr><td>${e.vendor}</td><td>${e.name}</td><td>${nominalDiameterIn(e.diameterMm)}"</td><td>${fmtRocketLength(e.lengthMm / 1000)}</td><td><a href="#" data-lib-id="${e.id}">Select</a></td></tr>`,
     )
     .join("");
   const truncatedNote = matches.length > 200 ? `<p><small>${matches.length} matches, showing first 200 — narrow the filter to see more.</small></p>` : "";
@@ -1136,7 +1050,6 @@ function refreshAllUnitDisplays(): void {
   }
   updateWindManualUnitDisplay();
   updateActiveWindLabel();
-  if (currentWindData) renderWindProfileTable();
 }
 
 function wireUnitToggle(): void {

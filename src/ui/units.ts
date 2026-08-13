@@ -37,6 +37,21 @@ export function fmtLength(m: number, digits?: number): string {
   return `${(m * M_TO_IN).toFixed(digits ?? 2)} in`;
 }
 
+/**
+ * Rocket-scale length — overall rocket length, library search results:
+ * cm (metric) or in (imperial). Distinct from fmtLength (mm/in, for
+ * component-scale dimensions like CP/CG/diameter) and fmtAltitude (m/ft,
+ * for trajectory-scale heights) — this project's library spans roughly
+ * 33cm to 7m, where mm is too fine-grained (four-plus digits) and m reads
+ * as near-zero for anything under a meter; cm is the size hobbyists
+ * actually use when describing a rocket's length ("it's about 120cm"),
+ * matching how imperial builders talk in inches, not feet, at this scale.
+ */
+export function fmtRocketLength(m: number, digits?: number): string {
+  if (current === "metric") return `${(m * 100).toFixed(digits ?? 1)} cm`;
+  return `${(m * M_TO_IN).toFixed(digits ?? 1)} in`;
+}
+
 /** Large-scale length — altitude, apogee: m (metric) or ft (imperial). */
 export function fmtAltitude(m: number, digits?: number): string {
   if (current === "metric") return `${m.toFixed(digits ?? 1)} m`;
