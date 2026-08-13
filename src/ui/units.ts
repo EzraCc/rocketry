@@ -31,9 +31,14 @@ const KG_TO_LB = 2.20462262;
 const MS_TO_MPH = 1 / 0.44704;
 const N_TO_LBF = 1 / 4.4482216153;
 
-/** Small-scale length — component dimensions, CP/CG, diameters: mm (metric) or in (imperial). */
+/**
+ * Small-scale length — component dimensions, CP/CG, diameters: cm (metric,
+ * 2 decimals — the same 0.1mm resolution the old mm-based version had) or
+ * in (imperial). Was mm; switched to cm so length figures shown together
+ * (this, fmtRocketLength) don't visually mix mm and cm side by side.
+ */
 export function fmtLength(m: number, digits?: number): string {
-  if (current === "metric") return `${(m * 1000).toFixed(digits ?? 1)} mm`;
+  if (current === "metric") return `${(m * 100).toFixed(digits ?? 2)} cm`;
   return `${(m * M_TO_IN).toFixed(digits ?? 2)} in`;
 }
 
@@ -107,17 +112,17 @@ export function massFromInput(raw: number): number {
 }
 
 export function lengthInputUnitLabel(): string {
-  return current === "metric" ? "mm" : "in";
+  return current === "metric" ? "cm" : "in";
 }
 
 /** m -> the number to show in a length input field. */
 export function lengthToInput(m: number): number {
-  return current === "metric" ? m * 1000 : m * M_TO_IN;
+  return current === "metric" ? m * 100 : m * M_TO_IN;
 }
 
 /** The number typed into a length input field -> m. */
 export function lengthFromInput(raw: number): number {
-  return current === "metric" ? raw / 1000 : raw / M_TO_IN;
+  return current === "metric" ? raw / 100 : raw / M_TO_IN;
 }
 
 // --- Chart-axis helpers: bare numeric value (no suffix, uPlot draws its own axis labels) plus

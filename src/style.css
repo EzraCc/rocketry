@@ -1,5 +1,24 @@
 /* Small overrides on top of Pico.css — kept minimal on purpose. */
 
+/* Fixed in the corner, out of the page's normal flow -- a persistent settings toggle, not a nav
+   item, so it shouldn't read as a row of page-level links (Pico's default button-group styling
+   made it look exactly like one, full-width, when it lived inline in the header). */
+#unit-toggle {
+  position: fixed;
+  top: 0.75rem;
+  right: 0.75rem;
+  z-index: 100;
+  display: inline-flex;
+  width: auto;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+}
+
+#unit-toggle button {
+  padding: 0.35rem 0.85rem;
+  font-size: 0.85rem;
+  width: auto;
+}
+
 .stats-grid > div {
   text-align: center;
   padding: 0.75rem 0.5rem;
@@ -77,4 +96,29 @@ th.sortable-th:hover {
 .info-panel p {
   margin: 0.25rem 0 0 0;
   color: var(--pico-muted-color);
+}
+
+/* Pencil-icon inline edit for the mass stat card (see renderMassStat/wireMassStatEdit in
+   main.ts) -- pencil is a plain unstyled button so it reads as an icon, not a form control. */
+.edit-pencil {
+  all: unset;
+  cursor: pointer;
+  margin-left: 0.35rem;
+  font-size: 0.75rem;
+  opacity: 0.55;
+  vertical-align: middle;
+}
+
+.edit-pencil:hover,
+.edit-pencil:focus-visible {
+  opacity: 1;
+}
+
+.mass-stat-input {
+  width: 6rem;
+  display: inline-block;
+  font-size: 1.15rem;
+  font-weight: bold;
+  padding: 0.15rem 0.35rem;
+  margin: 0;
 }
