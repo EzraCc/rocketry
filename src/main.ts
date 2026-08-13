@@ -160,12 +160,11 @@ function stat(label: string, value: string): string {
 }
 
 function renderRocketSection(rocket: Rocket, mach: number, subtitle: string, knownCp?: { label: string; mm: number }[]): string {
-  const { cna, cpX, refDiameter } = computeBarrowman(rocket.components, mach);
+  const { cpX, refDiameter } = computeBarrowman(rocket.components, mach);
   const hasCg = rocket.dryCg > 0;
   const margin = hasCg ? stabilityMargin(cpX, rocket.dryCg, refDiameter) : null;
 
   const stats = [
-    stat("Total CNa", `${cna.toFixed(3)} /rad`),
     stat("Computed CP", fmtLength(cpX)),
     hasCg ? stat("CG (manual)", fmtLength(rocket.dryCg)) : "",
     stat("Ref. diameter", fmtLength(refDiameter)),
