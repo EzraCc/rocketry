@@ -56,6 +56,18 @@ interface RocketLibraryEntry {
   name: string;
   source: string;
   components: Component[];
+  /**
+   * kg — real, sourced dry mass (never the generic defaultRocket() 50g
+   * placeholder, which is 20x+ too light for anything but a very small
+   * rocket and produces absurd thrust-to-weight/altitude results on a real
+   * motor). CG is deliberately not included here — see the .rkt upload
+   * path's identical reasoning (main.ts's fileInput handler / parse.ts's
+   * doc comment): every part's CG in the source file is local to that
+   * part's own coordinate frame, and correctly resolving nested/internal
+   * parts' frames wasn't done, so CG stays 0 (unset), forcing the user to
+   * enter it rather than shipping a confidently-wrong number.
+   */
+  dryMassKg: number;
   knownCp?: { label: string; mm: number }[];
 }
 
@@ -118,6 +130,11 @@ const ROCKET_LIBRARY: RocketLibraryEntry[] = [
     name: 'LOC Precision "PK-48 LOC-IV"',
     source: "Transcribed from sim-files/LOC/PK-48 Loc-IV.rkt",
     components: locIvComponents,
+    // Sum of that file's own 12 <CalcMass> entries (verified in
+    // src/formats/rocksim/parse.test.ts against the same fixture via
+    // parseRocksimXml's estimatedDryMassKg) — a real ~4in/1.2m rocket's
+    // structural mass, not the ~50g a blank-rocket default would imply.
+    dryMassKg: 1.10517226,
     knownCp: [
       { label: "RockSim classical Barrowman CP (BarromanXN)", mm: 899.247 },
       { label: "RockSim proprietary extended-method CP (RockSimXN)", mm: 972.645 },
@@ -133,6 +150,7 @@ function rocketFromLibraryEntry(entry: RocketLibraryEntry): Rocket {
     ...defaultRocket(),
     name: entry.name,
     components: entry.components,
+    dryMass: entry.dryMassKg,
     motorMount: { componentId: motorMountId, motorOverhang: 0 },
   };
 }
@@ -881,7 +899,7 @@ function wireOrkImport(): void {
         // Only .ork carries an embedded motor reference -- RockSim and RASAero files have no
         // motor data at all, only mount geometry (parseRocksimXml/parseRasaeroXml's results have
         // no `motor` field to begin with).
-        let parsed: { name: string; components: Component[]; warnings: string[] };
+        let parsed: { name: string; components: Component[]; warnings: string[]; estimatedDryMassKg?: number };
         let motor: { manufacturer: string; designation: string } | null;
         if (lowerName.endsWith(".rkt")) {
           parsed = parseRocksimXml(await file.text());
@@ -899,11 +917,18 @@ function wireOrkImport(): void {
         const bodyComponents = parsed.components.filter(isBodyComponent);
         const motorMountId = motorMountComponent?.id ?? bodyComponents[bodyComponents.length - 1]?.id ?? "";
 
+        // RockSim files carry a real, sourced mass estimate (sum of the file's own per-part
+        // <CalcMass> — see parseRocksimXml's doc comment); prefer it over the generic
+        // fallback/placeholder, which is wildly wrong for anything but a very light rocket. CG has
+        // no equivalent — stays 0 (unset) so the UI forces the user to actually enter it.
+        const dryMass =
+          parsed.estimatedDryMassKg && parsed.estimatedDryMassKg > 0 ? parsed.estimatedDryMassKg : massFromInput(Number(massEl.value) || 50);
+
         activeRocket = {
           ...defaultRocket(),
           name: parsed.name,
           components: parsed.components,
-          dryMass: massFromInput(Number(massEl.value) || 50),
+          dryMass,
           dryCg: 0, // forces the user to actually enter it -- never guessed from geometry
           motorMount: { componentId: motorMountId, motorOverhang: 0 },
         };
@@ -911,10 +936,14 @@ function wireOrkImport(): void {
         activeRocketSource = `Uploaded: ${file.name}`;
 
         controlsEl.style.display = "";
+        const massNote =
+          parsed.estimatedDryMassKg && parsed.estimatedDryMassKg > 0
+            ? ` Dry mass prefilled at ${fmtMass(parsed.estimatedDryMassKg)} from the file's own component masses — check it, then set CG below (never guessed).`
+            : " Set dry mass and CG below (never guessed).";
         const parseNote = parsed.warnings.length
           ? parsed.warnings.map((w) => `<mark>${w}</mark>`).join(" ")
           : `<small>Parsed ${parsed.components.length} components successfully.</small>`;
-        warningsEl.innerHTML = `<p>${parseNote}</p>`;
+        warningsEl.innerHTML = `<p>${parseNote}${massNote}</p>`;
 
         syncMassCgInputsFromActiveRocket();
         renderActiveRocketDisplay();

@@ -25,6 +25,31 @@ export interface ParsedRocksimRocket {
   components: Component[];
   /** RockSim files carry no motor data at all (only mount geometry) — always empty; motor selection is always the caller's job, same as for .ork. */
   warnings: string[];
+  /**
+   * Sum of every <CalcMass> element found anywhere in the file (kg), 0 if
+   * none present. RockSim computes and caches this per-part from that part's
+   * own <Density>/<Material> and geometry — including internal hardware this
+   * project doesn't model aerodynamically (couplers, centering rings,
+   * bulkheads, motor mount tube, recovery gear), which really does add to
+   * what the motor has to lift. Summing it is NOT the same as porting
+   * OpenRocket's own material-density mass calculator (RockSimHandler.java's
+   * importer ignores these cached fields entirely and recomputes mass itself
+   * from the same density/geometry inputs, only honoring the file's
+   * <Stage3Mass>-style override when it's nonzero) — that calculator is
+   * explicitly out of this project's MVP scope. This is a cheaper, honest
+   * middle ground: real numbers already sitting in the file, not a guess,
+   * used as a much better prefill than an arbitrary placeholder — a rocket
+   * this size (see the LOC-IV fixture) is off by 20x+ from a 50g default.
+   * Deliberately NOT attempting the equivalent for CG: unlike CalcMass
+   * (a plain sum, no coordinate frame involved), each part's <CalcCG> is
+   * local to that part's own fore end, and nested/internal parts' <Xb>
+   * offsets are relative to a parent that isn't always resolvable from this
+   * flat per-tag scan — getting that wrong would bias the derived CG
+   * forward (parts skipped are concentrated aft, near the fins), which
+   * makes the rocket look falsely MORE stable, the wrong direction to get
+   * wrong silently. CG stays the caller's/user's responsibility.
+   */
+  estimatedDryMassKg: number;
 }
 
 function directChild(el: Element, tag: string): Element | null {
@@ -306,5 +331,9 @@ export function parseRocksimXml(xmlText: string): ParsedRocksimRocket {
   }
 
   const components = walkStageParts(stage3, warnings);
-  return { name, components, warnings };
+
+  const estimatedDryMassKg =
+    Array.from(design.getElementsByTagName("CalcMass")).reduce((sum, el) => sum + (Number.parseFloat(el.textContent ?? "0") || 0), 0) / 1000;
+
+  return { name, components, warnings, estimatedDryMassKg };
 }

@@ -34,6 +34,11 @@ describe("parseRocksimXml — real fixture (sim-files/LOC/PK-48 Loc-IV.rkt)", ()
     expect(parsed.warnings).toEqual([]); // single stage, everything supported
     expect(parsed.components.map((c) => c.type)).toEqual(["nosecone", "bodytube", "bodytube", "freeformfinset"]);
 
+    // Real, sourced number: sum of this file's own 12 <CalcMass> entries (nose, 2 body tubes, tube
+    // coupler, bulkhead, motor mount tube, fin set, 3 centering rings, an unmeasured accessory
+    // (0g), parachute) -- a real ~4in/1.2m rocket, not the ~50g a blank-rocket default would imply.
+    expect(parsed.estimatedDryMassKg).toBeCloseTo(1.10517226, 6);
+
     const nose = parsed.components[0] as NoseCone;
     expect(nose.shape).toBe("ogive");
     // RockSim's own <ShapeParameter> is meaningless for ogive (see parseShapeCode's doc comment) --
