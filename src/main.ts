@@ -19,7 +19,7 @@ import {
 } from "./physics/motor/thrustcurve-client.js";
 import { burnTime, getThrustAt, totalImpulse } from "./physics/motor/motor-model.js";
 import { deriveMotorMassCurve, getMotorMassAt } from "./physics/mass/motor-mass-curve.js";
-import { combinedMassAt } from "./physics/mass/combined-mass.js";
+import { combinedMassAt, motorAxialPosition } from "./physics/mass/combined-mass.js";
 import type { SimResult3D } from "./physics/sim/types3d.js";
 import { renderFlightChart } from "./ui/charts/flight-chart.js";
 import { simulateFlight3DInWorker } from "./worker/sim-worker-client.js";
@@ -131,9 +131,6 @@ function applyParsedRocket(
   const motorMountComponent = parsed.components.find((c) => c.type === "bodytube" && c.isMotorMount);
   const bodyComponents = parsed.components.filter(isBodyComponent);
   const motorMountId = motorMountComponent?.id ?? bodyComponents[bodyComponents.length - 1]?.id ?? "";
-  const massEl = document.querySelector<HTMLInputElement>("#ork-dry-mass");
-  const dryMass =
-    parsed.estimatedDryMassKg && parsed.estimatedDryMassKg > 0 ? parsed.estimatedDryMassKg : massFromInput(Number(massEl?.value) || 50);
 
   // Only .rkt files carry a real motor-mount-tube diameter (see parseRocksimXml's
   // motorMountDiameterM doc comment) -- .ork/.CDX1 uploads and files with no separately-flagged
@@ -151,10 +148,22 @@ function applyParsedRocket(
     // uploads have no curated name to fall back to, so they keep using the file's own name.
     name: displayName ?? parsed.name,
     components: parsed.components,
-    dryMass,
-    dryCg: 0, // forces the user to actually enter it -- never guessed from geometry
     motorMount: { componentId: motorMountId, motorOverhang: 0 },
   };
+
+  // estimatedDryMassKg (RockSim's own <CalcMass> sum, see parse.ts) is structural-only -- it never
+  // includes a motor. If one's already selected, add its mass so the LOADED prefill is honest;
+  // otherwise this is a same-as-before starting point the user still needs to correct upward once
+  // they pick a motor (never guessed as truly final, just a better placeholder than nothing).
+  const motorMassKg = lastMotorSelection ? (lastMotorSelection.meta.totalWeightG ?? 0) / 1000 : 0;
+  const massEl = document.querySelector<HTMLInputElement>("#ork-loaded-mass");
+  activeLoadedMassKg =
+    parsed.estimatedDryMassKg && parsed.estimatedDryMassKg > 0
+      ? parsed.estimatedDryMassKg + motorMassKg
+      : massFromInput(Number(massEl?.value) || 50);
+  activeLoadedCgM = 0; // forces the user to actually enter it -- never guessed from geometry
+  rederiveDryFields();
+
   activeKnownCp = knownCp;
   activeRocketSource = source;
 }
@@ -175,27 +184,134 @@ let activeRocketSource = "Loading the rocket library…";
 /** Set by applyParsedRocket — the actual motor-fitting diameter (mm), used to pre-fill and constrain the motor search's diameter filter. Real value when available, else the rocket's own reference (outer body) diameter. */
 let activeMotorMountDiameterMm: number | null = null;
 
-function stat(label: string, value: string, infoTooltip?: string): string {
-  const info = infoTooltip
-    ? ` <span tabindex="0" data-tooltip="${infoTooltip.replace(/"/g, "&quot;")}" data-placement="bottom" style="cursor:help;" aria-label="What does this mean?">ⓘ</span>`
+/**
+ * What the user actually enters: mass/CG of the fully assembled, LOADED
+ * rocket (motor installed) — matching how you'd really check it, balancing
+ * the whole thing on a stand, rather than needing to weigh/balance the bare
+ * airframe separately. This is the source of truth for mass/CG throughout
+ * the UI; activeRocket.dryMass/dryCg are derived from these (see
+ * rederiveDryFields) and used only internally, by the mass-curve/flight-sim
+ * machinery that needs a genuine dry/motor split to model mass depletion
+ * during the burn — never shown to the user directly.
+ */
+let activeLoadedMassKg = 0.05;
+let activeLoadedCgM = 0; // 0 = unset, forces the user to actually enter it -- never guessed from geometry
+
+/** Builds a SelectedMotor from ThrustCurve.org search/download data — shared by rederiveDryFields (below) and renderMotorDetailHtml, so both construct the exact same motor object from the same inputs. */
+function buildSelectedMotor(meta: MotorSearchResult, samples: ThrustSample[]): SelectedMotor {
+  return {
+    motorId: meta.motorId,
+    designation: meta.designation,
+    manufacturer: meta.manufacturer,
+    diameter: (meta.diameter ?? 0) / 1000,
+    length: (meta.length ?? 0) / 1000,
+    totalMassKg: (meta.totalWeightG ?? 0) / 1000,
+    propellantMassKg: (meta.propWeightG ?? 0) / 1000,
+    samples,
+    delay: 0,
+  };
+}
+
+/**
+ * Re-derives activeRocket's internal dryMass/dryCg from the user-entered
+ * loaded mass/CG and whichever motor is currently selected (lastMotorSelection),
+ * by simple moment conservation: loadedMass*loadedCg = dryMass*dryCg +
+ * motorMass*motorCgX, and loadedMass = dryMass + motorMass. With no motor
+ * selected yet, dry and loaded are the same thing by definition — nothing
+ * to subtract. Call this whenever the loaded inputs change AND whenever the
+ * selected motor changes, since both affect the split.
+ */
+/**
+ * Set by rederiveDryFields whenever the entered loaded mass isn't physically greater than the
+ * selected motor's own mass (the airframe/recovery gear/etc. has to weigh *something*) -- a real
+ * failure mode caught by testing, not hypothetical: dryMass ends up near zero, and dryCg (which
+ * divides by it) swings wildly, silently producing nonsense positions past the rocket's own
+ * length with no indication anything was wrong. Shown in the motor detail panel, the one place
+ * that's re-rendered exactly when this can change (a motor being selected or loaded mass/CG edited).
+ */
+let loadedMassWarning: string | null = null;
+
+function rederiveDryFields(): void {
+  loadedMassWarning = null;
+  if (activeLoadedCgM <= 0) {
+    activeRocket = { ...activeRocket, dryMass: activeLoadedMassKg, dryCg: 0 };
+    return;
+  }
+  const motor = lastMotorSelection ? buildSelectedMotor(lastMotorSelection.meta, lastMotorSelection.samples) : null;
+  const pos = motor ? motorAxialPosition({ ...activeRocket, motor }) : null;
+  if (!motor || !pos) {
+    activeRocket = { ...activeRocket, dryMass: activeLoadedMassKg, dryCg: activeLoadedCgM };
+    return;
+  }
+  // Below zero is an outright contradiction (loaded can't weigh less than the motor alone); below
+  // ~2% of loaded mass is technically positive but still an unmistakable sign of a units/typo
+  // mistake, not a real featherweight airframe -- dryCg divides by this, so either case swings it
+  // wildly (verified directly: 1500g loaded with a 1487g motor left 12.6g of "airframe" and
+  // produced a derived CG past the rocket's own physical length, with no indication anything was
+  // wrong until this check existed).
+  const minPlausibleDryMassKg = Math.max(0.02 * activeLoadedMassKg, 0.002);
+  if (activeLoadedMassKg - motor.totalMassKg < minPlausibleDryMassKg) {
+    loadedMassWarning = `Loaded mass (${fmtMass(activeLoadedMassKg)}) leaves implausibly little for the airframe once the selected motor's own mass (${fmtMass(motor.totalMassKg)}) is subtracted — check for a units mistake. Dry mass/CG derived from this will be unreliable until it's fixed.`;
+  }
+  const dryMass = Math.max(activeLoadedMassKg - motor.totalMassKg, 1e-6);
+  const dryCg = (activeLoadedMassKg * activeLoadedCgM - motor.totalMassKg * pos.cgX) / dryMass;
+  activeRocket = { ...activeRocket, dryMass, dryCg };
+}
+
+/**
+ * `infoId`, when given, adds a small click-to-toggle info button next to the
+ * label — NOT a hover tooltip (Pico's data-tooltip popup was too small for
+ * anything longer than a few words, unusable for real explanatory text).
+ * The button only references infoId; the actual expanded content is a
+ * separate block the caller renders elsewhere (see renderInfoPanel) — kept
+ * apart because the content belongs below the whole stats grid, not crammed
+ * into one cramped stat cell.
+ */
+function stat(label: string, value: string, infoId?: string): string {
+  const info = infoId
+    ? ` <a href="#" data-info-toggle="${infoId}" aria-expanded="false" aria-controls="${infoId}" aria-label="What does this mean?">ⓘ</a>`
     : "";
   return `<div><strong>${value}</strong><br /><small>${label}${info}</small></div>`;
 }
 
+/** The collapsed-by-default content block a stat()'s infoId button reveals — rendered separately, below the stats grid (see this file's wireInfoToggles for the click handling). */
+function renderInfoPanel(id: string, title: string, bodyHtml: string): string {
+  return `<div id="${id}" class="info-panel" hidden><strong>${title}</strong><p>${bodyHtml}</p></div>`;
+}
+
+/**
+ * One-time (not per-render) delegated click handler for every `[data-info-toggle]` button —
+ * `renderRocketSection`'s whole HTML gets replaced on every re-render (rocket change, unit
+ * toggle), so listeners attached directly to its buttons would need re-wiring each time; binding
+ * on the stable #app ancestor instead means this only needs to run once at startup.
+ */
+function wireInfoToggles(): void {
+  document.querySelector("#app")?.addEventListener("click", (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLElement>("[data-info-toggle]");
+    if (!btn) return;
+    e.preventDefault();
+    const panel = document.getElementById(btn.dataset["infoToggle"]!);
+    if (!panel) return;
+    const nowHidden = !panel.hasAttribute("hidden");
+    panel.toggleAttribute("hidden", nowHidden);
+    btn.setAttribute("aria-expanded", String(!nowHidden));
+  });
+}
+
 function renderRocketSection(rocket: Rocket, mach: number, subtitle: string, knownCp?: { label: string; mm: number }[]): string {
   const { cpX, refDiameter } = computeBarrowman(rocket.components, mach);
-  const hasCg = rocket.dryCg > 0;
-  const margin = hasCg ? stabilityMargin(cpX, rocket.dryCg, refDiameter) : null;
+  // Loaded (motor installed) mass/CG, exactly as entered -- not rocket.dryMass/dryCg, which is a
+  // derived, internal-only quantity (see rederiveDryFields) meant for the mass-curve/flight-sim
+  // machinery, not display. A stability check against the loaded configuration is also the more
+  // meaningful one here: it's the configuration that actually flies, not a hypothetical motor-less one.
+  const hasCg = activeLoadedCgM > 0;
+  const margin = hasCg ? stabilityMargin(cpX, activeLoadedCgM, refDiameter) : null;
 
   const stats = [
     stat("Length", fmtRocketLength(overallLength(rocket.components))),
-    stat("Dry mass", fmtMass(rocket.dryMass)),
-    stat(
-      "Computed CP",
-      fmtLength(cpX),
-      "Always computed independently from this rocket's geometry — never read from the source file (.ork/.rkt/.CDX1), regardless of format. Method: classical Barrowman component buildup (nose/transition/tube + fin CNa/CP) with a corrected fin-body interference factor; no Galejs body-lift term and no supersonic K1/K2/K3 fin corrections, hence the Mach-validity warning above ~0.8-0.9. RockSim's own stored CP is shown as a reference comparison only where available (e.g. the LOC-IV library entry), not used as the computed value.",
-    ),
-    hasCg ? stat("CG (manual)", fmtLength(rocket.dryCg)) : "",
+    stat("Loaded mass", fmtMass(activeLoadedMassKg)),
+    stat("Computed CP", fmtLength(cpX), "cp-method-info"),
+    hasCg ? stat("Loaded CG", fmtLength(activeLoadedCgM)) : "",
     stat("Ref. diameter", fmtLength(refDiameter)),
     margin !== null
       ? stat(
@@ -220,9 +336,14 @@ function renderRocketSection(rocket: Rocket, mach: number, subtitle: string, kno
     <article>
       <header>
         <h2>${rocket.name}</h2>
-        <p>${subtitle} · static Barrowman results at Mach ${mach}${hasCg ? "" : " — mass/CG not entered, so no stability margin is shown"}</p>
+        <p>${subtitle} · static Barrowman results at Mach ${mach}${hasCg ? "" : " — loaded mass/CG not entered, so no stability margin is shown"}</p>
       </header>
       <div class="grid stats-grid">${stats}</div>
+      ${renderInfoPanel(
+        "cp-method-info",
+        "How Computed CP is calculated",
+        `Always computed independently from this rocket's geometry — never read from the source file (.ork/.rkt/.CDX1), regardless of format. Method: classical Barrowman component buildup (nose/transition/tube + fin CNa/CP) with a corrected fin-body interference factor; no Galejs body-lift term and no supersonic K1/K2/K3 fin corrections, hence the Mach-validity warning above ~0.8-0.9. RockSim's own stored CP is shown as a reference comparison only where available (e.g. the LOC-IV library entry), not used as the computed value.`,
+      )}
       ${
         knownCpRows
           ? `<figure>
@@ -234,7 +355,7 @@ function renderRocketSection(rocket: Rocket, mach: number, subtitle: string, kno
           : ""
       }
       <figure class="schematic">
-        ${renderSchematicSvg(rocket.components, cpX, hasCg ? rocket.dryCg : undefined)}
+        ${renderSchematicSvg(rocket.components, cpX, hasCg ? activeLoadedCgM : undefined)}
       </figure>
     </article>
   `;
@@ -513,17 +634,12 @@ function renderAndWireResults(): void {
 let lastMotorSelection: { meta: MotorSearchResult; samples: ThrustSample[] } | null = null;
 
 function renderMotorDetailHtml(meta: MotorSearchResult, samples: ThrustSample[]): { html: string; rocketWithMotor: Rocket } {
-  const motor: SelectedMotor = {
-    motorId: meta.motorId,
-    designation: meta.designation,
-    manufacturer: meta.manufacturer,
-    diameter: (meta.diameter ?? 0) / 1000,
-    length: (meta.length ?? 0) / 1000,
-    totalMassKg: (meta.totalWeightG ?? 0) / 1000,
-    propellantMassKg: (meta.propWeightG ?? 0) / 1000,
-    samples,
-    delay: 0,
-  };
+  const motor = buildSelectedMotor(meta, samples);
+
+  // lastMotorSelection is already set to this exact (meta, samples) by the caller (selectMotor) --
+  // re-derive activeRocket's dry mass/CG against THIS motor before building rocketWithMotor, so a
+  // motor swap correctly changes how much of the loaded mass/CG gets attributed to the airframe.
+  rederiveDryFields();
 
   const rocketWithMotor: Rocket = { ...activeRocket, motor, windProfile: activeWindProfile };
   const massCurve = deriveMotorMassCurve(motor);
@@ -537,6 +653,7 @@ function renderMotorDetailHtml(meta: MotorSearchResult, samples: ThrustSample[])
 
   const html = `
     <h3>${meta.manufacturer} ${meta.designation}</h3>
+    ${loadedMassWarning ? `<p><mark>${loadedMassWarning}</mark></p>` : ""}
     <p>Thrust curve: ${samples.length} samples, burn time ${bt.toFixed(2)}s.
       Total impulse (integrated from curve): ${fmtImpulse(totalImpulse(motor))}
       (ThrustCurve.org reports ${meta.totImpulseNs === undefined || meta.totImpulseNs === null ? "—" : fmtImpulse(meta.totImpulseNs)}).
@@ -854,9 +971,13 @@ const orkSectionHtml = `
         <code>.rkt</code>, or RASAero <code>.CDX1</code> file — nose cone, body tube(s),
         transition/boat tail/fin can, and trapezoidal or freeform fins are imported (single-stage
         only; multi-stage files use just the first/sustainer stage). Mass and CG stay manual, per
-        this tool's design — enter them below. For .ork files, the file's own default motor
-        selection pre-fills the motor search further down (RockSim and RASAero files carry no motor
-        data at all, only mount geometry, so you'll need to search for a motor yourself either way).
+        this tool's design — enter them below as <strong>loaded</strong> values (the fully
+        assembled rocket, motor installed — however you'd actually balance and weigh it on a
+        stand), not the bare dry airframe; internally this tool derives the dry mass/CG it needs
+        for burn simulation by subtracting whichever motor you select further down. For .ork
+        files, the file's own default motor selection pre-fills the motor search further down
+        (RockSim and RASAero files carry no motor data at all, only mount geometry, so you'll need
+        to search for a motor yourself either way).
       </p>
     </header>
     <details id="library-picker">
@@ -875,8 +996,8 @@ const orkSectionHtml = `
     </div>
     <div id="ork-warnings"></div>
     <div class="grid" id="ork-mass-cg-controls" style="margin-top:1em;">
-      <label>Dry mass (<span id="mass-unit-label">g</span>) <input type="number" id="ork-dry-mass" value="50" min="0" step="1" /></label>
-      <label>Dry CG (<span id="length-unit-label">mm</span> from nose) <input type="number" id="ork-dry-cg" value="0" min="0" step="1" /></label>
+      <label>Loaded mass (<span id="mass-unit-label">g</span>) <input type="number" id="ork-loaded-mass" value="50" min="0" step="1" /></label>
+      <label>Loaded CG (<span id="length-unit-label">mm</span> from nose) <input type="number" id="ork-loaded-cg" value="0" min="0" step="1" /></label>
     </div>
     <div id="active-rocket-display"></div>
   </article>
@@ -888,27 +1009,38 @@ function renderActiveRocketDisplay(): void {
   el.innerHTML = renderRocketSection(activeRocket, 0.3, activeRocketSource, activeKnownCp);
 }
 
-/** Sets the mass/CG input fields' displayed values from the active rocket's stored SI values, in whatever unit system is currently selected. */
+/** Sets the mass/CG input fields' displayed values from the user-entered loaded mass/CG, in whatever unit system is currently selected — NOT from activeRocket.dryMass/dryCg, which are a derived, internal-only quantity (see rederiveDryFields) and would show the wrong (motor-excluded) number back to the user. */
 function syncMassCgInputsFromActiveRocket(): void {
-  const massEl = document.querySelector<HTMLInputElement>("#ork-dry-mass");
-  const cgEl = document.querySelector<HTMLInputElement>("#ork-dry-cg");
-  if (massEl) massEl.value = massToInput(activeRocket.dryMass).toFixed(2);
-  if (cgEl) cgEl.value = activeRocket.dryCg > 0 ? lengthToInput(activeRocket.dryCg).toFixed(2) : "0";
+  const massEl = document.querySelector<HTMLInputElement>("#ork-loaded-mass");
+  const cgEl = document.querySelector<HTMLInputElement>("#ork-loaded-cg");
+  if (massEl) massEl.value = massToInput(activeLoadedMassKg).toFixed(2);
+  if (cgEl) cgEl.value = activeLoadedCgM > 0 ? lengthToInput(activeLoadedCgM).toFixed(2) : "0";
 }
 
 function wireOrkImport(): void {
   const fileInput = document.querySelector<HTMLInputElement>("#ork-file-input");
   const warningsEl = document.querySelector<HTMLDivElement>("#ork-warnings");
   const controlsEl = document.querySelector<HTMLDivElement>("#ork-mass-cg-controls");
-  const massEl = document.querySelector<HTMLInputElement>("#ork-dry-mass");
-  const cgEl = document.querySelector<HTMLInputElement>("#ork-dry-cg");
+  const massEl = document.querySelector<HTMLInputElement>("#ork-loaded-mass");
+  const cgEl = document.querySelector<HTMLInputElement>("#ork-loaded-cg");
   if (!fileInput || !warningsEl || !controlsEl || !massEl || !cgEl) return;
 
   const applyMassCg = (): void => {
-    const dryMass = massFromInput(Number(massEl.value) || 0);
-    const dryCg = lengthFromInput(Number(cgEl.value) || 0);
-    activeRocket = { ...activeRocket, dryMass, dryCg };
+    activeLoadedMassKg = massFromInput(Number(massEl.value) || 0);
+    activeLoadedCgM = lengthFromInput(Number(cgEl.value) || 0);
+    rederiveDryFields();
     renderActiveRocketDisplay();
+    // Keep the motor detail panel (its combined mass/CG table and loadedMassWarning) and the
+    // flight sim in sync too, if a motor's already selected -- otherwise editing loaded mass/CG
+    // after picking a motor would leave both showing stale, pre-edit numbers.
+    if (lastMotorSelection) {
+      const detailEl = document.querySelector<HTMLDivElement>("#motor-detail");
+      if (detailEl) {
+        const { html, rocketWithMotor } = renderMotorDetailHtml(lastMotorSelection.meta, lastMotorSelection.samples);
+        detailEl.innerHTML = html;
+        void runFlightSim(rocketWithMotor);
+      }
+    }
   };
   massEl.addEventListener("input", applyMassCg);
   cgEl.addEventListener("input", applyMassCg);
@@ -943,8 +1075,8 @@ function wireOrkImport(): void {
         controlsEl.style.display = "";
         const massNote =
           parsed.estimatedDryMassKg && parsed.estimatedDryMassKg > 0
-            ? ` Dry mass prefilled at ${fmtMass(parsed.estimatedDryMassKg)} from the file's own component masses — check it, then set CG below (never guessed).`
-            : " Set dry mass and CG below (never guessed).";
+            ? ` Loaded mass prefilled at ${fmtMass(activeLoadedMassKg)} from the file's own (structural-only) component masses${lastMotorSelection ? " plus the currently selected motor" : " — add your motor's mass once you pick one"} — check it, then set loaded CG below (never guessed).`
+            : " Set loaded mass and CG below (never guessed).";
         const parseNote = parsed.warnings.length
           ? parsed.warnings.map((w) => `<mark>${w}</mark>`).join(" ")
           : `<small>Parsed ${parsed.components.length} components successfully.</small>`;
@@ -1165,6 +1297,7 @@ if (app) {
   wireMotorSearch();
   wireWindImport();
   wireUnitToggle();
+  wireInfoToggles();
   void initLibrary();
   const urlParams = new URLSearchParams(location.search);
   const hadUrlFilters = (Object.keys(FILTER_DEFAULTS) as FilterKey[]).some((k) => urlParams.has(k));

@@ -57,3 +57,24 @@ th.sortable-th:hover {
   min-width: 0; /* lets the uPlot canvas shrink inside the grid track instead of overflowing it */
   overflow-x: auto;
 }
+
+/* Click-to-reveal explanations (see stat()/renderInfoPanel/wireInfoToggles in main.ts) --
+   replaced Pico's hover data-tooltip for this, since the popup was too small to hold real
+   explanatory text and unusable on touch devices anyway. */
+[data-info-toggle] {
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.info-panel {
+  margin: 0.75rem 0;
+  padding: 0.75rem 1rem;
+  border-radius: var(--pico-border-radius);
+  background: var(--pico-code-background-color);
+  font-size: 0.9rem;
+}
+
+.info-panel p {
+  margin: 0.25rem 0 0 0;
+  color: var(--pico-muted-color);
+}
