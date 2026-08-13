@@ -1124,6 +1124,32 @@ function populateLibraryFilterOptions(): void {
  * design: with 260+ entries, an unfiltered dump isn't useful, and the
  * empty state should read as "search me," not "broken."
  */
+interface LibraryColumn {
+  key: string;
+  label: string;
+  format: (e: LibraryManifestEntry) => string;
+  value: (e: LibraryManifestEntry) => string | number | undefined;
+}
+
+// Sort by the raw underlying number (diameterMm/lengthMm), not the rounded/formatted display
+// value (nominal-inch bucket, cm-or-in string) -- two entries that round to the same displayed
+// bucket should still order consistently by their real size, not tie/shuffle arbitrarily.
+const LIBRARY_COLUMNS: LibraryColumn[] = [
+  { key: "vendor", label: "Vendor", format: (e) => e.vendor, value: (e) => e.vendor },
+  { key: "name", label: "Name", format: (e) => e.name, value: (e) => e.name },
+  { key: "diameter", label: "Diameter", format: (e) => `${nominalDiameterIn(e.diameterMm)}"`, value: (e) => e.diameterMm },
+  { key: "length", label: "Length", format: (e) => fmtRocketLength(e.lengthMm / 1000), value: (e) => e.lengthMm },
+];
+
+let librarySortState: { key: string; dir: 1 | -1 } | null = null;
+
+function sortedLibraryMatches(matches: LibraryManifestEntry[]): LibraryManifestEntry[] {
+  if (!librarySortState) return matches;
+  const column = LIBRARY_COLUMNS.find((c) => c.key === librarySortState!.key);
+  if (!column) return matches;
+  return [...matches].sort((a, b) => compareValues(column.value(a), column.value(b), librarySortState!.dir));
+}
+
 function renderLibraryResults(): void {
   const resultsEl = document.querySelector<HTMLDivElement>("#library-results");
   const vendorSelect = document.querySelector<HTMLSelectElement>("#lib-filter-vendor");
@@ -1152,20 +1178,26 @@ function renderLibraryResults(): void {
     return;
   }
 
-  const rows = matches
+  const sorted = sortedLibraryMatches(matches);
+  const rows = sorted
     .slice(0, 200) // a broad filter (e.g. vendor-only) can still match 100+; cap the DOM cost, name/diameter narrows it down fast
-    .map(
-      (e) =>
-        `<tr><td>${e.vendor}</td><td>${e.name}</td><td>${nominalDiameterIn(e.diameterMm)}"</td><td>${fmtRocketLength(e.lengthMm / 1000)}</td><td><a href="#" data-lib-id="${e.id}">Select</a></td></tr>`,
-    )
+    .map((e) => {
+      const cells = LIBRARY_COLUMNS.map((c) => `<td>${c.format(e)}</td>`).join("");
+      return `<tr>${cells}<td><a href="#" data-lib-id="${e.id}">Select</a></td></tr>`;
+    })
     .join("");
   const truncatedNote = matches.length > 200 ? `<p><small>${matches.length} matches, showing first 200 — narrow the filter to see more.</small></p>` : "";
+
+  const headers = LIBRARY_COLUMNS.map((c) => {
+    const arrow = librarySortState?.key === c.key ? (librarySortState.dir === 1 ? " ▲" : " ▼") : "";
+    return `<th class="sortable-th" data-sort-key="${c.key}">${c.label}${arrow}</th>`;
+  }).join("");
 
   resultsEl.innerHTML = `
     ${truncatedNote}
     <figure>
       <table>
-        <thead><tr><th>Vendor</th><th>Name</th><th>Diameter</th><th>Length</th><th></th></tr></thead>
+        <thead><tr>${headers}<th></th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </figure>
@@ -1176,6 +1208,13 @@ function renderLibraryResults(): void {
       evt.preventDefault();
       const entry = libraryManifest.find((e) => e.id === a.dataset["libId"]);
       if (entry) void selectLibraryEntry(entry);
+    });
+  });
+  resultsEl.querySelectorAll<HTMLTableCellElement>("th[data-sort-key]").forEach((th) => {
+    th.addEventListener("click", () => {
+      const key = th.dataset["sortKey"]!;
+      librarySortState = librarySortState?.key === key ? { key, dir: librarySortState.dir === 1 ? -1 : 1 } : { key, dir: 1 };
+      renderLibraryResults();
     });
   });
 }
