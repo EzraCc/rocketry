@@ -19,9 +19,9 @@ import {
 import { burnTime, getThrustAt, totalImpulse } from "./physics/motor/motor-model.js";
 import { deriveMotorMassCurve, getMotorMassAt } from "./physics/mass/motor-mass-curve.js";
 import { combinedMassAt } from "./physics/mass/combined-mass.js";
-import { simulateFlight3D } from "./physics/sim/engine3d.js";
 import type { SimResult3D } from "./physics/sim/types3d.js";
 import { renderFlightChart } from "./ui/charts/flight-chart.js";
+import { simulateFlight3DInWorker } from "./worker/sim-worker-client.js";
 import { parseSplashcastWindData, type SplashcastWindData } from "./physics/wind/splashcast-import.js";
 import { windAt, constantWindProfile, type WindProfile } from "./model/wind.js";
 import {
@@ -455,7 +455,7 @@ function renderAndWireResults(): void {
 /** The last motor a user actually selected, cached so a unit-toggle can re-render its detail panel without re-fetching from ThrustCurve.org. */
 let lastMotorSelection: { meta: MotorSearchResult; samples: ThrustSample[] } | null = null;
 
-function renderMotorDetailHtml(meta: MotorSearchResult, samples: ThrustSample[]): string {
+function renderMotorDetailHtml(meta: MotorSearchResult, samples: ThrustSample[]): { html: string; rocketWithMotor: Rocket } {
   const motor: SelectedMotor = {
     motorId: meta.motorId,
     designation: meta.designation,
@@ -478,7 +478,7 @@ function renderMotorDetailHtml(meta: MotorSearchResult, samples: ThrustSample[])
   const mid = massAt(midT);
   const end = massAt(bt);
 
-  return `
+  const html = `
     <h3>${meta.manufacturer} ${meta.designation}</h3>
     <p>Thrust curve: ${samples.length} samples, burn time ${bt.toFixed(2)}s.
       Total impulse (integrated from curve): ${fmtImpulse(totalImpulse(motor))}
@@ -517,8 +517,9 @@ function renderMotorDetailHtml(meta: MotorSearchResult, samples: ThrustSample[])
         </tbody>
       </table>
     </figure>
-    ${renderFlightSimSection(rocketWithMotor)}
+    <div id="flight-sim-section"><p aria-busy="true">Simulating flight…</p></div>
   `;
+  return { html, rocketWithMotor };
 }
 
 async function selectMotor(meta: MotorSearchResult): Promise<void> {
@@ -539,21 +540,26 @@ async function selectMotor(meta: MotorSearchResult): Promise<void> {
   try {
     const samples = await downloadThrustSamples(meta.motorId);
     lastMotorSelection = { meta, samples };
-    detailEl.innerHTML = renderMotorDetailHtml(meta, samples);
-    mountFlightCharts();
+    const { html, rocketWithMotor } = renderMotorDetailHtml(meta, samples);
+    detailEl.innerHTML = html;
+    void runFlightSim(rocketWithMotor);
   } catch (err) {
     detailEl.innerHTML = `<p><mark>Failed to load thrust curve: ${err instanceof Error ? err.message : String(err)}</mark></p>`;
   }
 }
 
 /**
- * Set as a side effect of renderFlightSimSection so the DOM-mounting step
- * (which must run AFTER the returned HTML string is actually inserted into
- * the document, since uPlot needs real container elements to attach to) can
- * find the samples it just computed. Same module-level-mutable-state
+ * Set whenever a simulation actually runs, so a unit toggle can re-render
+ * the same result under new formatting (rerenderFlightResultOnly) without
+ * paying for another worker round-trip — the physics doesn't depend on
+ * display units, only what's shown does. Same module-level-mutable-state
  * pattern as activeRocket/lastMotorSelection elsewhere in this file.
  */
 let lastFlightResult: SimResult3D | null = null;
+let lastFlightRocket: Rocket | null = null;
+let lastFlightElapsedMs = 0;
+/** Guards against a stale response overwriting a newer request's result if two runFlightSim calls overlap (e.g. rapid motor reselection). */
+let flightSimRequestSeq = 0;
 
 const FLIGHT_CHART_IDS = { altitude: "chart-altitude", speed: "chart-speed", mach: "chart-mach", tilt: "chart-tilt" };
 
@@ -561,7 +567,37 @@ function mountFlightCharts(): void {
   if (lastFlightResult) renderFlightChart(FLIGHT_CHART_IDS, lastFlightResult.samples);
 }
 
-function renderFlightSimSection(rocket: Rocket): string {
+/** Runs the (potentially expensive, many-thousand-substep) 3D ascent sim in a Web Worker and renders the result into #flight-sim-section once it resolves. */
+async function runFlightSim(rocket: Rocket): Promise<void> {
+  const el = document.querySelector<HTMLDivElement>("#flight-sim-section");
+  if (!el) return;
+  const requestId = ++flightSimRequestSeq;
+  try {
+    const t0 = performance.now();
+    const result = await simulateFlight3DInWorker(rocket);
+    const elapsedMs = performance.now() - t0;
+    if (requestId !== flightSimRequestSeq) return; // superseded by a newer request
+    lastFlightResult = result;
+    lastFlightRocket = rocket;
+    lastFlightElapsedMs = elapsedMs;
+    el.innerHTML = renderFlightResultHtml(rocket, result, elapsedMs);
+    mountFlightCharts();
+  } catch (err) {
+    if (requestId !== flightSimRequestSeq) return;
+    el.innerHTML = `<p><mark>Flight simulation failed: ${err instanceof Error ? err.message : String(err)}</mark></p>`;
+  }
+}
+
+/** Re-renders the LAST COMPUTED flight result under the current unit system, without re-running the simulation (a pure unit toggle doesn't change the underlying SI physics). No-op if no simulation has completed yet. */
+function rerenderFlightResultOnly(): void {
+  if (!lastFlightResult || !lastFlightRocket) return;
+  const el = document.querySelector<HTMLDivElement>("#flight-sim-section");
+  if (!el) return;
+  el.innerHTML = renderFlightResultHtml(lastFlightRocket, lastFlightResult, lastFlightElapsedMs);
+  mountFlightCharts();
+}
+
+function renderFlightResultHtml(rocket: Rocket, result: SimResult3D, elapsedMs: number): string {
   // Stability check uses the CG AT LAUNCH (full propellant load), not the dry CG -- for a
   // typical aft-mounted motor, CG is furthest aft (least stable) at liftoff and moves forward
   // as propellant burns, so liftoff is the safety-relevant worst case to check, not burnout.
@@ -576,11 +612,6 @@ function renderFlightSimSection(rocket: Rocket): string {
   const stabilityWarningsHtml = stability.flyable && stability.warnings.length
     ? `<p>${stability.warnings.map((w) => `<mark>${w}</mark>`).join(" ")}</p>`
     : "";
-
-  const t0 = performance.now();
-  const result = simulateFlight3D(rocket);
-  const elapsedMs = performance.now() - t0;
-  lastFlightResult = result;
 
   const warningsHtml = result.warnings.length
     ? `<p>${result.warnings.map((w) => `<mark>${w}</mark>`).join(" ")}</p>`
@@ -1012,8 +1043,10 @@ function refreshAllUnitDisplays(): void {
   renderAndWireResults();
   if (lastMotorSelection) {
     const detailEl = document.querySelector<HTMLDivElement>("#motor-detail");
-    if (detailEl) detailEl.innerHTML = renderMotorDetailHtml(lastMotorSelection.meta, lastMotorSelection.samples);
-    mountFlightCharts();
+    if (detailEl) {
+      detailEl.innerHTML = renderMotorDetailHtml(lastMotorSelection.meta, lastMotorSelection.samples).html;
+      rerenderFlightResultOnly();
+    }
   }
   updateWindManualUnitDisplay();
   updateActiveWindLabel();
