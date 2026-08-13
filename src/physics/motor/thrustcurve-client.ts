@@ -36,7 +36,16 @@ interface SearchResponse {
 
 export async function searchMotors(query: {
   manufacturer?: string;
-  designation?: string;
+  /**
+   * ThrustCurve.org's `commonName` search field (e.g. "K400", "C6") is
+   * forgiving — case-insensitive and matches the simplified name without a
+   * propellant-type suffix. Its `designation` field (e.g. "K400C") is an
+   * exact match only — searching designation:"K400" against a real motor
+   * designated "K400C" returns zero results. Confirmed directly against the
+   * live API, not assumed: commonName is the right field for a user-facing
+   * search box.
+   */
+  commonName?: string;
   diameter?: number; // mm
   type?: string;
   impulseClass?: string;

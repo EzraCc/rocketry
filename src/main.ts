@@ -209,7 +209,7 @@ const FILTER_DEFAULTS = {
   diameter: "",
   type: "",
   impulseClass: "",
-  designation: "",
+  commonName: "",
 } as const;
 
 type FilterKey = keyof typeof FILTER_DEFAULTS;
@@ -219,7 +219,7 @@ const FILTER_ELEMENT_IDS: Record<FilterKey, string> = {
   diameter: "motor-diameter",
   type: "motor-type",
   impulseClass: "motor-impulse-class",
-  designation: "motor-designation",
+  commonName: "motor-common-name",
 };
 
 function filterElement(key: FilterKey): HTMLInputElement | HTMLSelectElement | null {
@@ -268,8 +268,8 @@ const motorSectionHtml = `
         <label>Impulse class
           <select id="motor-impulse-class" aria-busy="true"><option value="">Loading…</option></select>
         </label>
-        <label>Designation
-          <input id="motor-designation" type="text" value="${urlFilterValue("designation")}" placeholder="e.g. C6" />
+        <label>Common name
+          <input id="motor-common-name" type="text" value="${urlFilterValue("commonName")}" placeholder="e.g. C6, K400" />
         </label>
       </div>
       <button type="submit">Search</button>
@@ -574,14 +574,14 @@ async function performSearch(): Promise<void> {
   const diameter = filterElement("diameter")?.value.trim() ?? "";
   const type = filterElement("type")?.value.trim() ?? "";
   const impulseClass = filterElement("impulseClass")?.value.trim() ?? "";
-  const designation = filterElement("designation")?.value.trim() ?? "";
+  const commonName = filterElement("commonName")?.value.trim() ?? "";
 
   resultsEl.innerHTML = '<p aria-busy="true">Searching…</p>';
   submitBtn?.setAttribute("aria-busy", "true");
   try {
     currentResults = await searchMotors({
       manufacturer: mfg || undefined,
-      designation: designation || undefined,
+      commonName: commonName || undefined,
       diameter: diameter ? Number(diameter) : undefined,
       type: type || undefined,
       impulseClass: impulseClass || undefined,
@@ -853,9 +853,11 @@ function wireOrkImport(): void {
 
         if (motor) {
           const mfgEl = filterElement("manufacturer");
-          const desEl = filterElement("designation");
+          const nameEl = filterElement("commonName");
           if (mfgEl) mfgEl.value = motor.manufacturer;
-          if (desEl) desEl.value = motor.designation;
+          // motor.designation is the .ork file's own <designation> value (e.g. "C6") -- simple
+          // enough in practice to work fine as a commonName search too, given forgiving matching.
+          if (nameEl) nameEl.value = motor.designation;
           syncFormToUrl();
           void performSearch();
           warningsEl.innerHTML += `<p><small>File's default motor was ${motor.manufacturer} ${motor.designation} — pre-filled the motor search below.</small></p>`;
