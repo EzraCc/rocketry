@@ -1,0 +1,141 @@
+/**
+ * Scans every vendor folder under public/library/ (each a flat set of real
+ * .rkt files, no nesting — see main.ts's LibraryManifestEntry doc comment
+ * for the curation process behind them), parses each with the same
+ * parseRocksimXml the browser uses, and (re)writes:
+ *   - public/library/manifest.json — the small eagerly-loaded index the
+ *     browse/filter UI in main.ts reads at startup (vendor, name, path,
+ *     diameter, length, whether the file had import warnings).
+ *   - public/library/INDEX.md — a human-readable table of the same data,
+ *     grouped by vendor, for browsing the library without running the app.
+ *
+ * Run this after adding, removing, or renaming any file under
+ * public/library/<vendor>/ — nothing else regenerates these automatically.
+ *
+ * Usage: npm run build:library
+ */
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
+import { JSDOM } from "jsdom";
+
+(globalThis as unknown as { DOMParser: typeof DOMParser }).DOMParser = new JSDOM().window.DOMParser as unknown as typeof DOMParser;
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(__dirname, "..");
+const libraryDir = path.join(repoRoot, "public", "library");
+
+const { parseRocksimXml } = await import("../src/formats/rocksim/parse.js");
+const { overallLength, referenceDiameter } = await import("../src/physics/geometry/rocket-geometry.js");
+
+interface ManifestEntry {
+  id: string;
+  vendor: string;
+  name: string;
+  path: string;
+  diameterMm: number;
+  lengthMm: number;
+  warnings: boolean;
+}
+
+function nominalDiameterIn(mm: number): number {
+  return Math.round((mm / 25.4) * 2) / 2;
+}
+
+// public/library/<dir>/ -> the display name shown in the UI's vendor filter and "From the
+// library: <vendor> — <name>" subtitle. Folder names are lowercase/slug-like (filesystem
+// convention); this is the one place that maps a folder to its real vendor name -- add new
+// vendors here when their folder is added, or they'll show up capitalized-as-is instead.
+const VENDOR_DISPLAY_NAMES: Record<string, string> = {
+  loc: "LOC Precision",
+  apogee: "Apogee",
+  mach1: "Mach1",
+  wildman: "Wildman",
+};
+
+function vendorDisplayName(dir: string): string {
+  return VENDOR_DISPLAY_NAMES[dir] ?? dir;
+}
+
+const vendorDirs = fs
+  .readdirSync(libraryDir, { withFileTypes: true })
+  .filter((d) => d.isDirectory())
+  .map((d) => d.name)
+  .sort();
+
+const entries: ManifestEntry[] = [];
+let failures = 0;
+
+for (const vendorDir of vendorDirs) {
+  const files = fs.readdirSync(path.join(libraryDir, vendorDir)).filter((f) => f.toLowerCase().endsWith(".rkt"));
+  const vendorEntries: ManifestEntry[] = [];
+
+  for (const file of files) {
+    const relPath = `library/${vendorDir}/${file}`;
+    const xml = fs.readFileSync(path.join(libraryDir, vendorDir, file), "utf-8");
+    try {
+      const parsed = parseRocksimXml(xml);
+      if (parsed.components.length === 0) throw new Error("zero components");
+      const lengthMm = overallLength(parsed.components) * 1000;
+      const diameterMm = referenceDiameter(parsed.components) * 1000;
+      if (!(diameterMm > 0) || !(lengthMm > 0)) throw new Error(`bad geometry (L=${lengthMm}, D=${diameterMm})`);
+      vendorEntries.push({
+        id: "", // assigned below, after sorting, so ids stay a stable-looking sequence within each vendor
+        vendor: vendorDisplayName(vendorDir),
+        name: path.basename(file, ".rkt"),
+        path: relPath,
+        diameterMm: Math.round(diameterMm * 10) / 10,
+        lengthMm: Math.round(lengthMm * 10) / 10,
+        warnings: parsed.warnings.length > 0,
+      });
+    } catch (err) {
+      failures++;
+      console.log(`FAILED: ${relPath} — ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  // A vendor's own well-known "default" rocket (matched by display name, if present) sorts first
+  // within that vendor purely so its id stays short/memorable — main.ts never relies on this
+  // ordering itself (see LIBRARY_KNOWN_CP and initLibrary's default-rocket lookup, both keyed by
+  // path, not id, specifically so a re-sort here can't silently break either).
+  const vendorSlug = vendorDir.toLowerCase();
+  vendorEntries.sort((a, b) => a.diameterMm - b.diameterMm || a.name.localeCompare(b.name));
+  vendorEntries.forEach((e, i) => {
+    e.id = `${vendorSlug}-${i}`;
+  });
+  entries.push(...vendorEntries);
+}
+
+fs.writeFileSync(path.join(libraryDir, "manifest.json"), JSON.stringify(entries));
+console.log(`\nmanifest.json: ${entries.length} entries across ${vendorDirs.length} vendors (${failures} failures)`);
+
+// --- human-readable index ---
+const byVendor = new Map<string, ManifestEntry[]>();
+for (const e of entries) {
+  if (!byVendor.has(e.vendor)) byVendor.set(e.vendor, []);
+  byVendor.get(e.vendor)!.push(e);
+}
+
+const M_TO_FT = 1 / 304.8;
+let md = `# Rocket library index\n\n`;
+md += `Auto-generated by \`npm run build:library\` from \`public/library/manifest.json\` — do not hand-edit, re-run the script instead.\n\n`;
+md += `${entries.length} rockets across ${byVendor.size} vendors.\n\n`;
+
+for (const vendor of [...byVendor.keys()].sort()) {
+  const vendorEntries = byVendor.get(vendor)!.slice().sort((a, b) => a.diameterMm - b.diameterMm || a.name.localeCompare(b.name));
+  md += `## ${vendor} (${vendorEntries.length})\n\n`;
+  md += `| Name | Diameter | Length | File |\n|---|---|---|---|\n`;
+  for (const e of vendorEntries) {
+    const diaIn = nominalDiameterIn(e.diameterMm).toFixed(2).replace(/\.?0+$/, "");
+    const lenFt = (e.lengthMm * M_TO_FT).toFixed(2);
+    const warn = e.warnings ? " ⚠️" : "";
+    md += `| ${e.name}${warn} | ${diaIn}" (${e.diameterMm.toFixed(0)}mm) | ${lenFt}ft (${e.lengthMm.toFixed(0)}mm) | \`${e.path}\` |\n`;
+  }
+  md += `\n`;
+}
+md += `⚠️ = multi-stage source file; only the sustainer stage was imported (single-stage scope).\n`;
+
+fs.writeFileSync(path.join(libraryDir, "INDEX.md"), md);
+console.log(`INDEX.md: ${(md.length / 1024).toFixed(1)} KB`);
+
+if (failures > 0) process.exitCode = 1;

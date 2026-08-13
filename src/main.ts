@@ -115,6 +115,7 @@ function applyParsedRocket(
   parsed: { name: string; components: Component[]; estimatedDryMassKg?: number },
   source: string,
   knownCp?: { label: string; mm: number }[],
+  displayName?: string,
 ): void {
   const motorMountComponent = parsed.components.find((c) => c.type === "bodytube" && c.isMotorMount);
   const bodyComponents = parsed.components.filter(isBodyComponent);
@@ -125,7 +126,12 @@ function applyParsedRocket(
 
   activeRocket = {
     ...defaultRocket(),
-    name: parsed.name,
+    // Library selections pass the manifest's curated name (human-verified, matches what the
+    // browse/search UI showed) rather than the file's own internal RockSim <Name> tag, which is
+    // sometimes cryptic or inconsistent with it (e.g. one real case: "LOC-1 Magnum" internally vs.
+    // "LOC-I Magnum" on the vendor's own site -- a 1/I typo in the file, not a display bug). File
+    // uploads have no curated name to fall back to, so they keep using the file's own name.
+    name: displayName ?? parsed.name,
     components: parsed.components,
     dryMass,
     dryCg: 0, // forces the user to actually enter it -- never guessed from geometry
@@ -1060,7 +1066,7 @@ async function selectLibraryEntry(entry: LibraryManifestEntry): Promise<void> {
     const res = await fetch(entry.path);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const parsed = parseRocksimXml(await res.text());
-    applyParsedRocket(parsed, `From the library: ${entry.vendor} — ${entry.name}`, LIBRARY_KNOWN_CP[entry.path]);
+    applyParsedRocket(parsed, `From the library: ${entry.vendor} — ${entry.name}`, LIBRARY_KNOWN_CP[entry.path], entry.name);
 
     if (controlsEl) controlsEl.style.display = "";
     if (warningsEl) {
