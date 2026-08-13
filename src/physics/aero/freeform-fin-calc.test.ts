@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { freeformFinAero } from "./freeform-fin-calc.js";
 import type { FreeformFinSet } from "../../model/component.js";
 
-// LOC PK-48 LOC-IV fin (RockSim <CustomFinSet>, sim-files/LOC/PK-48 Loc-IV.rkt),
+// LOC PK-48 LOC-IV fin (RockSim <CustomFinSet>, sim-files/LOC/PK-48 LOC-IV.rkt),
 // converted from mm to m. This is the exact fixture used to validate the
 // whole-rocket comparison against RockSim's own stored BarromanXN (see
 // scripts/validate-loc-iv.ts and the commit that added this calculator).

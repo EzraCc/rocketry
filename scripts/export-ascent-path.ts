@@ -2,7 +2,7 @@
  * Generates a real ascent-path JSON file for splashcast to test its handoff
  * integration against, using:
  *   - real rocket geometry: LOC Precision "PK-48 LOC-IV" (already transcribed
- *     from sim-files/LOC/PK-48 Loc-IV.rkt and validated against RockSim's own
+ *     from sim-files/LOC/PK-48 LOC-IV.rkt and validated against RockSim's own
  *     stored CP in scripts/validate-loc-iv.ts)
  *   - a real motor, fetched live from ThrustCurve.org (not synthetic)
  *   - real wind data, from the actual captured splashcast file

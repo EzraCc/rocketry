@@ -11,7 +11,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MM = 0.001;
 
 function loadFixture(): ReturnType<typeof parseRocksimXml> {
-  const xml = fs.readFileSync(path.resolve(__dirname, "../../../sim-files/LOC/PK-48 Loc-IV.rkt"), "utf-8");
+  const xml = fs.readFileSync(path.resolve(__dirname, "../../../sim-files/LOC/PK-48 LOC-IV.rkt"), "utf-8");
   return parseRocksimXml(xml);
 }
 
@@ -26,7 +26,7 @@ const HAND_TRANSCRIBED_POINTS: [number, number][] = [
   [0, 0],
 ];
 
-describe("parseRocksimXml — real fixture (sim-files/LOC/PK-48 Loc-IV.rkt)", () => {
+describe("parseRocksimXml — real fixture (sim-files/LOC/PK-48 LOC-IV.rkt)", () => {
   it("matches the independently hand-transcribed locIvComponents fixture field-for-field", () => {
     const parsed = loadFixture();
 

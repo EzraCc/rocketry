@@ -69,9 +69,17 @@ interface LibraryManifestEntry {
 
 let libraryManifest: LibraryManifestEntry[] = [];
 
-/** Reference CP values to show for library entries with a known-good independent value to compare against (currently just LOC-IV, validated elsewhere in this project against RockSim's own stored CP) — keyed by manifest id, absent for everything else. */
+/**
+ * Reference CP values to show for library entries with a known-good
+ * independent value to compare against (currently just LOC-IV, validated
+ * elsewhere in this project against RockSim's own stored CP) — keyed by
+ * manifest PATH, not id: ids are assigned sequentially at manifest-generation
+ * time (see scripts that rebuild public/library/manifest.json), so they
+ * shift whenever that vendor's entry count changes; path is the one thing
+ * guaranteed stable across regenerations for the same underlying file.
+ */
 const LIBRARY_KNOWN_CP: Record<string, { label: string; mm: number }[]> = {
-  "loc-0": [
+  "library/loc/PK-48 LOC-IV.rkt": [
     { label: "RockSim classical Barrowman CP (BarromanXN)", mm: 899.247 },
     { label: "RockSim proprietary extended-method CP (RockSimXN)", mm: 972.645 },
   ],
@@ -1052,7 +1060,7 @@ async function selectLibraryEntry(entry: LibraryManifestEntry): Promise<void> {
     const res = await fetch(entry.path);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const parsed = parseRocksimXml(await res.text());
-    applyParsedRocket(parsed, `From the library: ${entry.vendor} — ${entry.name}`, LIBRARY_KNOWN_CP[entry.id]);
+    applyParsedRocket(parsed, `From the library: ${entry.vendor} — ${entry.name}`, LIBRARY_KNOWN_CP[entry.path]);
 
     if (controlsEl) controlsEl.style.display = "";
     if (warningsEl) {
@@ -1087,7 +1095,7 @@ async function initLibrary(): Promise<void> {
     populateLibraryFilterOptions();
     wireLibraryPicker();
 
-    const defaultEntry = libraryManifest.find((e) => e.id === "loc-0") ?? libraryManifest[0];
+    const defaultEntry = libraryManifest.find((e) => e.path === "library/loc/PK-48 LOC-IV.rkt") ?? libraryManifest[0];
     if (defaultEntry) await selectLibraryEntry(defaultEntry);
   } catch (err) {
     activeRocketSource = `Failed to load the rocket library: ${err instanceof Error ? err.message : String(err)} — upload a file instead.`;

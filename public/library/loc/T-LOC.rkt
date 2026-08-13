@@ -1,0 +1,888 @@
+<RockSimDocument>
+  <FileVersion>4</FileVersion>
+  <DesignInformation>
+    <RocketDesign>
+      <Name>T-LOC</Name>
+      <CalculateCD>1</CalculateCD>
+      <ProCalculateCD>1</ProCalculateCD>
+      <ProCalculateCN>1</ProCalculateCN>
+      <FixedCd>0.75</FixedCd>
+      <FixedCd2>0.8</FixedCd2>
+      <FixedCd3>0.81</FixedCd3>
+      <FixedCd2Alone>0.95</FixedCd2Alone>
+      <FixedCd3Alone>0.95</FixedCd3Alone>
+      <StageCount>1</StageCount>
+      <Stage3Mass>0.</Stage3Mass>
+      <Stage2Mass>0.</Stage2Mass>
+      <Stage1Mass>0.</Stage1Mass>
+      <Stage321CG>0.</Stage321CG>
+      <Stage32CG>0.</Stage32CG>
+      <Stage3CG>0.</Stage3CG>
+      <Stage2CGAlone>0.</Stage2CGAlone>
+      <Stage1CGAlone>0.</Stage1CGAlone>
+      <CPCalcFlags>4</CPCalcFlags>
+      <LaunchGuideLength>914.4</LaunchGuideLength>
+      <UseKnownMass>0</UseKnownMass>
+      <DefaultFinish>0</DefaultFinish>
+      <FinishMedium>0</FinishMedium>
+      <FinishCoatCount>1</FinishCoatCount>
+      <GlueType>0</GlueType>
+      <CPSimFlags>4</CPSimFlags>
+      <LastSerialNumber>13</LastSerialNumber>
+      <DisplayFlags>1</DisplayFlags>
+      <MetricsFlags>0</MetricsFlags>
+      <BarromanXN>0,684.801,0,0</BarromanXN>
+      <BarrowmanCNa>0,8.56814,0,0</BarrowmanCNa>
+      <RockSimXN>0,743.218,0,0</RockSimXN>
+      <RockSimCNa>0,13.1789,0,0</RockSimCNa>
+      <RockSimCNa90>0,0,0,0</RockSimCNa90>
+      <RockSimXN90>0,0,0,0</RockSimXN90>
+      <ViewType>0</ViewType>
+      <ViewStageCount>1</ViewStageCount>
+      <ViewTypeEdit>0</ViewTypeEdit>
+      <ViewStageCountEdit>1</ViewStageCountEdit>
+      <ZoomFactor>0.</ZoomFactor>
+      <ZoomFactorEdit>0.</ZoomFactorEdit>
+      <ScrollPosX>0</ScrollPosX>
+      <ScrollPosY>0</ScrollPosY>
+      <ScrollPosXEdit>0</ScrollPosXEdit>
+      <ScrollPosYEdit>0</ScrollPosYEdit>
+      <ThreeDFlags>0</ThreeDFlags>
+      <ThreeDFlagsEdit>0</ThreeDFlagsEdit>
+      <UseModelSprite>0</UseModelSprite>
+      <StaticMarginRef>0</StaticMarginRef>
+      <UserRefDiameter>0.</UserRefDiameter>
+      <SideMarkerHeight>9.99998</SideMarkerHeight>
+      <SideDimensionHeight>9.99998</SideDimensionHeight>
+      <BaseMarkerHeight>9.99998</BaseMarkerHeight>
+      <BaseDimensionHeight>9.99998</BaseDimensionHeight>
+      <ShowGlideCP>0</ShowGlideCP>
+      <ShowGridTypeSide>0</ShowGridTypeSide>
+      <ShowGridTypeBase>0</ShowGridTypeBase>
+      <GridSpacing>10.</GridSpacing>
+      <GridOpacity>0.15</GridOpacity>
+      <GridColor>black</GridColor>
+      <MaxDiaWithFins>245.11</MaxDiaWithFins>
+      <MaxDiaWithoutFins>101.6</MaxDiaWithoutFins>
+      <MaxLenWithFins>934.72</MaxLenWithFins>
+      <MaxLenWithoutFins>934.72</MaxLenWithoutFins>
+      <MinXExtent>0.</MinXExtent>
+      <MaxXExtent>934.72</MaxXExtent>
+      <CalculatedMaxStageDia>0,101.6,0,0</CalculatedMaxStageDia>
+      <CalculatedStageLen>0,934.72,0,0</CalculatedStageLen>
+      <Cd3>
+        <PolyData  useXYOnly="0" useSmoothCurveEvaluation="0" count="0">
+        <X-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</X-data>
+        <A-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</A-data>
+        <B-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</B-data>
+        <C-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</C-data>
+      </PolyData>
+    </Cd3>
+    <Cd32>
+      <PolyData  useXYOnly="0" useSmoothCurveEvaluation="0" count="0">
+      <X-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</X-data>
+      <A-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</A-data>
+      <B-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</B-data>
+      <C-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</C-data>
+    </PolyData>
+  </Cd32>
+  <Cd321>
+    <PolyData  useXYOnly="0" useSmoothCurveEvaluation="0" count="0">
+    <X-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</X-data>
+    <A-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</A-data>
+    <B-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</B-data>
+    <C-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</C-data>
+  </PolyData>
+</Cd321>
+<Cb3>
+  <PolyData  useXYOnly="1" useSmoothCurveEvaluation="0" count="0">
+  <X-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</X-data>
+  <A-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</A-data>
+  <B-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</B-data>
+  <C-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</C-data>
+</PolyData>
+</Cb3>
+<Cb32>
+<PolyData  useXYOnly="1" useSmoothCurveEvaluation="0" count="0">
+<X-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</X-data>
+<A-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</A-data>
+<B-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</B-data>
+<C-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</C-data>
+</PolyData>
+</Cb32>
+<Cb321>
+<PolyData  useXYOnly="1" useSmoothCurveEvaluation="0" count="0">
+<X-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</X-data>
+<A-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</A-data>
+<B-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</B-data>
+<C-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</C-data>
+</PolyData>
+</Cb321>
+<CNa3>
+<PolyData  useXYOnly="0" useSmoothCurveEvaluation="0" count="0">
+<X-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</X-data>
+<A-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</A-data>
+<B-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</B-data>
+<C-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</C-data>
+</PolyData>
+</CNa3>
+<CNa32>
+<PolyData  useXYOnly="0" useSmoothCurveEvaluation="0" count="0">
+<X-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</X-data>
+<A-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</A-data>
+<B-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</B-data>
+<C-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</C-data>
+</PolyData>
+</CNa32>
+<CNa321>
+<PolyData  useXYOnly="0" useSmoothCurveEvaluation="0" count="0">
+<X-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</X-data>
+<A-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</A-data>
+<B-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</B-data>
+<C-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</C-data>
+</PolyData>
+</CNa321>
+<CP3>
+<PolyData  useXYOnly="0" useSmoothCurveEvaluation="0" count="0">
+<X-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</X-data>
+<A-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</A-data>
+<B-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</B-data>
+<C-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</C-data>
+</PolyData>
+</CP3>
+<CP32>
+<PolyData  useXYOnly="0" useSmoothCurveEvaluation="0" count="0">
+<X-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</X-data>
+<A-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</A-data>
+<B-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</B-data>
+<C-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</C-data>
+</PolyData>
+</CP32>
+<CP321>
+<PolyData  useXYOnly="0" useSmoothCurveEvaluation="0" count="0">
+<X-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</X-data>
+<A-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</A-data>
+<B-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</B-data>
+<C-data>0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0</C-data>
+</PolyData>
+</CP321>
+<SimulationEventList>
+</SimulationEventList>
+<Stage3Parts>
+<NoseCone>
+<PartMfg>LOC Precision</PartMfg>
+<KnownMass>141.748</KnownMass>
+<Density>1049.21</Density>
+<Material>Polystyrene PS</Material>
+<Name>Nose cone</Name>
+<KnownCG>209.55</KnownCG>
+<UseKnownCG>1</UseKnownCG>
+<Xb>0.</Xb>
+<CalcMass>340.106</CalcMass>
+<CalcCG>265.224</CalcCG>
+<WettedSurface>0.0700863</WettedSurface>
+<PaintedSurface>0.0700863</PaintedSurface>
+<GlueJointLength>0.</GlueJointLength>
+<DensityType>0</DensityType>
+<PartNo>LOC PNC-3.90</PartNo>
+<PartDesc>Plastic nose cone</PartDesc>
+<RadialLoc>0.</RadialLoc>
+<RadialAngle>0.</RadialAngle>
+<Texture>file=()|position=(0,0,0)|origin=(0.5,0.5,0.5)|scale=(1,1,1)|repeat=(1)|interpolate=(0)|flipr(0)|flips(0)|flipt=(0)|preventseam=(1)</Texture>
+<Opacity>1.</Opacity>
+<Specular>0.</Specular>
+<SpecularPower>1.</SpecularPower>
+<Ambient>0.</Ambient>
+<Diffuse>1.</Diffuse>
+<AbientColor>blue</AbientColor>
+<DiffuseColor>blue</DiffuseColor>
+<SpecularColor>white</SpecularColor>
+<UseSingleColor>1</UseSingleColor>
+<SerialNo>1</SerialNo>
+<DisplayFlags>0</DisplayFlags>
+<MetricsFlags>0</MetricsFlags>
+<LocationMode>0</LocationMode>
+<Color>blue</Color>
+<BarrowmanCNa>2.</BarrowmanCNa>
+<BarrowmanXN>0.150518</BarrowmanXN>
+<RockSimCNa>2.</RockSimCNa>
+<RockSimXN>0.150518</RockSimXN>
+<SimpleColorModel>1</SimpleColorModel>
+<ProduceTemplate>0</ProduceTemplate>
+<TemplateUnits>8</TemplateUnits>
+<Removed>0</Removed>
+<Station>0.</Station>
+<Len>325.12</Len>
+<BaseDia>101.6</BaseDia>
+<FinishCode>0</FinishCode>
+<ShapeCode>1</ShapeCode>
+<ConstructionType>1</ConstructionType>
+<ShoulderLen>95.25</ShoulderLen>
+<WallThickness>3.175</WallThickness>
+<ShapeParameter>0.</ShapeParameter>
+<ShoulderOD>98.552</ShoulderOD>
+<BaseExtensionLen>0.</BaseExtensionLen>
+<CoreDia>0.</CoreDia>
+<CoreLen>0.</CoreLen>
+<AttachedParts>
+</AttachedParts>
+</NoseCone>
+<BodyTube>
+<PartMfg>LOC/Precision</PartMfg>
+<KnownMass>0.</KnownMass>
+<Density>1121.29</Density>
+<Material>Paper</Material>
+<Name>Body tube</Name>
+<KnownCG>0.</KnownCG>
+<UseKnownCG>0</UseKnownCG>
+<Xb>0.</Xb>
+<CalcMass>79.8067</CalcMass>
+<CalcCG>88.9</CalcCG>
+<WettedSurface>0.0567512</WettedSurface>
+<PaintedSurface>0.0567512</PaintedSurface>
+<GlueJointLength>0.</GlueJointLength>
+<DensityType>0</DensityType>
+<PartNo>LOC BT-3.9</PartNo>
+<PartDesc>Airframe tube</PartDesc>
+<RadialLoc>0.</RadialLoc>
+<RadialAngle>0.</RadialAngle>
+<Texture>file=()|position=(0,0,0)|origin=(0.5,0.5,0.5)|scale=(1,1,1)|repeat=(1)|interpolate=(0)|flipr(0)|flips(0)|flipt=(0)|preventseam=(1)</Texture>
+<Opacity>1.</Opacity>
+<Specular>0.</Specular>
+<SpecularPower>1.</SpecularPower>
+<Ambient>0.</Ambient>
+<Diffuse>1.</Diffuse>
+<AbientColor>blue</AbientColor>
+<DiffuseColor>blue</DiffuseColor>
+<SpecularColor>white</SpecularColor>
+<UseSingleColor>1</UseSingleColor>
+<SerialNo>2</SerialNo>
+<DisplayFlags>0</DisplayFlags>
+<MetricsFlags>0</MetricsFlags>
+<LocationMode>0</LocationMode>
+<Color>blue</Color>
+<BarrowmanCNa>0.</BarrowmanCNa>
+<BarrowmanXN>0.</BarrowmanXN>
+<RockSimCNa>0.</RockSimCNa>
+<RockSimXN>0.</RockSimXN>
+<SimpleColorModel>1</SimpleColorModel>
+<ProduceTemplate>0</ProduceTemplate>
+<TemplateUnits>8</TemplateUnits>
+<Removed>0</Removed>
+<Station>325.12</Station>
+<OD>101.6</OD>
+<ID>99.06</ID>
+<Len>177.8</Len>
+<FinishCode>0</FinishCode>
+<IsMotorMount>0</IsMotorMount>
+<MotorDia>0.</MotorDia>
+<EngineOverhang>0.5</EngineOverhang>
+<FrontExtension>0.</FrontExtension>
+<RearExtension>0.</RearExtension>
+<IsInsideTube>0</IsInsideTube>
+<isStrapOnTube>0</isStrapOnTube>
+<AttachedParts>
+</AttachedParts>
+</BodyTube>
+<BodyTube>
+<PartMfg>LOC/Precision</PartMfg>
+<KnownMass>0.</KnownMass>
+<Density>1121.29</Density>
+<Material>Paper</Material>
+<Name>Body tube</Name>
+<KnownCG>0.</KnownCG>
+<UseKnownCG>0</UseKnownCG>
+<Xb>0.</Xb>
+<CalcMass>193.814</CalcMass>
+<CalcCG>215.9</CalcCG>
+<WettedSurface>0.137824</WettedSurface>
+<PaintedSurface>0.137824</PaintedSurface>
+<GlueJointLength>0.</GlueJointLength>
+<DensityType>0</DensityType>
+<PartNo>LOC BT-3.9</PartNo>
+<PartDesc>Airframe tube</PartDesc>
+<RadialLoc>0.</RadialLoc>
+<RadialAngle>0.</RadialAngle>
+<Texture>file=()|position=(0,0,0)|origin=(0.5,0.5,0.5)|scale=(1,1,1)|repeat=(1)|interpolate=(0)|flipr(0)|flips(0)|flipt=(0)|preventseam=(1)</Texture>
+<Opacity>1.</Opacity>
+<Specular>0.</Specular>
+<SpecularPower>1.</SpecularPower>
+<Ambient>0.</Ambient>
+<Diffuse>1.</Diffuse>
+<AbientColor>blue</AbientColor>
+<DiffuseColor>blue</DiffuseColor>
+<SpecularColor>white</SpecularColor>
+<UseSingleColor>1</UseSingleColor>
+<SerialNo>3</SerialNo>
+<DisplayFlags>1</DisplayFlags>
+<MetricsFlags>0</MetricsFlags>
+<LocationMode>0</LocationMode>
+<Color>blue</Color>
+<BarrowmanCNa>0.</BarrowmanCNa>
+<BarrowmanXN>0.</BarrowmanXN>
+<RockSimCNa>0.</RockSimCNa>
+<RockSimXN>0.</RockSimXN>
+<SimpleColorModel>1</SimpleColorModel>
+<ProduceTemplate>0</ProduceTemplate>
+<TemplateUnits>8</TemplateUnits>
+<Removed>0</Removed>
+<Station>502.92</Station>
+<OD>101.6</OD>
+<ID>99.06</ID>
+<Len>431.8</Len>
+<FinishCode>0</FinishCode>
+<IsMotorMount>0</IsMotorMount>
+<MotorDia>0.</MotorDia>
+<EngineOverhang>0.5</EngineOverhang>
+<FrontExtension>0.</FrontExtension>
+<RearExtension>0.</RearExtension>
+<IsInsideTube>0</IsInsideTube>
+<isStrapOnTube>0</isStrapOnTube>
+<AttachedParts>
+<Ring>
+<PartMfg>LOC Precision</PartMfg>
+<KnownMass>0.</KnownMass>
+<Density>1121.29</Density>
+<Material>Paper</Material>
+<Name>Tube coupler</Name>
+<KnownCG>0.</KnownCG>
+<UseKnownCG>0</UseKnownCG>
+<Xb>419.1</Xb>
+<CalcMass>62.4709</CalcMass>
+<CalcCG>101.6</CalcCG>
+<WettedSurface>0.</WettedSurface>
+<PaintedSurface>0.</PaintedSurface>
+<GlueJointLength>0.</GlueJointLength>
+<DensityType>0</DensityType>
+<PartNo>TC-3.90</PartNo>
+<PartDesc>Tube Coupler</PartDesc>
+<RadialLoc>0.</RadialLoc>
+<RadialAngle>0.</RadialAngle>
+<Texture>file=()|position=(0,0,0)|origin=(0.5,0.5,0.5)|scale=(1,1,1)|repeat=(1)|interpolate=(0)|flipr(0)|flips(0)|flipt=(0)|preventseam=(1)</Texture>
+<Opacity>1.</Opacity>
+<Specular>0.</Specular>
+<SpecularPower>1.</SpecularPower>
+<Ambient>0.</Ambient>
+<Diffuse>1.</Diffuse>
+<AbientColor>blue</AbientColor>
+<DiffuseColor>blue</DiffuseColor>
+<SpecularColor>white</SpecularColor>
+<UseSingleColor>1</UseSingleColor>
+<SerialNo>4</SerialNo>
+<DisplayFlags>0</DisplayFlags>
+<MetricsFlags>0</MetricsFlags>
+<LocationMode>1</LocationMode>
+<Color>blue</Color>
+<BarrowmanCNa>0.</BarrowmanCNa>
+<BarrowmanXN>0.</BarrowmanXN>
+<RockSimCNa>0.</RockSimCNa>
+<RockSimXN>0.</RockSimXN>
+<SimpleColorModel>1</SimpleColorModel>
+<ProduceTemplate>0</ProduceTemplate>
+<TemplateUnits>8</TemplateUnits>
+<Removed>0</Removed>
+<Station>419.1</Station>
+<OD>99.06</OD>
+<ID>97.282</ID>
+<Len>203.2</Len>
+<FinishCode>0</FinishCode>
+<UsageCode>4</UsageCode>
+<AutoSize>1</AutoSize>
+<AttachedParts>
+</AttachedParts>
+</Ring>
+<BodyTube>
+<PartMfg>LOC/Precision</PartMfg>
+<KnownMass>0.</KnownMass>
+<Density>1121.29</Density>
+<Material>Paper</Material>
+<Name>Body tube</Name>
+<KnownCG>0.</KnownCG>
+<UseKnownCG>0</UseKnownCG>
+<Xb>279.4</Xb>
+<CalcMass>13.2534</CalcMass>
+<CalcCG>76.2</CalcCG>
+<WettedSurface>0.</WettedSurface>
+<PaintedSurface>0.</PaintedSurface>
+<GlueJointLength>0.</GlueJointLength>
+<DensityType>0</DensityType>
+<PartNo>LOC MMT-1.14x6</PartNo>
+<PartDesc>Motor mount tube</PartDesc>
+<RadialLoc>0.</RadialLoc>
+<RadialAngle>0.</RadialAngle>
+<Texture>file=()|position=(0,0,0)|origin=(0.5,0.5,0.5)|scale=(1,1,1)|repeat=(1)|interpolate=(0)|flipr(0)|flips(0)|flipt=(0)|preventseam=(1)</Texture>
+<Opacity>1.</Opacity>
+<Specular>0.</Specular>
+<SpecularPower>1.</SpecularPower>
+<Ambient>0.</Ambient>
+<Diffuse>1.</Diffuse>
+<AbientColor>blue</AbientColor>
+<DiffuseColor>blue</DiffuseColor>
+<SpecularColor>white</SpecularColor>
+<UseSingleColor>1</UseSingleColor>
+<SerialNo>5</SerialNo>
+<DisplayFlags>0</DisplayFlags>
+<MetricsFlags>0</MetricsFlags>
+<LocationMode>0</LocationMode>
+<Color>blue</Color>
+<BarrowmanCNa>0.</BarrowmanCNa>
+<BarrowmanXN>0.</BarrowmanXN>
+<RockSimCNa>0.</RockSimCNa>
+<RockSimXN>0.</RockSimXN>
+<SimpleColorModel>1</SimpleColorModel>
+<ProduceTemplate>0</ProduceTemplate>
+<TemplateUnits>8</TemplateUnits>
+<Removed>0</Removed>
+<Station>782.32</Station>
+<OD>30.734</OD>
+<ID>29.083</ID>
+<Len>152.4</Len>
+<FinishCode>0</FinishCode>
+<IsMotorMount>0</IsMotorMount>
+<MotorDia>0.</MotorDia>
+<EngineOverhang>0.5</EngineOverhang>
+<FrontExtension>0.</FrontExtension>
+<RearExtension>0.</RearExtension>
+<IsInsideTube>1</IsInsideTube>
+<isStrapOnTube>0</isStrapOnTube>
+<AttachedParts>
+</AttachedParts>
+</BodyTube>
+<Ring>
+<PartMfg>LOC Precision</PartMfg>
+<KnownMass>0.</KnownMass>
+<Density>724.996</Density>
+<Material>Aircraft plywood (LOC)</Material>
+<Name>Centering ring</Name>
+<KnownCG>0.</KnownCG>
+<UseKnownCG>0</UseKnownCG>
+<Xb>9.525</Xb>
+<CalcMass>16.7612</CalcMass>
+<CalcCG>1.49987</CalcCG>
+<WettedSurface>0.</WettedSurface>
+<PaintedSurface>0.</PaintedSurface>
+<GlueJointLength>0.</GlueJointLength>
+<DensityType>0</DensityType>
+<PartNo>LOC CR-3.9-1.14</PartNo>
+<PartDesc>Centering Ring</PartDesc>
+<RadialLoc>0.</RadialLoc>
+<RadialAngle>0.</RadialAngle>
+<Texture>file=()|position=(0,0,0)|origin=(0.5,0.5,0.5)|scale=(1,1,1)|repeat=(1)|interpolate=(0)|flipr(0)|flips(0)|flipt=(0)|preventseam=(1)</Texture>
+<Opacity>1.</Opacity>
+<Specular>0.</Specular>
+<SpecularPower>1.</SpecularPower>
+<Ambient>0.</Ambient>
+<Diffuse>1.</Diffuse>
+<AbientColor>blue</AbientColor>
+<DiffuseColor>blue</DiffuseColor>
+<SpecularColor>white</SpecularColor>
+<UseSingleColor>1</UseSingleColor>
+<SerialNo>6</SerialNo>
+<DisplayFlags>0</DisplayFlags>
+<MetricsFlags>0</MetricsFlags>
+<LocationMode>2</LocationMode>
+<Color>rgb(230,204,56)</Color>
+<BarrowmanCNa>0.</BarrowmanCNa>
+<BarrowmanXN>0.</BarrowmanXN>
+<RockSimCNa>0.</RockSimCNa>
+<RockSimXN>0.</RockSimXN>
+<SimpleColorModel>1</SimpleColorModel>
+<ProduceTemplate>0</ProduceTemplate>
+<TemplateUnits>8</TemplateUnits>
+<Removed>0</Removed>
+<Station>922.195</Station>
+<OD>99.06</OD>
+<ID>30.734</ID>
+<Len>2.99974</Len>
+<FinishCode>0</FinishCode>
+<UsageCode>0</UsageCode>
+<AutoSize>0</AutoSize>
+<AttachedParts>
+</AttachedParts>
+</Ring>
+<CustomFinSet>
+<PartMfg>LOC Precision</PartMfg>
+<KnownMass>0.</KnownMass>
+<Density>724.996</Density>
+<Material>Aircraft plywood (LOC)</Material>
+<Name>Fin set</Name>
+<KnownCG>0.</KnownCG>
+<UseKnownCG>0</UseKnownCG>
+<Xb>282.575</Xb>
+<CalcMass>77.3751</CalcMass>
+<CalcCG>84.5121</CalcCG>
+<WettedSurface>0.0153917</WettedSurface>
+<PaintedSurface>0.046175</PaintedSurface>
+<GlueJointLength>0.</GlueJointLength>
+<DensityType>0</DensityType>
+<PartNo>FS-TLOC4</PartNo>
+<PartDesc>T-Loc main fin</PartDesc>
+<RadialLoc>0.</RadialLoc>
+<RadialAngle>0.</RadialAngle>
+<Texture>file=()|position=(0,0,0)|origin=(0.5,0.5,0.5)|scale=(1,1,1)|repeat=(1)|interpolate=(0)|flipr(0)|flips(0)|flipt=(0)|preventseam=(1)</Texture>
+<Opacity>1.</Opacity>
+<Specular>0.</Specular>
+<SpecularPower>1.</SpecularPower>
+<Ambient>0.</Ambient>
+<Diffuse>1.</Diffuse>
+<AbientColor>blue</AbientColor>
+<DiffuseColor>blue</DiffuseColor>
+<SpecularColor>white</SpecularColor>
+<UseSingleColor>1</UseSingleColor>
+<SerialNo>8</SerialNo>
+<DisplayFlags>0</DisplayFlags>
+<MetricsFlags>0</MetricsFlags>
+<LocationMode>0</LocationMode>
+<Color>blue</Color>
+<BarrowmanCNa>3.73617</BarrowmanCNa>
+<BarrowmanXN>0.846088</BarrowmanXN>
+<RockSimCNa>6.3118</RockSimCNa>
+<RockSimXN>0.848884</RockSimXN>
+<SimpleColorModel>1</SimpleColorModel>
+<ProduceTemplate>0</ProduceTemplate>
+<TemplateUnits>8</TemplateUnits>
+<Removed>0</Removed>
+<Station>785.495</Station>
+<FinCount>3</FinCount>
+<RootChord>147.96</RootChord>
+<TipChord>54.76</TipChord>
+<SemiSpan>71.76</SemiSpan>
+<MidChordLen>78.756</MidChordLen>
+<SweepDistance>79.05</SweepDistance>
+<Thickness>3.</Thickness>
+<ShapeCode>2</ShapeCode>
+<FinishCode>0</FinishCode>
+<TipShapeCode>0</TipShapeCode>
+<TabLength>117.475</TabLength>
+<TabDepth>35.433</TabDepth>
+<TabOffset>19.05</TabOffset>
+<SweepMode>1</SweepMode>
+<SweepAngle>0.</SweepAngle>
+<RockSimXNPerFin>0.</RockSimXNPerFin>
+<RockSimRadialXNPerFin>81.1793</RockSimRadialXNPerFin>
+<RockSimCNaPerFin>3.64412</RockSimCNaPerFin>
+<TaperRatio>0.3701</TaperRatio>
+<CantAngle>0.</CantAngle>
+<CantPivotPoint>0.</CantPivotPoint>
+<AverageChord>107.25</AverageChord>
+<EffectiveTipChord>54.7547</EffectiveTipChord>
+<PointList>147.955,0|139.7,71.755|73.152,71.755|0,0|</PointList>
+<AutoCalcGridStepX>0,0,0,0,0,0,0</AutoCalcGridStepX>
+<GridStepCountX>10,10,10,10,10,10,10</GridStepCountX>
+<UseAbsoluteGridStepsX>0,0,0,0,0,0,0</UseAbsoluteGridStepsX>
+<GridStepSizeX>0.5,10,0.5,0.5,0.00018939,0.001,1</GridStepSizeX>
+<SnapToSizeX>0.25,5,0.1,0.1,0.00018939,0.001,1</SnapToSizeX>
+<AutoCalcGridStepY>0,0,0,0,0,0,0</AutoCalcGridStepY>
+<GridStepCountY>10,10,10,10,10,10,10</GridStepCountY>
+<UseAbsoluteGridStepsY>0,0,0,0,0,0,0</UseAbsoluteGridStepsY>
+<GridStepSizeY>0.5,10,0.5,0.5,0.00018939,0.001,1</GridStepSizeY>
+<SnapToSizeY>0.25,5,0.1,0.1,0.00018939,0.001,1</SnapToSizeY>
+<AttachedParts>
+</AttachedParts>
+</CustomFinSet>
+<CustomFinSet>
+<PartMfg>LOC Precision</PartMfg>
+<KnownMass>0.</KnownMass>
+<Density>724.996</Density>
+<Material>Aircraft plywood (LOC)</Material>
+<Name>T-loc outer</Name>
+<KnownCG>0.</KnownCG>
+<UseKnownCG>0</UseKnownCG>
+<Xb>331.775</Xb>
+<CalcMass>38.7603</CalcMass>
+<CalcCG>39.5091</CalcCG>
+<WettedSurface>0.0118806</WettedSurface>
+<PaintedSurface>0.0356418</PaintedSurface>
+<GlueJointLength>0.</GlueJointLength>
+<DensityType>0</DensityType>
+<PartNo>FS-Tlocaft</PartNo>
+<PartDesc>Outer fins</PartDesc>
+<RadialLoc>0.</RadialLoc>
+<RadialAngle>0.</RadialAngle>
+<Texture>file=()|position=(0,0,0)|origin=(0.5,0.5,0.5)|scale=(1,1,1)|repeat=(1)|interpolate=(0)|flipr(0)|flips(0)|flipt=(0)|preventseam=(1)</Texture>
+<Opacity>1.</Opacity>
+<Specular>0.</Specular>
+<SpecularPower>1.</SpecularPower>
+<Ambient>0.</Ambient>
+<Diffuse>1.</Diffuse>
+<AbientColor>blue</AbientColor>
+<DiffuseColor>blue</DiffuseColor>
+<SpecularColor>white</SpecularColor>
+<UseSingleColor>1</UseSingleColor>
+<SerialNo>9</SerialNo>
+<DisplayFlags>0</DisplayFlags>
+<MetricsFlags>0</MetricsFlags>
+<LocationMode>0</LocationMode>
+<Color>blue</Color>
+<BarrowmanCNa>2.83198</BarrowmanCNa>
+<BarrowmanXN>0.849341</BarrowmanXN>
+<RockSimCNa>4.86706</RockSimCNa>
+<RockSimXN>0.849742</RockSimXN>
+<SimpleColorModel>1</SimpleColorModel>
+<ProduceTemplate>0</ProduceTemplate>
+<TemplateUnits>8</TemplateUnits>
+<Removed>0</Removed>
+<Station>834.695</Station>
+<FinCount>3</FinCount>
+<RootChord>88.9</RootChord>
+<TipChord>108.05</TipChord>
+<SemiSpan>60.33</SemiSpan>
+<MidChordLen>61.1361</MidChordLen>
+<SweepDistance>-19.47</SweepDistance>
+<Thickness>3.</Thickness>
+<ShapeCode>2</ShapeCode>
+<FinishCode>0</FinishCode>
+<TipShapeCode>0</TipShapeCode>
+<TabLength>0.</TabLength>
+<TabDepth>0.</TabDepth>
+<TabOffset>0.</TabOffset>
+<SweepMode>1</SweepMode>
+<SweepAngle>0.</SweepAngle>
+<RockSimXNPerFin>0.</RockSimXNPerFin>
+<RockSimRadialXNPerFin>81.9401</RockSimRadialXNPerFin>
+<RockSimCNaPerFin>2.81</RockSimCNaPerFin>
+<TaperRatio>1.21541</TaperRatio>
+<CantAngle>0.</CantAngle>
+<CantPivotPoint>0.</CantPivotPoint>
+<AverageChord>98.47</AverageChord>
+<EffectiveTipChord>108.054</EffectiveTipChord>
+<PointList>88.9,0|88.9,60.325|0,60.325|-19.1434,29.464|0,0|</PointList>
+<AutoCalcGridStepX>0,0,0,0,0,0,0</AutoCalcGridStepX>
+<GridStepCountX>10,10,10,10,10,10,10</GridStepCountX>
+<UseAbsoluteGridStepsX>0,0,0,0,0,0,0</UseAbsoluteGridStepsX>
+<GridStepSizeX>0.5,10,0.5,0.5,0.00018939,0.001,1</GridStepSizeX>
+<SnapToSizeX>0.25,5,0.1,0.1,0.00018939,0.001,1</SnapToSizeX>
+<AutoCalcGridStepY>0,0,0,0,0,0,0</AutoCalcGridStepY>
+<GridStepCountY>10,10,10,10,10,10,10</GridStepCountY>
+<UseAbsoluteGridStepsY>0,0,0,0,0,0,0</UseAbsoluteGridStepsY>
+<GridStepSizeY>0.5,10,0.5,0.5,0.00018939,0.001,1</GridStepSizeY>
+<SnapToSizeY>0.25,5,0.1,0.1,0.00018939,0.001,1</SnapToSizeY>
+<AttachedParts>
+</AttachedParts>
+</CustomFinSet>
+<Ring>
+<PartMfg>LOC Precision</PartMfg>
+<KnownMass>0.</KnownMass>
+<Density>724.996</Density>
+<Material>Aircraft plywood (LOC)</Material>
+<Name>Bulkhead</Name>
+<KnownCG>0.</KnownCG>
+<UseKnownCG>0</UseKnownCG>
+<Xb>107.95</Xb>
+<CalcMass>32.3299</CalcMass>
+<CalcCG>2.99974</CalcCG>
+<WettedSurface>0.</WettedSurface>
+<PaintedSurface>0.</PaintedSurface>
+<GlueJointLength>0.</GlueJointLength>
+<DensityType>0</DensityType>
+<PartNo>LOC BP-3.90</PartNo>
+<PartDesc>Bulkhead Plate</PartDesc>
+<RadialLoc>0.</RadialLoc>
+<RadialAngle>0.</RadialAngle>
+<Texture>file=()|position=(0,0,0)|origin=(0.5,0.5,0.5)|scale=(1,1,1)|repeat=(1)|interpolate=(0)|flipr(0)|flips(0)|flipt=(0)|preventseam=(1)</Texture>
+<Opacity>1.</Opacity>
+<Specular>0.</Specular>
+<SpecularPower>1.</SpecularPower>
+<Ambient>0.</Ambient>
+<Diffuse>1.</Diffuse>
+<AbientColor>blue</AbientColor>
+<DiffuseColor>blue</DiffuseColor>
+<SpecularColor>white</SpecularColor>
+<UseSingleColor>1</UseSingleColor>
+<SerialNo>10</SerialNo>
+<DisplayFlags>0</DisplayFlags>
+<MetricsFlags>0</MetricsFlags>
+<LocationMode>0</LocationMode>
+<Color>blue</Color>
+<BarrowmanCNa>0.</BarrowmanCNa>
+<BarrowmanXN>0.</BarrowmanXN>
+<RockSimCNa>0.</RockSimCNa>
+<RockSimXN>0.</RockSimXN>
+<SimpleColorModel>1</SimpleColorModel>
+<ProduceTemplate>0</ProduceTemplate>
+<TemplateUnits>8</TemplateUnits>
+<Removed>0</Removed>
+<Station>610.87</Station>
+<OD>97.282</OD>
+<ID>0.</ID>
+<Len>5.99948</Len>
+<FinishCode>0</FinishCode>
+<UsageCode>1</UsageCode>
+<AutoSize>0</AutoSize>
+<AttachedParts>
+</AttachedParts>
+</Ring>
+<Ring>
+<PartMfg>LOC Precision</PartMfg>
+<KnownMass>0.</KnownMass>
+<Density>724.996</Density>
+<Material>Aircraft plywood (LOC)</Material>
+<Name>Centering ring</Name>
+<KnownCG>0.</KnownCG>
+<UseKnownCG>0</UseKnownCG>
+<Xb>298.45</Xb>
+<CalcMass>16.7612</CalcMass>
+<CalcCG>1.49987</CalcCG>
+<WettedSurface>0.</WettedSurface>
+<PaintedSurface>0.</PaintedSurface>
+<GlueJointLength>0.</GlueJointLength>
+<DensityType>0</DensityType>
+<PartNo>LOC CR-3.9-1.14</PartNo>
+<PartDesc>Centering Ring</PartDesc>
+<RadialLoc>0.</RadialLoc>
+<RadialAngle>0.</RadialAngle>
+<Texture>file=()|position=(0,0,0)|origin=(0.5,0.5,0.5)|scale=(1,1,1)|repeat=(1)|interpolate=(0)|flipr(0)|flips(0)|flipt=(0)|preventseam=(1)</Texture>
+<Opacity>1.</Opacity>
+<Specular>0.</Specular>
+<SpecularPower>1.</SpecularPower>
+<Ambient>0.</Ambient>
+<Diffuse>1.</Diffuse>
+<AbientColor>blue</AbientColor>
+<DiffuseColor>blue</DiffuseColor>
+<SpecularColor>white</SpecularColor>
+<UseSingleColor>1</UseSingleColor>
+<SerialNo>11</SerialNo>
+<DisplayFlags>0</DisplayFlags>
+<MetricsFlags>0</MetricsFlags>
+<LocationMode>0</LocationMode>
+<Color>rgb(230,204,56)</Color>
+<BarrowmanCNa>0.</BarrowmanCNa>
+<BarrowmanXN>0.</BarrowmanXN>
+<RockSimCNa>0.</RockSimCNa>
+<RockSimXN>0.</RockSimXN>
+<SimpleColorModel>1</SimpleColorModel>
+<ProduceTemplate>0</ProduceTemplate>
+<TemplateUnits>8</TemplateUnits>
+<Removed>0</Removed>
+<Station>801.37</Station>
+<OD>99.06</OD>
+<ID>30.734</ID>
+<Len>2.99974</Len>
+<FinishCode>0</FinishCode>
+<UsageCode>0</UsageCode>
+<AutoSize>0</AutoSize>
+<AttachedParts>
+</AttachedParts>
+</Ring>
+<Parachute>
+<PartMfg>LOC Precision</PartMfg>
+<KnownMass>28.4006</KnownMass>
+<Density>0.</Density>
+<Material>Rip stop nylon</Material>
+<Name>Parachute</Name>
+<KnownCG>0.</KnownCG>
+<UseKnownCG>1</UseKnownCG>
+<Xb>149.225</Xb>
+<CalcMass>6.21705</CalcMass>
+<CalcCG>59.2499</CalcCG>
+<WettedSurface>0.</WettedSurface>
+<PaintedSurface>0.</PaintedSurface>
+<GlueJointLength>0.</GlueJointLength>
+<DensityType>0</DensityType>
+<PartNo>LP-28</PartNo>
+<PartDesc>28 In. 8 lines</PartDesc>
+<RadialLoc>0.</RadialLoc>
+<RadialAngle>0.</RadialAngle>
+<Texture>file=()|position=(0,0,0)|origin=(0.5,0.5,0.5)|scale=(1,1,1)|repeat=(1)|interpolate=(0)|flipr(0)|flips(0)|flipt=(0)|preventseam=(1)</Texture>
+<Opacity>1.</Opacity>
+<Specular>0.</Specular>
+<SpecularPower>1.</SpecularPower>
+<Ambient>0.</Ambient>
+<Diffuse>1.</Diffuse>
+<AbientColor>blue</AbientColor>
+<DiffuseColor>blue</DiffuseColor>
+<SpecularColor>white</SpecularColor>
+<UseSingleColor>1</UseSingleColor>
+<SerialNo>12</SerialNo>
+<DisplayFlags>0</DisplayFlags>
+<MetricsFlags>0</MetricsFlags>
+<LocationMode>0</LocationMode>
+<Color>blue</Color>
+<BarrowmanCNa>0.</BarrowmanCNa>
+<BarrowmanXN>0.</BarrowmanXN>
+<RockSimCNa>0.</RockSimCNa>
+<RockSimXN>0.</RockSimXN>
+<SimpleColorModel>1</SimpleColorModel>
+<ProduceTemplate>0</ProduceTemplate>
+<TemplateUnits>8</TemplateUnits>
+<Removed>0</Removed>
+<Station>652.145</Station>
+<Dia>710.999</Dia>
+<SpillHoleDia>69.85</SpillHoleDia>
+<SideCount>0</SideCount>
+<ShroudLineCount>8</ShroudLineCount>
+<Thickness>0.050038</Thickness>
+<ShroudLineLen>762.</ShroudLineLen>
+<ChuteCount>1</ChuteCount>
+<ShroudLineMassPerMM>0.00102</ShroudLineMassPerMM>
+<ShroudLineMaterial>1/16 In. braided nylon</ShroudLineMaterial>
+<DragCoefficient>0.8</DragCoefficient>
+<AttachedParts>
+</AttachedParts>
+</Parachute>
+<MassObject>
+<PartMfg>LOC Precision</PartMfg>
+<KnownMass>48.1942</KnownMass>
+<Density>0.0167418</Density>
+<Material>9/16 In. tubular nylon</Material>
+<Name>NW-12</Name>
+<KnownCG>200.025</KnownCG>
+<UseKnownCG>1</UseKnownCG>
+<Xb>200.025</Xb>
+<CalcMass>0.</CalcMass>
+<CalcCG>0.</CalcCG>
+<WettedSurface>0.</WettedSurface>
+<PaintedSurface>0.</PaintedSurface>
+<GlueJointLength>0.</GlueJointLength>
+<DensityType>2</DensityType>
+<PartNo>NW-12</PartNo>
+<PartDesc><![CDATA[3/8" Nylon with loops sewn]]></PartDesc>
+<RadialLoc>0.</RadialLoc>
+<RadialAngle>0.</RadialAngle>
+<Texture>file=()|position=(0,0,0)|origin=(0.5,0.5,0.5)|scale=(1,1,1)|repeat=(1)|interpolate=(0)|flipr(0)|flips(0)|flipt=(0)|preventseam=(1)</Texture>
+<Opacity>1.</Opacity>
+<Specular>0.</Specular>
+<SpecularPower>1.</SpecularPower>
+<Ambient>0.</Ambient>
+<Diffuse>1.</Diffuse>
+<AbientColor>blue</AbientColor>
+<DiffuseColor>blue</DiffuseColor>
+<SpecularColor>white</SpecularColor>
+<UseSingleColor>1</UseSingleColor>
+<SerialNo>13</SerialNo>
+<DisplayFlags>0</DisplayFlags>
+<MetricsFlags>0</MetricsFlags>
+<LocationMode>0</LocationMode>
+<Color>blue</Color>
+<BarrowmanCNa>0.</BarrowmanCNa>
+<BarrowmanXN>0.</BarrowmanXN>
+<RockSimCNa>0.</RockSimCNa>
+<RockSimXN>0.</RockSimXN>
+<SimpleColorModel>1</SimpleColorModel>
+<ProduceTemplate>0</ProduceTemplate>
+<TemplateUnits>8</TemplateUnits>
+<Removed>0</Removed>
+<Station>702.945</Station>
+<TypeCode>0</TypeCode>
+<Len>6096.</Len>
+<AttachedParts>
+</AttachedParts>
+</MassObject>
+</AttachedParts>
+</BodyTube>
+</Stage3Parts>
+<Stage2Parts>
+</Stage2Parts>
+<Stage1Parts>
+</Stage1Parts>
+<SideViewDims>
+</SideViewDims>
+<BaseViewDims>
+</BaseViewDims>
+<VertViewDims>
+</VertViewDims>
+</RocketDesign>
+</DesignInformation>
+<SimulationResultsList>
+</SimulationResultsList>
+</RockSimDocument>

@@ -1,5 +1,5 @@
 /**
- * Validation script: geometry from sim-files/LOC/PK-48 Loc-IV.rkt (transcribed
+ * Validation script: geometry from sim-files/LOC/PK-48 LOC-IV.rkt (transcribed
  * by hand — no RockSim parser yet, that's M5), run through the real physics
  * modules (same code path as src/main.ts's demo page), compared against
  * RockSim's own stored CP/CNa values for this exact file.

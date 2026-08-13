@@ -12,7 +12,7 @@ import type { Shape } from "../../physics/geometry/shapes.js";
  * PositionDependentHandler.java + FinSetHandler.java, and unit conversions
  * (mm->m /1000, diameter-in-mm->radius-in-m /2000) from the same. Also
  * cross-checked directly against the one real .rkt file already in this repo
- * (sim-files/LOC/PK-48 Loc-IV.rkt, the source of the hand-transcribed
+ * (sim-files/LOC/PK-48 LOC-IV.rkt, the source of the hand-transcribed
  * locIvComponents fixture in src/main.ts).
  */
 
