@@ -104,3 +104,23 @@ export function lengthToInput(m: number): number {
 export function lengthFromInput(raw: number): number {
   return current === "metric" ? raw / 1000 : raw / M_TO_IN;
 }
+
+// --- Chart-axis helpers: bare numeric value (no suffix, uPlot draws its own axis labels) plus
+// the unit label text for the axis title — same large-scale altitude/velocity conventions as
+// fmtAltitude/fmtVelocity above, split apart because a chart axis needs a plain number series.
+
+export function altitudeAxisUnitLabel(): string {
+  return current === "metric" ? "m" : "ft";
+}
+
+export function altitudeAxisValue(m: number): number {
+  return current === "metric" ? m : m * M_TO_FT;
+}
+
+export function velocityAxisUnitLabel(): string {
+  return current === "metric" ? "m/s" : "mph";
+}
+
+export function velocityAxisValue(ms: number): number {
+  return current === "metric" ? ms : ms * MS_TO_MPH;
+}

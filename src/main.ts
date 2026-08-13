@@ -20,6 +20,8 @@ import { burnTime, getThrustAt, totalImpulse } from "./physics/motor/motor-model
 import { deriveMotorMassCurve, getMotorMassAt } from "./physics/mass/motor-mass-curve.js";
 import { combinedMassAt } from "./physics/mass/combined-mass.js";
 import { simulateFlight3D } from "./physics/sim/engine3d.js";
+import type { SimResult3D } from "./physics/sim/types3d.js";
+import { renderFlightChart } from "./ui/charts/flight-chart.js";
 import { parseSplashcastWindData, type SplashcastWindData } from "./physics/wind/splashcast-import.js";
 import { windAt, constantWindProfile, type WindProfile } from "./model/wind.js";
 import {
@@ -538,9 +540,25 @@ async function selectMotor(meta: MotorSearchResult): Promise<void> {
     const samples = await downloadThrustSamples(meta.motorId);
     lastMotorSelection = { meta, samples };
     detailEl.innerHTML = renderMotorDetailHtml(meta, samples);
+    mountFlightCharts();
   } catch (err) {
     detailEl.innerHTML = `<p><mark>Failed to load thrust curve: ${err instanceof Error ? err.message : String(err)}</mark></p>`;
   }
+}
+
+/**
+ * Set as a side effect of renderFlightSimSection so the DOM-mounting step
+ * (which must run AFTER the returned HTML string is actually inserted into
+ * the document, since uPlot needs real container elements to attach to) can
+ * find the samples it just computed. Same module-level-mutable-state
+ * pattern as activeRocket/lastMotorSelection elsewhere in this file.
+ */
+let lastFlightResult: SimResult3D | null = null;
+
+const FLIGHT_CHART_IDS = { altitude: "chart-altitude", speed: "chart-speed", mach: "chart-mach", tilt: "chart-tilt" };
+
+function mountFlightCharts(): void {
+  if (lastFlightResult) renderFlightChart(FLIGHT_CHART_IDS, lastFlightResult.samples);
 }
 
 function renderFlightSimSection(rocket: Rocket): string {
@@ -562,6 +580,7 @@ function renderFlightSimSection(rocket: Rocket): string {
   const t0 = performance.now();
   const result = simulateFlight3D(rocket);
   const elapsedMs = performance.now() - t0;
+  lastFlightResult = result;
 
   const warningsHtml = result.warnings.length
     ? `<p>${result.warnings.map((w) => `<mark>${w}</mark>`).join(" ")}</p>`
@@ -594,6 +613,12 @@ function renderFlightSimSection(rocket: Rocket): string {
     </small></p>
     ${warningsHtml}
     <div class="grid stats-grid">${stats}</div>
+    <div class="grid flight-charts-grid">
+      <div id="chart-altitude" class="flight-chart"></div>
+      <div id="chart-speed" class="flight-chart"></div>
+      <div id="chart-mach" class="flight-chart"></div>
+      <div id="chart-tilt" class="flight-chart"></div>
+    </div>
     <figure>
       <table>
         <thead><tr><th>Event</th><th>Time</th><th>Altitude</th></tr></thead>
@@ -988,6 +1013,7 @@ function refreshAllUnitDisplays(): void {
   if (lastMotorSelection) {
     const detailEl = document.querySelector<HTMLDivElement>("#motor-detail");
     if (detailEl) detailEl.innerHTML = renderMotorDetailHtml(lastMotorSelection.meta, lastMotorSelection.samples);
+    mountFlightCharts();
   }
   updateWindManualUnitDisplay();
   updateActiveWindLabel();

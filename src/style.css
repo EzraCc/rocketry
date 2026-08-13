@@ -43,3 +43,17 @@ th.sortable-th {
 th.sortable-th:hover {
   color: var(--pico-primary);
 }
+
+/* Pico's .grid defaults to one column per direct child (4, here) -- too cramped for a chart
+   with its own axis labels, so pin it to 2 columns and let Pico's existing narrow-viewport
+   breakpoint (already wired into .grid) collapse it to 1. */
+.flight-charts-grid {
+  grid-template-columns: repeat(2, 1fr) !important;
+  gap: 1rem 1.5rem;
+  margin: 1rem 0;
+}
+
+.flight-chart {
+  min-width: 0; /* lets the uPlot canvas shrink inside the grid track instead of overflowing it */
+  overflow-x: auto;
+}
