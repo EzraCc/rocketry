@@ -39,6 +39,20 @@ describe("parseRocksimXml — real fixture (sim-files/LOC/PK-48 LOC-IV.rkt)", ()
     // (0g), parachute) -- a real ~4in/1.2m rocket, not the ~50g a blank-rocket default would imply.
     expect(parsed.estimatedDryMassKg).toBeCloseTo(1.10517226, 6);
 
+    // IsMotorMount is 0 everywhere in this file (see the isMotorMount assertions below), so this
+    // exercises the PartDesc-based fallback: the real inner tube is named "Motor mount tube" with
+    // <ID>38.608</ID> -- a real, verified 38mm-class motor mount despite the flag being unset.
+    expect(parsed.motorMountDiameterM).toBeCloseTo(38.608 * MM, 6);
+
+    // Single <Parachute>, PartDesc "36 In. 8 lines" -- Dia=914.001mm, SpillHoleDia=90mm,
+    // DragCoefficient=0.8, no name hint -> the only device, so it's "main" by default.
+    expect(parsed.descentDevices).toHaveLength(1);
+    expect(parsed.descentDevices[0]!.type).toBe("parachute");
+    expect(parsed.descentDevices[0]!.role).toBe("main");
+    expect(parsed.descentDevices[0]!.dragCoefficient).toBeCloseTo(0.8, 6);
+    const expectedAreaM2 = Math.PI * (((914.001 * MM) / 2) ** 2 - ((90 * MM) / 2) ** 2);
+    expect(parsed.descentDevices[0]!.dragAreaM2).toBeCloseTo(expectedAreaM2, 6);
+
     const nose = parsed.components[0] as NoseCone;
     expect(nose.shape).toBe("ogive");
     // RockSim's own <ShapeParameter> is meaningless for ogive (see parseShapeCode's doc comment) --
@@ -90,6 +104,31 @@ describe("parseRocksimXml — real fixture (sim-files/LOC/PK-48 LOC-IV.rkt)", ()
 
     expect(parsedResult.cna).toBeCloseTo(handResult.cna, 9);
     expect(parsedResult.cpX).toBeCloseTo(handResult.cpX, 9);
+  });
+});
+
+describe("parseRocksimXml — real fixture (public/library/wildman/WildmanDD.rkt) — dual-deploy descent device classification", () => {
+  it("classifies the explicitly-named drogue as drogue and the larger unnamed chute as main", () => {
+    const xml = fs.readFileSync(path.resolve(__dirname, "../../../public/library/wildman/WildmanDD.rkt"), "utf-8");
+    const parsed = parseRocksimXml(xml);
+
+    // 54mm inner motor mount tube, correctly IsMotorMount=1 in this file (unlike LOC-IV).
+    expect(parsed.motorMountDiameterM).toBeCloseTo(54.356 * MM, 6);
+
+    expect(parsed.descentDevices).toHaveLength(2);
+    const main = parsed.descentDevices.find((d) => d.role === "main");
+    const drogue = parsed.descentDevices.find((d) => d.role === "drogue");
+    expect(main).toBeDefined();
+    expect(drogue).toBeDefined();
+    // Main: Dia=1320.8mm, no spill hole, DragCoefficient=1.46 (plain "Parachute", the larger of the two).
+    expect(main!.dragCoefficient).toBeCloseTo(1.46, 6);
+    expect(main!.dragAreaM2).toBeCloseTo(Math.PI * ((1320.8 * MM) / 2) ** 2, 6);
+    // Drogue: Dia=508mm, DragCoefficient=0.8, explicitly named "Drogue Parachute" -- classified by
+    // name, not just by being the smaller one (both signals agree here, but the name is what the
+    // implementation actually keys on).
+    expect(drogue!.dragCoefficient).toBeCloseTo(0.8, 6);
+    expect(drogue!.dragAreaM2).toBeCloseTo(Math.PI * ((508 * MM) / 2) ** 2, 6);
+    expect(main!.dragAreaM2).toBeGreaterThan(drogue!.dragAreaM2);
   });
 });
 

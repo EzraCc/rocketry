@@ -50,6 +50,30 @@ export interface ParsedRocksimRocket {
    * wrong silently. CG stays the caller's/user's responsibility.
    */
   estimatedDryMassKg: number;
+  /**
+   * Inner diameter (m) of the actual motor mount tube — what size motor
+   * physically fits, which can be much smaller than the rocket's own outer
+   * body diameter (e.g. the LOC-IV fixture: 101.6mm body, 38.6mm motor
+   * mount). Found via the same <IsMotorMount> flag as isMotorMount above,
+   * but reading the flagged tube's own <ID> rather than just noting which
+   * outer component it belongs to — undefined if no component has the flag
+   * set (see hasMotorMount's own doc comment: real files sometimes leave it
+   * unset even on an unambiguous motor mount tube, e.g. this project's own
+   * LOC-IV reference file). Callers should fall back to the reference/outer
+   * body diameter in that case, same as this parser's own motor-mount
+   * *detection* already does elsewhere (isMotorMount on the aft-most tube).
+   */
+  motorMountDiameterM?: number;
+  /** Recovery devices found anywhere in the file, classified main/drogue — see extractDescentDevices's doc comment for how. */
+  descentDevices: DescentDevice[];
+}
+
+export interface DescentDevice {
+  type: "parachute" | "streamer";
+  role: "main" | "drogue";
+  /** Effective drag area (m^2): a parachute's disk area minus its spill hole, or a streamer's length x width. */
+  dragAreaM2: number;
+  dragCoefficient: number;
 }
 
 function directChild(el: Element, tag: string): Element | null {
@@ -209,6 +233,81 @@ function hasMotorMount(el: Element): boolean {
   return Array.from(el.getElementsByTagName("IsMotorMount")).some((n) => (n.textContent ?? "").trim() === "1");
 }
 
+/**
+ * Inner diameter of the actual motor-mount tube, searched across the whole
+ * document (not just the sustainer stage — the flag lives on whichever
+ * tube RockSim's own UI had it checked on, wherever that tube sits in the
+ * part tree). Takes the FIRST flagged tube found; real single-stage files
+ * only ever have one.
+ *
+ * Falls back to matching an inner tube (<IsInsideTube>1</IsInsideTube>)
+ * whose own <PartDesc> mentions "motor mount" if no tube has the flag set —
+ * a real, verified case, not a hypothetical: this project's own LOC-IV
+ * reference file has an unambiguous motor mount tube (PartDesc "Motor
+ * mount tube", a real EngineOverhang value, ID matching a standard 38mm
+ * motor) with <IsMotorMount> left at 0, apparently never checked in
+ * RockSim's own UI when the file was built. Still returns undefined (for
+ * the caller to fall back to the reference/outer body diameter) if neither
+ * signal finds anything — true for files with no separate inner mount tube
+ * at all (the motor sits directly in the outer body, common on minimum-
+ * diameter builds).
+ */
+function extractMotorMountDiameterM(design: Element): number | undefined {
+  const flag = Array.from(design.getElementsByTagName("IsMotorMount")).find((n) => (n.textContent ?? "").trim() === "1");
+  let tube: Element | undefined = flag?.parentElement ?? undefined;
+  if (!tube) {
+    tube = Array.from(design.getElementsByTagName("BodyTube")).find(
+      (el) => text(el, "IsInsideTube") === "1" && /motor mount/i.test(text(el, "PartDesc") ?? ""),
+    );
+  }
+  if (!tube) return undefined;
+  const id = num(tube, "ID", 0);
+  return id > 0 ? id * MM_TO_M : undefined;
+}
+
+/**
+ * Every <Parachute>/<Streamer> anywhere in the document, classified
+ * main/drogue. RockSim has no dedicated "this is the drogue" flag; real
+ * files distinguish them by naming the part "Drogue ..." (verified against
+ * a real dual-deploy fixture) — matched here case-insensitively. Anything
+ * not explicitly named as a drogue is provisionally "main"; if more than
+ * one device ends up provisional (no explicit drogue found, or multiple
+ * plain-named devices), the smallest by drag area is reassigned to
+ * "drogue" and the largest stays "main" — a drogue is, definitionally,
+ * the smaller/faster-falling one, so size is a physically grounded
+ * tiebreak, not a guess. A single device with nothing else present just
+ * stays "main" (the common single-deploy case).
+ */
+function extractDescentDevices(design: Element): DescentDevice[] {
+  const devices: { name: string; type: "parachute" | "streamer"; dragAreaM2: number; dragCoefficient: number }[] = [];
+
+  for (const el of Array.from(design.getElementsByTagName("Parachute"))) {
+    const diaM = num(el, "Dia", 0) * MM_TO_M;
+    const spillM = num(el, "SpillHoleDia", 0) * MM_TO_M;
+    const areaM2 = Math.PI * ((diaM / 2) ** 2 - (spillM / 2) ** 2);
+    if (areaM2 <= 0) continue;
+    devices.push({ name: text(el, "Name") ?? "", type: "parachute", dragAreaM2: areaM2, dragCoefficient: num(el, "DragCoefficient", 0.8) });
+  }
+  for (const el of Array.from(design.getElementsByTagName("Streamer"))) {
+    const lenM = num(el, "Len", 0) * MM_TO_M;
+    const widthM = num(el, "Width", 0) * MM_TO_M;
+    const areaM2 = lenM * widthM;
+    if (areaM2 <= 0) continue;
+    devices.push({ name: text(el, "Name") ?? "", type: "streamer", dragAreaM2: areaM2, dragCoefficient: num(el, "DragCoefficient", 0.6) });
+  }
+
+  const explicitDrogues = devices.filter((d) => /drogue/i.test(d.name));
+  const provisionalMains = devices.filter((d) => !/drogue/i.test(d.name));
+  provisionalMains.sort((a, b) => b.dragAreaM2 - a.dragAreaM2);
+  const reassignedDrogue = provisionalMains.length > 1 ? provisionalMains.pop() : undefined;
+
+  const result: DescentDevice[] = [];
+  for (const d of explicitDrogues) result.push({ type: d.type, role: "drogue", dragAreaM2: d.dragAreaM2, dragCoefficient: d.dragCoefficient });
+  for (const d of provisionalMains) result.push({ type: d.type, role: "main", dragAreaM2: d.dragAreaM2, dragCoefficient: d.dragCoefficient });
+  if (reassignedDrogue) result.push({ type: reassignedDrogue.type, role: "drogue", dragAreaM2: reassignedDrogue.dragAreaM2, dragCoefficient: reassignedDrogue.dragCoefficient });
+  return result;
+}
+
 /** Fin sets found as direct children of this component's own <AttachedParts> (fins are always nested there in real RockSim files, never deeper). */
 function finsOf(el: Element, parentLength: number, parentAbsoluteX0: number, warnings: string[]): (TrapezoidalFinSet | FreeformFinSet)[] {
   const attached = directChild(el, "AttachedParts");
@@ -334,6 +433,8 @@ export function parseRocksimXml(xmlText: string): ParsedRocksimRocket {
 
   const estimatedDryMassKg =
     Array.from(design.getElementsByTagName("CalcMass")).reduce((sum, el) => sum + (Number.parseFloat(el.textContent ?? "0") || 0), 0) / 1000;
+  const motorMountDiameterM = extractMotorMountDiameterM(design);
+  const descentDevices = extractDescentDevices(design);
 
-  return { name, components, warnings, estimatedDryMassKg };
+  return { name, components, warnings, estimatedDryMassKg, motorMountDiameterM, descentDevices };
 }

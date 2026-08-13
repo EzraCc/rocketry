@@ -58,6 +58,13 @@ const MM = 0.001;
  * filename or overall-size dedup would have wrongly merged distinct
  * rockets that happen to share a common airframe tube).
  */
+interface LibraryDescentDevice {
+  type: "parachute" | "streamer";
+  role: "main" | "drogue";
+  dragAreaM2: number;
+  dragCoefficient: number;
+}
+
 interface LibraryManifestEntry {
   id: string;
   vendor: string;
@@ -66,6 +73,9 @@ interface LibraryManifestEntry {
   diameterMm: number;
   lengthMm: number;
   warnings: boolean;
+  /** Undefined when the file has no separately-flagged motor mount tube — the motor sits directly in the outer body (common on minimum-diameter builds); fall back to diameterMm in that case. */
+  motorMountDiameterMm?: number;
+  descentDevices: LibraryDescentDevice[];
 }
 
 let libraryManifest: LibraryManifestEntry[] = [];
