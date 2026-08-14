@@ -26,30 +26,60 @@ export interface ParsedRocksimRocket {
   /** RockSim files carry no motor data at all (only mount geometry) — always empty; motor selection is always the caller's job, same as for .ork. */
   warnings: string[];
   /**
-   * Sum of every <CalcMass> element found anywhere in the file (kg), 0 if
-   * none present. RockSim computes and caches this per-part from that part's
-   * own <Density>/<Material> and geometry — including internal hardware this
-   * project doesn't model aerodynamically (couplers, centering rings,
-   * bulkheads, motor mount tube, recovery gear), which really does add to
-   * what the motor has to lift. Summing it is NOT the same as porting
-   * OpenRocket's own material-density mass calculator (RockSimHandler.java's
-   * importer ignores these cached fields entirely and recomputes mass itself
-   * from the same density/geometry inputs, only honoring the file's
-   * <Stage3Mass>-style override when it's nonzero) — that calculator is
-   * explicitly out of this project's MVP scope. This is a cheaper, honest
-   * middle ground: real numbers already sitting in the file, not a guess,
-   * used as a much better prefill than an arbitrary placeholder — a rocket
-   * this size (see the LOC-IV fixture) is off by 20x+ from a 50g default.
-   * Deliberately NOT attempting the equivalent for CG: unlike CalcMass
-   * (a plain sum, no coordinate frame involved), each part's <CalcCG> is
-   * local to that part's own fore end, and nested/internal parts' <Xb>
-   * offsets are relative to a parent that isn't always resolvable from this
-   * flat per-tag scan — getting that wrong would bias the derived CG
-   * forward (parts skipped are concentrated aft, near the fins), which
-   * makes the rocket look falsely MORE stable, the wrong direction to get
-   * wrong silently. CG stays the caller's/user's responsibility.
+   * Sum of every <CalcMass> entry in the sustainer stage's part tree (kg),
+   * 0 if none present — see dryMassBreakdown's doc comment for exactly how
+   * this is computed (a real tree-walk, not a flat document scan; this field
+   * is now just the sum of that breakdown's own massKg values, kept as its
+   * own field since most callers only need the total). RockSim computes and
+   * caches this per-part from that part's own <Density>/<Material> and
+   * geometry — including internal hardware this project doesn't model
+   * aerodynamically (couplers, centering rings, bulkheads, motor mount tube,
+   * recovery gear), which really does add to what the motor has to lift.
+   * This is NOT the same as porting OpenRocket's own material-density mass
+   * calculator (RockSimHandler.java's importer ignores these cached fields
+   * entirely and recomputes mass itself from the same density/geometry
+   * inputs) — that calculator is explicitly out of this project's MVP scope.
+   * This is a cheaper, honest middle ground: real numbers already sitting in
+   * the file, not a guess — cross-checked directly against OpenRocket's own
+   * independently-computed dry mass for 6 real library files (see
+   * validation/openrocket-comparison.test.ts), agreeing within a few
+   * percent in every case.
    */
   estimatedDryMassKg: number;
+  /**
+   * Mass-weighted dry CG (m from nose tip), or undefined if the sustainer
+   * stage has no mass-contributing parts at all. See dryMassBreakdown for
+   * how each contributing part's own absolute position is resolved.
+   */
+  estimatedDryCgM?: number;
+  /**
+   * Every mass-contributing part found in the sustainer stage's tree — not
+   * just the top-level body components this parser turns into aerodynamic
+   * Components, but everything nested inside their <AttachedParts> too
+   * (fins, couplers, centering rings, bulkheads, the motor mount tube,
+   * recovery gear, mass objects), at ANY nesting depth (confirmed real:
+   * some files nest an AttachedParts part inside another AttachedParts
+   * part's own AttachedParts). Each entry's cgXM is that part's OWN
+   * <CalcCG> (local to that part's fore end, confirmed directly: a
+   * Bulkhead's CalcCG is exactly half its own Len, matching a
+   * uniform-density flat disc) resolved to an ABSOLUTE position by walking
+   * back through its ancestor chain's own axialOffset()s to the nose tip --
+   * the identical position-resolution logic finsOf/axialOffset already use
+   * for fins, generalized to every attached part, not just fins.
+   *
+   * This generalization is exactly what estimatedDryMassKg's own doc
+   * comment used to say was NOT being attempted for CG ("nested/internal
+   * parts' <Xb> offsets are relative to a parent that isn't always
+   * resolvable from this flat per-tag scan") -- that limitation was about a
+   * flat per-tag scan specifically; a real recursive tree-walk (this) does
+   * resolve it, by construction, the same way the rest of this parser
+   * already resolves nested component positions.
+   *
+   * Cross-checked against OpenRocket's own independently-computed dry CG
+   * for 6 real library files (see validation/openrocket-comparison.test.ts)
+   * before this was trusted for anything CG-related.
+   */
+  dryMassBreakdown: { name: string; massKg: number; cgXM: number }[];
   /**
    * Inner diameter (m) of the actual motor mount tube — what size motor
    * physically fits, which can be much smaller than the rocket's own outer
@@ -66,6 +96,21 @@ export interface ParsedRocksimRocket {
   motorMountDiameterM?: number;
   /** Recovery devices found anywhere in the file, classified main/drogue — see extractDescentDevices's doc comment for how. */
   descentDevices: DescentDevice[];
+  /**
+   * Human-readable list of geometry this parser can locate but doesn't model well enough to
+   * simulate: external pods, tube fins, ring tails, and multi-stage designs (this tool's scope is
+   * single-stage, standard nosecone/body/transition + trapezoidal or freeform fins). Empty for
+   * supported files.
+   *
+   * Non-empty specifically means: don't trust estimatedDryCgM (see its own doc comment — the
+   * position-resolution logic below has no correct way to size an ExternalPod's own bounding
+   * length, since RockSim gives it no <Len> tag of its own, only nested children; confirmed
+   * directly on Wildman Cerberus, off by 2.4 calibers vs. OpenRocket's own dry CG before this was
+   * caught), and don't run a flight simulation at all — this project's aero model has no
+   * representation for pods/tube fins/ring tails, and multi-stage means only the sustainer is even
+   * parsed. Callers should block simulation and show the file as view/download-only.
+   */
+  unsupportedFeatures: string[];
 }
 
 export interface DescentDevice {
@@ -176,6 +221,22 @@ function axialOffset(el: Element, parentLength: number, childLength: number, par
   return xb; // FRONT_OF_OWNING_PART (default)
 }
 
+/**
+ * RockSim's own per-part sequential identifier (present and unique across every part in a real
+ * file, confirmed directly — 12 parts, SerialNo 1-12, including fins), used as this project's
+ * Component.id instead of the display <Name>, which routinely collides: 160/339 library files
+ * have at least one duplicate part name (e.g. LOC-IV alone has two body tubes both literally named
+ * "Body tube"). This was a REAL bug, not hypothetical: the one place this project looks a
+ * component up by id (motorAxialPosition in combined-mass.ts, resolving which body tube the motor
+ * sits in) was silently matching the WRONG tube whenever the intended one wasn't the first with
+ * that name — for LOC-IV specifically, this put the assumed motor position ~580mm forward of
+ * reality (the misidentified tube's full length), a multi-caliber error in derived dry CG.
+ * Falls back to the display name (this project's previous behavior) if SerialNo is ever absent.
+ */
+function uniqueId(el: Element, name: string): string {
+  return text(el, "SerialNo") ?? name;
+}
+
 function parseFinSet(el: Element, parentLength: number, parentAbsoluteX0: number, warnings: string[]): TrapezoidalFinSet | FreeformFinSet | null {
   const name = text(el, "Name") ?? "Fin set";
   const shapeCode = Math.round(num(el, "ShapeCode", 0));
@@ -188,7 +249,7 @@ function parseFinSet(el: Element, parentLength: number, parentAbsoluteX0: number
     const rootChord = lengthM(el, "RootChord", 0);
     return {
       type: "finset",
-      id: name,
+      id: uniqueId(el, name),
       name,
       finCount,
       rootChord,
@@ -213,7 +274,7 @@ function parseFinSet(el: Element, parentLength: number, parentAbsoluteX0: number
     const rootChord = points.filter(([, y]) => Math.abs(y) < 1e-9).reduce((max, [x]) => Math.max(max, x), 0);
     return {
       type: "freeformfinset",
-      id: name,
+      id: uniqueId(el, name),
       name,
       finCount,
       points,
@@ -317,13 +378,71 @@ function finsOf(el: Element, parentLength: number, parentAbsoluteX0: number, war
     .filter((f): f is TrapezoidalFinSet | FreeformFinSet => f !== null);
 }
 
+/**
+ * This element's own <CalcMass>/<CalcCG> contribution (if any) plus every part nested inside its
+ * <AttachedParts>, recursively (arbitrarily deep — confirmed real: some files nest an
+ * AttachedParts part inside another AttachedParts part's own AttachedParts). Generalizes
+ * finsOf/axialOffset's own position-resolution logic to every attached part, not just fins — same
+ * <Xb>/<LocationMode> handling, just applied uniformly regardless of tag name.
+ *
+ * `el`'s own contribution uses `parentAbsoluteX0` directly (the caller has already resolved el's
+ * own absolute position before calling this) — this function's job is just el's own CalcMass/CalcCG
+ * plus recursing into whatever's attached to it.
+ */
+function collectMassBreakdown(
+  el: Element,
+  elLength: number,
+  elAbsoluteX0: number,
+  out: { name: string; massKg: number; cgXM: number }[],
+): void {
+  // Parts with no shape/material to compute from (MassObject -- ballast, altimeters, trackers,
+  // shock cords) always have CalcMass=0 and rely on a user-entered KnownMass instead; RockSim
+  // itself falls back the same way, so skipping CalcMass===0 parts entirely would silently drop
+  // real mass (confirmed: Patriot BT50's "Nose Weight" MassObject is 28.3g of user-entered ballast
+  // with CalcMass=0).
+  const calcMassG = num(el, "CalcMass", 0);
+  const knownMassG = num(el, "KnownMass", 0);
+  const massG = calcMassG > 0 ? calcMassG : knownMassG;
+  if (massG > 0) {
+    // A shaped part's CalcCG is a genuine local offset from its own fore end (confirmed: a
+    // Bulkhead's CalcCG is exactly half its own Len). A KnownMass-only part (no shape) has no such
+    // offset to add on top of its own Xb-resolved placement -- its <KnownCG> looked like a further
+    // local refinement at first (same field name/units as CalcCG) but isn't: surveyed 862
+    // UseKnownCG=1 MassObjects library-wide and 88% have KnownCG numerically identical to Xb (a
+    // redundant mirror of the object's own placement, not an independent offset); treating it as
+    // additive double-counted that placement (confirmed on LOC-IV's "NW-15" shock cord: Xb=288.9mm
+    // relative to its parent resolves to the correct absolute Station of 893.4mm on its own, but
+    // adding KnownCG on top pushed it to 1182mm, a bogus 289mm-aft error). Its <Len> can't stand in
+    // for a real local offset either -- confirmed nonsensical for a point-mass accessory: that same
+    // NW-15 entry has Len=6096mm (a shock cord's own unrolled length), 5x the whole rocket's length.
+    // A KnownMass part's own resolved placement is simply its full CG position, no correction.
+    const localCgM = calcMassG > 0 ? num(el, "CalcCG", 0) * MM_TO_M : 0;
+    out.push({ name: text(el, "Name") ?? el.tagName, massKg: massG / 1000, cgXM: elAbsoluteX0 + localCgM });
+  }
+
+  const attached = directChild(el, "AttachedParts");
+  if (!attached) return;
+  for (const child of Array.from(attached.children)) {
+    // Fins measure their own length as RootChord (matches finsOf's own commonOffset convention,
+    // since axialOffset's BACK_OF_OWNING_PART case needs the child's true length to subtract);
+    // everything else (rings, couplers, bulkheads, inner tubes, mass objects) uses Len, defaulting
+    // to 0 for anything without one (treated as a point at its own Xb offset — a reasonable
+    // simplification for small hardware, not a real source of error at whole-rocket scale).
+    const isFin = child.tagName === "FinSet" || child.tagName === "CustomFinSet";
+    const childLength = isFin ? lengthM(child, "RootChord", 0) : lengthM(child, "Len", 0);
+    const childAbsoluteX0 = elAbsoluteX0 + axialOffset(child, elLength, childLength, elAbsoluteX0);
+    collectMassBreakdown(child, childLength, childAbsoluteX0, out);
+  }
+}
+
 const SKIPPED_BUT_KNOWN_TAGS = new Set([
   "Ring", "MassObject", "Parachute", "Streamer", "LaunchLug", "TubeFinSet", "ExternalPod", "RingTail",
 ]);
 
-/** Walks one stage's direct part elements in document order, mirroring parseOrkXml's walkStage. */
-function walkStageParts(stageEl: Element, warnings: string[]): Component[] {
+/** Walks one stage's direct part elements in document order, mirroring parseOrkXml's walkStage. Also collects every mass-contributing part (top-level components AND everything nested in their AttachedParts) into dryMassBreakdown -- see ParsedRocksimRocket's doc comment for why this needs a real tree-walk, not a flat scan. */
+function walkStageParts(stageEl: Element, warnings: string[]): { components: Component[]; dryMassBreakdown: { name: string; massKg: number; cgXM: number }[] } {
   const out: Component[] = [];
+  const dryMassBreakdown: { name: string; massKg: number; cgXM: number }[] = [];
   let x = 0; // running absolute position of the part currently being placed, for LocationMode=1 (FROM_TIP_OF_NOSE)
 
   for (const el of Array.from(stageEl.children)) {
@@ -335,7 +454,7 @@ function walkStageParts(stageEl: Element, warnings: string[]): Component[] {
       const length = lengthM(el, "Len", 0);
       out.push({
         type: "nosecone",
-        id: name,
+        id: uniqueId(el, name),
         name,
         shape,
         shapeParameter,
@@ -344,6 +463,7 @@ function walkStageParts(stageEl: Element, warnings: string[]): Component[] {
         thickness: lengthM(el, "WallThickness", 0.002),
       });
       out.push(...finsOf(el, length, x, warnings));
+      collectMassBreakdown(el, length, x, dryMassBreakdown);
       x += length;
       continue;
     }
@@ -352,7 +472,7 @@ function walkStageParts(stageEl: Element, warnings: string[]): Component[] {
       const length = lengthM(el, "Len", 0);
       out.push({
         type: "bodytube",
-        id: name,
+        id: uniqueId(el, name),
         name,
         length,
         radius: radiusFromDiaM(el, "OD", 0),
@@ -360,6 +480,7 @@ function walkStageParts(stageEl: Element, warnings: string[]): Component[] {
         isMotorMount: text(el, "IsMotorMount") === "1" || hasMotorMount(el),
       });
       out.push(...finsOf(el, length, x, warnings));
+      collectMassBreakdown(el, length, x, dryMassBreakdown);
       x += length;
       continue;
     }
@@ -369,7 +490,7 @@ function walkStageParts(stageEl: Element, warnings: string[]): Component[] {
       const length = lengthM(el, "Len", 0);
       out.push({
         type: "transition",
-        id: name,
+        id: uniqueId(el, name),
         name,
         shape,
         shapeParameter,
@@ -379,6 +500,7 @@ function walkStageParts(stageEl: Element, warnings: string[]): Component[] {
         thickness: lengthM(el, "WallThickness", 0.002),
       });
       out.push(...finsOf(el, length, x, warnings));
+      collectMassBreakdown(el, length, x, dryMassBreakdown);
       x += length;
       continue;
     }
@@ -395,7 +517,7 @@ function walkStageParts(stageEl: Element, warnings: string[]): Component[] {
     // lookup needed here since these tags aren't body components fins could attach to, and
     // RockSim inner tubes always live inside a BodyTube's own AttachedParts, already covered above).
   }
-  return out;
+  return { components: out, dryMassBreakdown };
 }
 
 export function parseRocksimXml(xmlText: string): ParsedRocksimRocket {
@@ -429,12 +551,48 @@ export function parseRocksimXml(xmlText: string): ParsedRocksimRocket {
     warnings.push(`This rocket has booster stage(s) below the sustainer — only the sustainer (Stage3Parts) is imported (single-stage only, per this tool's scope).`);
   }
 
-  const components = walkStageParts(stage3, warnings);
+  // This tool's scope is single-stage, standard nosecone/body/transition + trapezoidal or
+  // freeform fins -- these tag names are geometry it can locate in the file but not model
+  // correctly (see unsupportedFeatures' own doc comment for why, and ParsedRocksimRocket's for the
+  // concrete Cerberus case that surfaced this).
+  const UNSUPPORTED_TAGS: Record<string, string> = {
+    ExternalPod: "external pods",
+    TubeFinSet: "tube fins",
+    RingTail: "ring tails",
+  };
+  const unsupportedFeatures = Object.entries(UNSUPPORTED_TAGS)
+    .filter(([tag]) => stage3.getElementsByTagName(tag).length > 0)
+    .map(([, label]) => label);
+  if (extraStages > 0) unsupportedFeatures.push("multiple stages");
 
-  const estimatedDryMassKg =
-    Array.from(design.getElementsByTagName("CalcMass")).reduce((sum, el) => sum + (Number.parseFloat(el.textContent ?? "0") || 0), 0) / 1000;
+  const { components, dryMassBreakdown } = walkStageParts(stage3, warnings);
+
+  // Cluster motor mounts: more than one tube flagged IsMotorMount=1 anywhere in the sustainer's
+  // tree, at any depth (a top-level body tube directly flagged, or two+ inner tubes nested inside
+  // one -- confirmed both patterns exist in the library, e.g. Trivecta/Karman Lines Transport,
+  // though those specific files are already caught by the ExternalPod check above; this raw scan
+  // catches a cluster mount that isn't pod-based too).
+  const motorMountFlagCount = Array.from(stage3.getElementsByTagName("IsMotorMount")).filter(
+    (n) => (n.textContent ?? "").trim() === "1",
+  ).length;
+  if (motorMountFlagCount > 1) unsupportedFeatures.push("cluster motor mounts");
+
+  const estimatedDryMassKg = dryMassBreakdown.reduce((sum, part) => sum + part.massKg, 0);
+  const totalMoment = dryMassBreakdown.reduce((sum, part) => sum + part.massKg * part.cgXM, 0);
+  const estimatedDryCgM =
+    unsupportedFeatures.length === 0 && estimatedDryMassKg > 0 ? totalMoment / estimatedDryMassKg : undefined;
   const motorMountDiameterM = extractMotorMountDiameterM(design);
   const descentDevices = extractDescentDevices(design);
 
-  return { name, components, warnings, estimatedDryMassKg, motorMountDiameterM, descentDevices };
+  return {
+    name,
+    components,
+    warnings,
+    estimatedDryMassKg,
+    estimatedDryCgM,
+    dryMassBreakdown,
+    motorMountDiameterM,
+    descentDevices,
+    unsupportedFeatures,
+  };
 }

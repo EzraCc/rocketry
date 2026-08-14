@@ -95,6 +95,24 @@ const relError = (ours: number, theirs: number) => Math.abs(ours - theirs) / Mat
 const CP_TOLERANCE = 0.1;
 const VELOCITY_TOLERANCE = 0.15;
 const APOGEE_TOLERANCE = 0.3;
+// Measured spread for the 5 supported cases (Cerberus is flagged unsupportedFeatures and excluded
+// -- see its own test below): 1.3% - 9.5%. LOC-IV's high end isn't a position bug (its own parts
+// were individually cross-checked against RockSim's own per-part <Station> ground truth and match
+// exactly) -- OpenRocket recomputes mass from material density/geometry rather than using RockSim's
+// own cached per-part mass this project reads, so some divergence between the two dry-mass models
+// is expected on top of any real position error. Wide enough to comfortably cover that known gap,
+// still tight enough to catch a real bug (wrong sign, a part dropped/double-counted).
+const CG_TOLERANCE = 0.15;
+
+// Same back-solve every flight-level test here needs: OpenRocket's own LOADED mass/CG at liftoff
+// (real Java sim output) plus this project's own motor axial position (geometry only, not mass),
+// via the identical moment-conservation math this project's own UI uses (rederiveDryCg in main.ts).
+function backSolveDryCg(fixture: OpenRocketFixture, motor: SelectedMotor, motorCgXM: number): number {
+  const loadedMassKg = fixture.massAtLiftoffKg;
+  const loadedCgM = fixture.cgAtLiftoffMm / 1000;
+  const dryMassKg = loadedMassKg - motor.totalMassKg;
+  return (loadedMassKg * loadedCgM - motor.totalMassKg * motorCgXM) / dryMassKg;
+}
 
 const fixtureFiles = fs.readdirSync(OPENROCKET_FIXTURES_DIR).filter((f) => f.endsWith(".json"));
 
@@ -123,14 +141,10 @@ describe.each(fixtureFiles)("%s vs. real OpenRocket Java simulation", (file) => 
     const pos = motorAxialPosition(rocketForMotorPosition);
     if (!pos) throw new Error(`motorAxialPosition returned null for ${fixture.label} -- motor mount not found/positioned`);
 
-    // Back-solve dry mass/CG from OpenRocket's own LOADED mass/CG at liftoff, via the identical
-    // moment-conservation math this project's own UI already uses (rederiveDryCg in main.ts) --
-    // both engines then fly from the same loaded configuration, rather than each guessing an
+    // Both engines then fly from the same loaded configuration, rather than each guessing an
     // independent dry mass.
-    const loadedMassKg = fixture.massAtLiftoffKg;
-    const loadedCgM = fixture.cgAtLiftoffMm / 1000;
-    const dryMassKg = loadedMassKg - motor.totalMassKg;
-    const dryCgM = (loadedMassKg * loadedCgM - motor.totalMassKg * pos.cgX) / dryMassKg;
+    const dryCgM = backSolveDryCg(fixture, motor, pos.cgX);
+    const dryMassKg = fixture.massAtLiftoffKg - motor.totalMassKg;
 
     const rocket: Rocket = { ...rocketForMotorPosition, dryMass: dryMassKg, dryCg: dryCgM };
     const result = simulateFlight3D(rocket);
@@ -144,5 +158,34 @@ describe.each(fixtureFiles)("%s vs. real OpenRocket Java simulation", (file) => 
       relError(result.maxVelocity, fixture.maxVelocityMs),
       `our max velocity ${result.maxVelocity.toFixed(1)}m/s vs OpenRocket's ${fixture.maxVelocityMs.toFixed(1)}m/s`,
     ).toBeLessThan(VELOCITY_TOLERANCE);
+  });
+
+  it(parsed.unsupportedFeatures.length > 0 ? "dry CG estimate is withheld (unsupported geometry)" : `estimated dry CG within ${(CG_TOLERANCE * 100).toFixed(0)}%`, () => {
+    if (parsed.unsupportedFeatures.length > 0) {
+      // Cerberus's own ExternalPod has no <Len> tag of its own -- RockSim derives its bounding
+      // length from its nested children, which this parser doesn't attempt (see
+      // ParsedRocksimRocket's unsupportedFeatures doc comment). Asserting undefined here (rather
+      // than skipping this case) locks in that the parser withholds an estimate it can't back,
+      // instead of silently returning a wrong one.
+      expect(parsed.estimatedDryCgM).toBeUndefined();
+      return;
+    }
+
+    const motorMountId = findMotorMountId(parsed.components);
+    const rocketForMotorPosition: Rocket = {
+      ...defaultRocket(),
+      components: parsed.components,
+      motorMount: { componentId: motorMountId, motorOverhang: 0 },
+      motor,
+    };
+    const pos = motorAxialPosition(rocketForMotorPosition);
+    if (!pos) throw new Error(`motorAxialPosition returned null for ${fixture.label} -- motor mount not found/positioned`);
+
+    const orDryCgM = backSolveDryCg(fixture, motor, pos.cgX);
+    const ourDryCgMm = parsed.estimatedDryCgM! * 1000;
+    expect(
+      relError(ourDryCgMm, orDryCgM * 1000),
+      `our estimated dry CG ${ourDryCgMm.toFixed(1)}mm vs OpenRocket's back-solved ${(orDryCgM * 1000).toFixed(1)}mm`,
+    ).toBeLessThan(CG_TOLERANCE);
   });
 });

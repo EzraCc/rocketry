@@ -35,9 +35,12 @@ describe("parseRocksimXml — real fixture (sim-files/LOC/PK-48 LOC-IV.rkt)", ()
     expect(parsed.components.map((c) => c.type)).toEqual(["nosecone", "bodytube", "bodytube", "freeformfinset"]);
 
     // Real, sourced number: sum of this file's own 12 <CalcMass> entries (nose, 2 body tubes, tube
-    // coupler, bulkhead, motor mount tube, fin set, 3 centering rings, an unmeasured accessory
-    // (0g), parachute) -- a real ~4in/1.2m rocket, not the ~50g a blank-rocket default would imply.
-    expect(parsed.estimatedDryMassKg).toBeCloseTo(1.10517226, 6);
+    // coupler, bulkhead, motor mount tube, fin set, 3 centering rings, parachute) plus one
+    // <KnownMass>-only entry (a "NW-15" nose weight MassObject, CalcMass=0 since RockSim can't
+    // compute mass for a shapeless point mass, KnownMass=56.699g) -- a real ~4in/1.2m rocket, not
+    // the ~50g a blank-rocket default would imply.
+    expect(parsed.estimatedDryMassKg).toBeCloseTo(1.16187126, 6);
+    expect(parsed.unsupportedFeatures).toEqual([]);
 
     // IsMotorMount is 0 everywhere in this file (see the isMotorMount assertions below), so this
     // exercises the PartDesc-based fallback: the real inner tube is named "Motor mount tube" with
