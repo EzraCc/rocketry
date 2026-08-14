@@ -19,6 +19,16 @@
   width: auto;
 }
 
+/* The toggle is position:fixed (see above), so it never pushes sibling content out of its way --
+   on a narrow viewport the h1 wraps to a second line that runs right underneath/behind it
+   (confirmed real: overlapping bounding boxes on a 390px-wide viewport). Reserve the same corner
+   for the toggle by padding the heading away from it instead. */
+@media (max-width: 767px) {
+  main.container > hgroup h1 {
+    padding-right: 6.5rem;
+  }
+}
+
 .stats-grid > div {
   text-align: center;
   padding: 0.75rem 0.5rem;
@@ -32,6 +42,36 @@
 
 .stats-grid > div small {
   color: var(--pico-muted-color);
+}
+
+/* Below Pico's own grid breakpoint, .grid already stacks each stat into its own full-width block
+   (confirmed real: 7 stats stacked to 642px of scrolling on a 390px-wide screen) -- each was still
+   laid out as a standalone "card" (value centered above label), which is the right look at desktop
+   grid width but reads as excessive, hard-to-scan vertical space once there's only one per row.
+   Restyle each row as a compact label-left/value-right table row instead, keeping the desktop
+   card grid completely untouched above the breakpoint. row-reverse (not a markup change) puts the
+   DOM's first child (the value, <strong>) on the right and the second (the label, <small>) on the
+   left, matching how a label:value row normally reads. */
+@media (max-width: 767px) {
+  .stats-grid > div {
+    display: flex;
+    flex-direction: row-reverse;
+    justify-content: space-between;
+    align-items: center;
+    text-align: left;
+    padding: 0.6rem 0.25rem;
+    background: none;
+    border-radius: 0;
+    border-bottom: var(--pico-border-width) solid var(--pico-muted-border-color);
+  }
+
+  .stats-grid > div:last-child {
+    border-bottom: none;
+  }
+
+  .stats-grid > div br {
+    display: none;
+  }
 }
 
 /* The schematic SVG draws its own white background (it's a technical
@@ -63,13 +103,22 @@ th.sortable-th:hover {
   color: var(--pico-primary);
 }
 
-/* Motor results table has enough columns to overflow narrow/mobile viewports -- scroll the table
-   itself both ways (x for columns, y once there are enough rows) rather than letting it force the
-   whole page wider or squeeze every column unreadably thin. Bounded height is what makes a
-   vertical scrollbar happen at all -- without it the figure just grows with the table and there's
-   nothing for the sticky header below to stick within. */
+/* Any table can be wider than a narrow/mobile viewport (library results, motor detail, flight
+   events, recovery devices, not just the motor search results) -- Pico's own <figure> has no
+   overflow rule at all, so without this every one of them was free to force the whole PAGE wider
+   instead of scrolling internally (confirmed real on the library results table specifically: 119px
+   of horizontal overflow on a 390px viewport). Applies to every <figure> site-wide rather than one
+   id at a time, so a new table added later gets this for free instead of silently missing it. */
+figure {
+  overflow-x: auto;
+}
+
+/* Motor results specifically also needs a bounded height + vertical scroll (large row count) --
+   that one stays scoped, the rest of the site's tables are short enough not to need it. Bounded
+   height is what makes a vertical scrollbar happen at all -- without it the figure just grows with
+   the table and there's nothing for the sticky header below to stick within. */
 #motor-results figure {
-  overflow: auto;
+  overflow-y: auto;
   max-height: 70vh;
 }
 
