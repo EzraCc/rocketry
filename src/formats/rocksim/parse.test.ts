@@ -42,6 +42,10 @@ describe("parseRocksimXml — real fixture (sim-files/LOC/PK-48 LOC-IV.rkt)", ()
     expect(parsed.estimatedDryMassKg).toBeCloseTo(1.16187126, 6);
     expect(parsed.unsupportedFeatures).toEqual([]);
 
+    // RockSim's own proprietary extended-method CP (<RockSimXN>0,972.645,0,0</RockSimXN>) -- powers
+    // the "Use simfile CP" button, distinct from this project's own independently computed CP.
+    expect(parsed.embeddedCpM).toBeCloseTo(972.645 * MM, 6);
+
     // IsMotorMount is 0 everywhere in this file (see the isMotorMount assertions below), so this
     // exercises the PartDesc-based fallback: the real inner tube is named "Motor mount tube" with
     // <ID>38.608</ID> -- a real, verified 38mm-class motor mount despite the flag being unset.

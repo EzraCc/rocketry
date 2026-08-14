@@ -43,8 +43,6 @@ import {
   lengthFromInput,
 } from "./ui/units.js";
 
-const MM = 0.001;
-
 /**
  * One entry in the pre-generated `public/library/manifest.json` — a small
  * index (name/vendor/path/rounded dimensions) covering every curated
@@ -81,22 +79,6 @@ interface LibraryManifestEntry {
 let libraryManifest: LibraryManifestEntry[] = [];
 
 /**
- * Reference CP values to show for library entries with a known-good
- * independent value to compare against (currently just LOC-IV, validated
- * elsewhere in this project against RockSim's own stored CP) — keyed by
- * manifest PATH, not id: ids are assigned sequentially at manifest-generation
- * time (see scripts that rebuild public/library/manifest.json), so they
- * shift whenever that vendor's entry count changes; path is the one thing
- * guaranteed stable across regenerations for the same underlying file.
- */
-const LIBRARY_KNOWN_CP: Record<string, { label: string; mm: number }[]> = {
-  "library/loc/PK-48 LOC-IV.rkt": [
-    { label: "RockSim classical Barrowman CP (BarromanXN)", mm: 899.247 },
-    { label: "RockSim proprietary extended-method CP (RockSimXN)", mm: 972.645 },
-  ],
-};
-
-/**
  * Nearest half-inch nominal tube size. Rockets built on "the same" nominal
  * diameter still measure a millimeter or two apart depending on
  * construction (cardboard vs. fiberglass, thin- vs. thick-wall) — bucketing
@@ -131,13 +113,16 @@ function applyParsedRocket(
     dryMassBreakdown?: { name: string; massKg: number; cgXM: number }[];
     motorMountDiameterM?: number;
     unsupportedFeatures?: string[];
+    embeddedCpM?: number;
   },
   source: string,
-  knownCp?: { label: string; mm: number }[],
   displayName?: string,
 ): void {
   activeUnsupportedFeatures = parsed.unsupportedFeatures ?? [];
   activeEstimatedDryCgM = parsed.estimatedDryCgM;
+  activeEmbeddedCpM = parsed.embeddedCpM;
+  activeCpOverrideM = undefined;
+  cpOverrideSource = null;
   // dryMassBreakdown's own per-part cgXM positions inherit the same unsupported-geometry problem
   // as estimatedDryCgM (e.g. an ExternalPod's contents get a wrong position -- see parse.ts), even
   // though the file's total mass (estimatedDryMassKg, summed from this same breakdown) is still
@@ -183,7 +168,6 @@ function applyParsedRocket(
   cgOverriddenByUser = false;
   rederiveDryCg();
 
-  activeKnownCp = knownCp;
   activeRocketSource = source;
 }
 
@@ -197,8 +181,6 @@ function applyParsedRocket(
  * manipulation, not a framework with real state management.
  */
 let activeRocket: Rocket = defaultRocket();
-/** Reference CP values to show alongside the active rocket, when it came from a library entry with known-good values to compare against — cleared when a file is uploaded instead. */
-let activeKnownCp: { label: string; mm: number }[] | undefined;
 /**
  * Set by selectLibraryEntry, cleared by wireOrkImport's upload handler -- the currently-active
  * rocket's own library manifest entry, when it came from the library (not an upload, which the
@@ -220,6 +202,29 @@ let activeMotorMountDiameterMm: number | null = null;
  * itself is still viewable/downloadable regardless.
  */
 let activeUnsupportedFeatures: string[] = [];
+
+/**
+ * The active file's own last-computed CP, when it has one -- parseRocksimXml's embeddedCpM
+ * (RockSim's proprietary extended-method CP, <RockSimXN>) or parseOrkXml's embeddedCpM (OpenRocket's
+ * own saved post-rod-exit CP from a saved simulation). Undefined for RASAero uploads (no such field
+ * in that format) or any RockSim/OpenRocket file that's never had one computed. Set by
+ * applyParsedRocket; only consumed by the CP stat's "Use simfile CP" button (renderCpStat).
+ */
+let activeEmbeddedCpM: number | undefined;
+/**
+ * Manual override for the CP stat (renderCpStat) -- undefined means "show the freshly computed
+ * value" (this project's own default and, before this override existed, the ONLY value ever shown
+ * -- see the cp-method-info panel). Set either by typing a real number directly (pencil icon) or by
+ * one-click pulling in activeEmbeddedCpM ("Use simfile CP"); cpOverrideSource distinguishes which,
+ * purely for the "(from file)" vs. plain display annotation. Reset on every fresh rocket load.
+ *
+ * Display-only: unlike activeLoadedCgM, this never feeds into the actual flight simulation --
+ * simulateFlight3D always uses its own freshly-computed Barrowman CP internally regardless of what
+ * this shows, same as before this override existed. Only the stat card, the stability-margin
+ * figure, and the schematic's CP marker read this.
+ */
+let activeCpOverrideM: number | undefined;
+let cpOverrideSource: "manual" | "simfile" | null = null;
 
 /**
  * Dry (motor-out) mass — what a library/file load actually reports, and
@@ -412,14 +417,15 @@ function wireChartCursorReset(): void {
 /**
  * Generic delegated wiring (same #app-ancestor pattern as wireInfoToggles) for a pencil-icon
  * inline-edit stat: click `#{idPrefix}-edit-btn` to swap `#{idPrefix}-value` for
- * `#{idPrefix}-input`, commit on blur or Enter. Shared by the mass and CG stat cards below, which
+ * `#{idPrefix}-input`, commit on blur or Enter. Shared by the mass/CG/CP stat cards below, which
  * differ only in what committing the entered number actually does (mass back-solves against a
- * possibly-selected motor; CG doesn't) — that's supplied by the caller as onCommit.
+ * possibly-selected motor; CG/CP don't) — that's supplied by the caller as onCommit.
  *
- * mousedown on the (optional) `#{idPrefix}-reset-btn` is prevented so clicking it doesn't first
- * blur the input (which would fire a commit with whatever partial value was being typed, then
- * re-render and remove the button out from under the in-flight click) — verified this race is
- * real, not hypothetical, by testing it directly.
+ * Any element tagged `[data-stat-extra="{idPrefix}"]` (a reset button, a "use simfile value"
+ * button, etc.) is revealed alongside the input on edit-start, and has mousedown prevented on it so
+ * clicking it doesn't first blur the input (which would fire a commit with whatever partial value
+ * was being typed, then re-render and remove the button out from under the in-flight click) —
+ * verified this race is real, not hypothetical, by testing it directly.
  */
 function wireInlineEditStat(idPrefix: string, onCommit: (rawInputValue: number) => void): void {
   const appEl = document.querySelector("#app");
@@ -430,18 +436,19 @@ function wireInlineEditStat(idPrefix: string, onCommit: (rawInputValue: number) 
     if (!btn) return;
     const valueEl = document.getElementById(`${idPrefix}-value`);
     const inputEl = document.getElementById(`${idPrefix}-input`) as HTMLInputElement | null;
-    const resetBtn = document.getElementById(`${idPrefix}-reset-btn`);
     if (!valueEl || !inputEl) return;
     btn.hidden = true;
     valueEl.hidden = true;
     inputEl.hidden = false;
-    if (resetBtn) resetBtn.hidden = false;
+    document.querySelectorAll<HTMLElement>(`[data-stat-extra="${idPrefix}"]`).forEach((el) => {
+      el.hidden = false;
+    });
     inputEl.focus();
     inputEl.select();
   });
 
   appEl.addEventListener("mousedown", (e) => {
-    if ((e.target as HTMLElement).closest(`#${idPrefix}-reset-btn`)) e.preventDefault();
+    if ((e.target as HTMLElement).closest(`[data-stat-extra="${idPrefix}"]`)) e.preventDefault();
   });
 
   const commit = (): void => {
@@ -521,7 +528,7 @@ function renderMassStat(rocket: Rocket): string {
         ><span id="mass-stat-value">${fmtMass(displayKg)}</span
         ><button type="button" id="mass-stat-edit-btn" class="edit-pencil" aria-label="Edit ${label.toLowerCase()}">✏️</button
         ><input type="number" inputmode="decimal" id="mass-stat-input" class="inline-edit-stat-input" value="${massToInput(displayKg).toFixed(2)}" min="0" step="1" hidden
-        /><button type="button" id="mass-stat-reset-btn" class="edit-pencil" aria-label="Reset to the file's dry mass" title="Reset to ${fmtMass(baseDryMassKg)} (this file's dry mass)" hidden>↺</button
+        /><button type="button" id="mass-stat-reset-btn" data-stat-extra="mass-stat" class="edit-pencil" aria-label="Reset to the file's dry mass" title="Reset to ${fmtMass(baseDryMassKg)} (this file's dry mass)" hidden>↺</button
       ></strong>
       <br /><small id="mass-stat-label">${label}</small>
     </div>
@@ -553,7 +560,7 @@ function renderCgStat(): string {
         ><span id="cg-stat-value">${valueHtml}</span
         ><button type="button" id="cg-stat-edit-btn" class="edit-pencil" aria-label="Edit ${label.toLowerCase()}">✏️</button
         ><input type="number" inputmode="decimal" id="cg-stat-input" class="inline-edit-stat-input" value="${hasCg ? lengthToInput(activeLoadedCgM).toFixed(2) : ""}" placeholder="${lengthInputUnitLabel()}" min="0" step="0.1" hidden
-        /><button type="button" id="cg-stat-reset-btn" class="edit-pencil" aria-label="Reset to the file's estimated CG" title="${activeEstimatedDryCgM !== undefined ? "Reset to this file's geometry-derived estimate" : "Clear"}" hidden>↺</button
+        /><button type="button" id="cg-stat-reset-btn" data-stat-extra="cg-stat" class="edit-pencil" aria-label="Reset to the file's estimated CG" title="${activeEstimatedDryCgM !== undefined ? "Reset to this file's geometry-derived estimate" : "Clear"}" hidden>↺</button
       ></strong>
       <br /><small id="cg-stat-label">${label} (from nose)</small>
     </div>
@@ -587,19 +594,80 @@ function wireCgStatEdit(): void {
   });
 }
 
-function renderRocketSection(rocket: Rocket, mach: number, subtitle: string, knownCp?: { label: string; mm: number }[]): string {
+/**
+ * CP -- always independently computed by default (computeBarrowman, `computedCpM`; never read from
+ * the source file, see the cp-method-info panel), but overridable: a real measured/preferred value
+ * via the pencil icon, or the source file's own last-computed CP pulled in with one click ("Use
+ * simfile CP" -- shown only when activeEmbeddedCpM is available: RockSim's proprietary
+ * extended-method CP for .rkt, OpenRocket's own saved post-rod-exit CP for .ork; undefined for
+ * RASAero uploads or a file that's never had one computed). The reset icon (shown once overridden,
+ * either way) discards the override and goes back to the always-available computed value.
+ */
+function renderCpStat(computedCpM: number): string {
+  const displayCpM = activeCpOverrideM ?? computedCpM;
+  const sourceNote = cpOverrideSource === "simfile" ? ` <small>(from file)</small>` : "";
+  const info = ` <a href="#" data-info-toggle="cp-method-info" aria-expanded="false" aria-controls="cp-method-info" aria-label="What does this mean?">ⓘ</a>`;
+  return `
+    <div>
+      <strong
+        ><span id="cp-stat-value">${fmtLength(displayCpM)}${sourceNote}</span
+        ><button type="button" id="cp-stat-edit-btn" class="edit-pencil" aria-label="Edit CP">✏️</button
+        ><input type="number" inputmode="decimal" id="cp-stat-input" class="inline-edit-stat-input" value="${lengthToInput(displayCpM).toFixed(2)}" placeholder="${lengthInputUnitLabel()}" min="0" step="0.1" hidden
+        /><button type="button" id="cp-stat-reset-btn" data-stat-extra="cp-stat" class="edit-pencil" aria-label="Reset to the computed CP" title="Reset to ${fmtLength(computedCpM)} (this project's own computed CP)" hidden>↺</button>${
+          activeEmbeddedCpM !== undefined
+            ? `<button type="button" id="cp-stat-simfile-btn" data-stat-extra="cp-stat" class="edit-pencil" aria-label="Use the file's own CP" title="Use this file's own last-computed CP (${fmtLength(activeEmbeddedCpM)})" hidden>📄</button>`
+            : ""
+        }</strong>
+      <br /><small id="cp-stat-label">Computed CP${info}</small>
+    </div>
+  `;
+}
+
+/**
+ * Wires the CP stat card's pencil-icon edit (a direct, always-display-only manual entry -- see
+ * activeCpOverrideM's own doc comment) plus its reset icon (discards the override, back to the
+ * freshly computed value) and, when the active file has one, its "Use simfile CP" button (pulls in
+ * activeEmbeddedCpM directly, one click, no typing).
+ */
+function wireCpStatEdit(): void {
+  wireInlineEditStat("cp-stat", (rawInputValue) => {
+    activeCpOverrideM = lengthFromInput(rawInputValue);
+    cpOverrideSource = "manual";
+    renderActiveRocketDisplay();
+  });
+
+  document.querySelector("#app")?.addEventListener("click", (e) => {
+    if (!(e.target as HTMLElement).closest("#cp-stat-reset-btn")) return;
+    activeCpOverrideM = undefined;
+    cpOverrideSource = null;
+    renderActiveRocketDisplay();
+  });
+
+  document.querySelector("#app")?.addEventListener("click", (e) => {
+    if (!(e.target as HTMLElement).closest("#cp-stat-simfile-btn") || activeEmbeddedCpM === undefined) return;
+    activeCpOverrideM = activeEmbeddedCpM;
+    cpOverrideSource = "simfile";
+    renderActiveRocketDisplay();
+  });
+}
+
+function renderRocketSection(rocket: Rocket, mach: number, subtitle: string): string {
   const { cpX, refDiameter } = computeBarrowman(rocket.components, mach);
+  // The displayed/stability-relevant CP: a user override (manual entry or "Use simfile CP") when
+  // set, else the freshly computed value -- see activeCpOverrideM's own doc comment for why this
+  // never reaches the actual flight sim, only this display/margin/schematic path.
+  const displayCpX = activeCpOverrideM ?? cpX;
   // Loaded CG, exactly as entered -- not rocket.dryCg, which is a derived, internal-only quantity
   // (see rederiveDryCg) meant for the mass-curve/flight-sim machinery, not display. A stability
   // check against the loaded configuration is also the more meaningful one here: it's the
   // configuration that actually flies, not a hypothetical motor-less one.
   const hasCg = activeLoadedCgM > 0;
-  const margin = hasCg ? stabilityMargin(cpX, activeLoadedCgM, refDiameter) : null;
+  const margin = hasCg ? stabilityMargin(displayCpX, activeLoadedCgM, refDiameter) : null;
 
   const stats = [
     stat("Length", fmtRocketLength(overallLength(rocket.components))),
     renderMassStat(rocket),
-    stat("Computed CP", fmtLength(cpX), "cp-method-info"),
+    renderCpStat(cpX),
     renderCgStat(),
     stat("Ref. diameter", fmtLength(refDiameter)),
     margin !== null
@@ -610,15 +678,6 @@ function renderRocketSection(rocket: Rocket, mach: number, subtitle: string, kno
       : "",
   ]
     .filter(Boolean)
-    .join("");
-
-  const knownCpRows = (knownCp ?? [])
-    .map((k) => {
-      const kM = k.mm * MM;
-      const deltaM = cpX - kM;
-      const deltaPct = (deltaM / kM) * 100;
-      return `<tr><td>${k.label}</td><td>${fmtLength(kM)}</td><td>${deltaM >= 0 ? "+" : ""}${fmtLength(deltaM)} (${deltaPct >= 0 ? "+" : ""}${deltaPct.toFixed(1)}%)</td></tr>`;
-    })
     .join("");
 
   return `
@@ -641,20 +700,10 @@ function renderRocketSection(rocket: Rocket, mach: number, subtitle: string, kno
       ${renderInfoPanel(
         "cp-method-info",
         "How Computed CP is calculated",
-        `Always computed independently from this rocket's geometry — never read from the source file (.ork/.rkt/.CDX1), regardless of format. Method: classical Barrowman component buildup (nose/transition/tube + fin CNa/CP) with a corrected fin-body interference factor; no Galejs body-lift term and no supersonic K1/K2/K3 fin corrections, hence the Mach-validity warning above ~0.8-0.9. RockSim's own stored CP is shown as a reference comparison only where available (e.g. the LOC-IV library entry), not used as the computed value.`,
+        `Computed by default independently from this rocket's geometry — never read from the source file (.ork/.rkt/.CDX1), regardless of format. Method: classical Barrowman component buildup (nose/transition/tube + fin CNa/CP) with a corrected fin-body interference factor; no Galejs body-lift term and no supersonic K1/K2/K3 fin corrections, hence the Mach-validity warning above ~0.8-0.9. Overridable (pencil icon) with a real measured/preferred value, or with the source file's own last-computed CP in one click ("Use simfile CP", shown only when the file has one) -- RockSim's proprietary extended-method CP for .rkt, OpenRocket's own saved post-rod-exit CP for .ork.`,
       )}
-      ${
-        knownCpRows
-          ? `<figure>
-              <table>
-                <thead><tr><th>Known CP (reference)</th><th>Value</th><th>Δ vs. computed</th></tr></thead>
-                <tbody>${knownCpRows}</tbody>
-              </table>
-            </figure>`
-          : ""
-      }
       <figure class="schematic">
-        ${renderSchematicSvg(rocket.components, cpX, hasCg ? activeLoadedCgM : undefined)}
+        ${renderSchematicSvg(rocket.components, displayCpX, hasCg ? activeLoadedCgM : undefined)}
       </figure>
       ${renderComponentBreakdownTable()}
     </article>
@@ -751,8 +800,8 @@ function syncFormToUrl(): void {
  * percent-encoding in a query string (unlike the manifest path, which contains "/" and spaces --
  * URLSearchParams renders those as %2F and + on write, exactly the "ugly, can't scan it" URL this
  * replaces). Not the manifest path itself: ids are assigned sequentially at manifest-generation
- * time and shift whenever the library's entry count changes (see LIBRARY_KNOWN_CP's own doc
- * comment), so path was already the right stable choice to key off of -- this just encodes it
+ * time and shift whenever the library's entry count changes, so path was already the right stable
+ * choice to key off of -- this just encodes it
  * more readably, resolved back to a real entry by matching this same slug (see
  * findLibraryEntryBySlug) rather than by decoding it back into a literal path.
  */
@@ -1604,7 +1653,7 @@ function renderActiveRocketDisplay(): void {
   if (!el) return;
   // Mach 0.1 (~100fps) -- see renderFlightResultHtml's identical comment: the safety-relevant
   // rail-exit speed, not an arbitrary "typical flight" number.
-  el.innerHTML = renderRocketSection(activeRocket, 0.1, activeRocketSource, activeKnownCp);
+  el.innerHTML = renderRocketSection(activeRocket, 0.1, activeRocketSource);
   updateMotorSectionAvailability();
 }
 
@@ -1670,7 +1719,7 @@ function wireOrkImport(): void {
           motor = orkParsed.motor;
         }
 
-        applyParsedRocket(parsed, `Uploaded: ${file.name}`, undefined);
+        applyParsedRocket(parsed, `Uploaded: ${file.name}`);
         activeLibraryEntry = null; // an uploaded file has no library manifest entry to link a download to
 
         const massNote = parsed.estimatedDryMassKg && parsed.estimatedDryMassKg > 0
@@ -1828,7 +1877,7 @@ async function selectLibraryEntry(entry: LibraryManifestEntry): Promise<void> {
     const res = await fetch(entry.path);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const parsed = parseRocksimXml(await res.text());
-    applyParsedRocket(parsed, `From the library: ${entry.vendor} — ${entry.name}`, LIBRARY_KNOWN_CP[entry.path], entry.name);
+    applyParsedRocket(parsed, `From the library: ${entry.vendor} — ${entry.name}`, entry.name);
     activeLibraryEntry = entry;
 
     if (warningsEl) {
@@ -1970,6 +2019,7 @@ if (app) {
   wireInfoToggles();
   wireMassStatEdit();
   wireCgStatEdit();
+  wireCpStatEdit();
   wireChartCursorReset();
   void initLibrary();
   const urlParams = new URLSearchParams(location.search);

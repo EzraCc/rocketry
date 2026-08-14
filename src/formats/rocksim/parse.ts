@@ -118,6 +118,8 @@ export interface ParsedRocksimRocket {
    * parsed. Callers should block simulation and show the file as view/download-only.
    */
   unsupportedFeatures: string[];
+  /** RockSim's own last-computed CP (m from nose tip), via its proprietary extended method -- see extractEmbeddedCpM's own doc comment. Undefined if the file never had one computed. Independent of unsupportedFeatures/estimatedDryCgM's gating -- this is RockSim's own number, not derived from this parser's own tree-walk, so it's exposed regardless of geometry support. */
+  embeddedCpM?: number;
 }
 
 export interface DescentDevice {
@@ -331,6 +333,24 @@ function extractMotorMountDiameterM(design: Element): number | undefined {
   if (!tube) return undefined;
   const id = num(tube, "ID", 0);
   return id > 0 ? id * MM_TO_M : undefined;
+}
+
+/**
+ * RockSim's own last-computed CP via its PROPRIETARY extended method -- <RockSimXN>, a
+ * document-level, motor-independent tag (comma-separated per-stage values, mm; this parser only
+ * handles the sustainer, i.e. index 1 -- same convention/position as <BarromanXN>, see
+ * rocksim-embedded-cp.test.ts's own extractEmbeddedCpMm). Distinct from RockSim's OWN classical
+ * Barrowman CP (<BarromanXN>, closer to but not identical to this parser's own computeBarrowman) --
+ * RockSim's extended/proprietary method includes corrections this project doesn't implement, hence
+ * "proprietary." Present whenever the file's author has ever opened/viewed the CP calculation in
+ * RockSim (which computes it automatically); 0/absent means never computed, or geometry with no
+ * fins (RockSim leaves it 0 rather than omitting the tag).
+ */
+function extractEmbeddedCpM(design: Element): number | undefined {
+  const raw = text(design, "RockSimXN");
+  if (raw === null) return undefined;
+  const mm = Number.parseFloat(raw.split(",")[1] ?? "");
+  return Number.isFinite(mm) && mm !== 0 ? mm * MM_TO_M : undefined;
 }
 
 /**
@@ -622,6 +642,7 @@ export function parseRocksimXml(xmlText: string): ParsedRocksimRocket {
 
   const motorMountDiameterM = extractMotorMountDiameterM(design);
   const descentDevices = extractDescentDevices(design);
+  const embeddedCpM = extractEmbeddedCpM(design);
 
   return {
     name,
@@ -633,5 +654,6 @@ export function parseRocksimXml(xmlText: string): ParsedRocksimRocket {
     motorMountDiameterM,
     descentDevices,
     unsupportedFeatures,
+    embeddedCpM,
   };
 }

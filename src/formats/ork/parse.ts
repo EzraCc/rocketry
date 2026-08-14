@@ -15,6 +15,8 @@ export interface ParsedOrkRocket {
   /** The default flight configuration's motor (manufacturer+designation), for a ThrustCurve.org search — null if the file has no motor selected. */
   motor: OrkMotorRef | null;
   warnings: string[];
+  /** OpenRocket's own last-computed CP (m from nose tip), read from a saved simulation's flight data -- see extractEmbeddedCpM's own doc comment. Undefined if the file has no saved simulation with a usable CP value. */
+  embeddedCpM?: number;
 }
 
 /** First direct child element with a given (lowercase) tag name — not a deep query, since .ork nests same-named tags (e.g. nested <subcomponents>) at every level. */
@@ -243,6 +245,43 @@ function walkStage(stageEl: Element, warnings: string[]): Component[] {
   return out;
 }
 
+/**
+ * OpenRocket's own last-computed CP, read from a saved simulation's per-timestep flight data --
+ * .ork has no separate "static CP" field, CP only ever appears as one column among many in a
+ * simulation's own time-series <databranch> (types="...,CP location,..." + one comma-separated
+ * <datapoint> per timestep). Undefined until the rocket leaves the launch rod -- confirmed real,
+ * not a parsing gap: OpenRocket itself records "CP location" as NaN for every datapoint before the
+ * "launchrod" event fires, even at t=0 (verified directly against a real saved .ork simulation) --
+ * so this takes the FIRST non-NaN value, which lands at the first point past rod exit, a natural
+ * match for this project's own reference Mach (0.1, ~100fps rail-exit speed) even though it isn't
+ * computed by asking for that Mach specifically. Values are already in this project's own SI base
+ * unit (meters) -- .ork stores flight data in plain SI, unlike RockSim's mm convention.
+ *
+ * Prefers a simulation whose saved data is still status="uptodate" (reflects the CURRENT rocket
+ * geometry, not a stale edit); falls back to the first simulation regardless of status if none are
+ * marked uptodate, since a possibly-stale number still beats none for "whatever is there."
+ * Undefined if the file has no saved simulations, or none ever recorded a CP location value.
+ */
+function extractEmbeddedCpM(doc: Document): number | undefined {
+  const simulations = Array.from(doc.getElementsByTagName("simulation"));
+  if (simulations.length === 0) return undefined;
+  const simulation = simulations.find((s) => s.getAttribute("status") === "uptodate") ?? simulations[0]!;
+
+  const flightData = directChild(simulation, "flightdata");
+  const dataBranch = flightData ? directChild(flightData, "databranch") : null;
+  if (!dataBranch) return undefined;
+
+  const cpIndex = (dataBranch.getAttribute("types") ?? "").split(",").indexOf("CP location");
+  if (cpIndex === -1) return undefined;
+
+  for (const point of directChildren(dataBranch, "datapoint")) {
+    const raw = (point.textContent ?? "").split(",")[cpIndex];
+    const n = raw === undefined ? Number.NaN : Number.parseFloat(raw);
+    if (Number.isFinite(n)) return n;
+  }
+  return undefined;
+}
+
 /** The manufacturer+designation of the DEFAULT flight configuration's motor, if any. */
 function findDefaultMotor(doc: Document): OrkMotorRef | null {
   const configs = Array.from(doc.getElementsByTagName("motorconfiguration"));
@@ -287,6 +326,7 @@ export function parseOrkXml(xmlText: string): ParsedOrkRocket {
 
   const components = walkStage(stages[0]!, warnings);
   const motor = findDefaultMotor(doc);
+  const embeddedCpM = extractEmbeddedCpM(doc);
 
-  return { name, components, motor, warnings };
+  return { name, components, motor, warnings, embeddedCpM };
 }

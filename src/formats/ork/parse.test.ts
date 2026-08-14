@@ -46,6 +46,11 @@ describe("parseOrkXml — real .ork fixtures from OpenRocket's own example rocke
 
     // Default flight configuration (configid marked default="true") resolves to the matching <motor>, not just the first one in the file.
     expect(parsed.motor).toEqual({ manufacturer: "Estes", designation: "C6" });
+
+    // OpenRocket's own saved CP, read from its first status="uptodate" simulation's flight data --
+    // "CP location" is NaN for every datapoint before the "launchrod" event (confirmed directly
+    // against this exact file), so this is the first point past rod exit, not t=0.
+    expect(parsed.embeddedCpM).toBeCloseTo(0.3, 6);
   });
 
   it("parses 'Base drag hack (short-wide).ork': nose + body tube + freeform fins + transition, handles 'auto <number>' radius values", async () => {
