@@ -19,6 +19,18 @@
   width: auto;
 }
 
+/* Alpha-stage disclaimer, near the top of the page so it's seen before anyone starts relying on a
+   number -- reuses Pico's own <mark> warning colors (theme-aware already, same visual language as
+   every other in-page warning) rather than a bespoke color, just as a bordered callout box instead
+   of inline text highlighting. */
+.alpha-notice {
+  margin: 1rem 0 1.5rem 0;
+  padding: 0.85rem 1rem;
+  border-radius: var(--pico-border-radius);
+  background: var(--pico-mark-background-color);
+  color: var(--pico-mark-color);
+}
+
 /* The toggle is position:fixed (see above), so it never pushes sibling content out of its way --
    on a narrow viewport the h1 wraps to a second line that runs right underneath/behind it
    (confirmed real: overlapping bounding boxes on a 390px-wide viewport). Reserve the same corner

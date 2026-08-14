@@ -2045,6 +2045,12 @@ if (app) {
           <a href="/validation-report.html" target="_blank" rel="noopener">Validation report</a>.
         </p>
       </hgroup>
+      <div class="alpha-notice">
+        <strong>⚠ Alpha — presented for testing, not a replacement for established simulators.</strong>
+        This is an early-stage project shared for feedback, not a validated substitute for
+        OpenRocket, RockSim, or RASAero. Cross-check anything safety-relevant (stability margin,
+        motor selection) against a mature simulator before relying on it for a real flight.
+      </div>
       ${orkSectionHtml}
       ${windSectionHtml}
       ${motorSectionHtml}
