@@ -574,15 +574,28 @@ function urlFilterValue(key: FilterKey): string {
   return new URLSearchParams(location.search).get(key) ?? FILTER_DEFAULTS[key];
 }
 
-/** Writes current filter values into the URL query string (via replaceState, so it doesn't spam browser history), omitting anything still at its default. */
-function syncFormToUrl(): void {
-  const params = new URLSearchParams();
-  for (const key of Object.keys(FILTER_DEFAULTS) as FilterKey[]) {
-    const value = filterElement(key)?.value.trim() ?? "";
-    if (value && value !== FILTER_DEFAULTS[key]) params.set(key, value);
-  }
+/** Rewrites the URL query string via replaceState (so it doesn't spam browser history) — takes a callback rather than a full params object so callers only touch the keys they own, leaving everything else (e.g. the "rocket" param set by syncSelectedRocketToUrl) untouched. */
+function updateUrlParams(mutate: (params: URLSearchParams) => void): void {
+  const params = new URLSearchParams(location.search);
+  mutate(params);
   const query = params.toString();
   history.replaceState(null, "", query ? `${location.pathname}?${query}` : location.pathname);
+}
+
+/** Writes current filter values into the URL query string, omitting anything still at its default. Only ever touches its own FILTER_DEFAULTS keys (via updateUrlParams) -- rebuilding the whole query string from scratch here would silently drop the unrelated "rocket" param. */
+function syncFormToUrl(): void {
+  updateUrlParams((params) => {
+    for (const key of Object.keys(FILTER_DEFAULTS) as FilterKey[]) {
+      const value = filterElement(key)?.value.trim() ?? "";
+      if (value && value !== FILTER_DEFAULTS[key]) params.set(key, value);
+      else params.delete(key);
+    }
+  });
+}
+
+/** Writes the selected library rocket's manifest path into the URL's "rocket" param, so the exact rocket (not the vendor/diameter/name search filters used to find it) is shareable/bookmarkable and re-selected on load — see initLibrary. Keyed by path, not id: ids are assigned sequentially at manifest-generation time and shift whenever the library's entry count changes (see LIBRARY_KNOWN_CP's own doc comment), while path is stable. */
+function syncSelectedRocketToUrl(path: string): void {
+  updateUrlParams((params) => params.set("rocket", path));
 }
 
 const motorSectionHtml = `
@@ -1540,7 +1553,8 @@ function renderLibraryResults(): void {
     a.addEventListener("click", (evt) => {
       evt.preventDefault();
       const entry = libraryManifest.find((e) => e.id === a.dataset["libId"]);
-      if (entry) void selectLibraryEntry(entry);
+      if (!entry) return;
+      void selectLibraryEntry(entry).then(() => syncSelectedRocketToUrl(entry.path));
     });
   });
   resultsEl.querySelectorAll<HTMLTableCellElement>("th[data-sort-key]").forEach((th) => {
@@ -1589,14 +1603,23 @@ function wireLibraryPicker(): void {
   nameInput.addEventListener("input", renderLibraryResults);
 }
 
-/** Loads the manifest, populates the browse UI, and picks LOC-IV as the initial active rocket (the one entry with independently-verified known-good CP values to show alongside this tool's own computed CP by default) — runs once at startup. */
+/**
+ * Loads the manifest, populates the browse UI, and picks the initial active rocket — runs once at
+ * startup. A "rocket" URL param (set by selectLibraryEntry whenever a user actually picks one)
+ * takes priority when present and still resolves to a real manifest entry, so a shared/bookmarked
+ * link opens directly on that rocket; otherwise falls back to LOC-IV (the one entry with
+ * independently-verified known-good CP values to show alongside this tool's own computed CP by
+ * default).
+ */
 async function initLibrary(): Promise<void> {
   try {
     libraryManifest = await loadLibraryManifest();
     populateLibraryFilterOptions();
     wireLibraryPicker();
 
-    const defaultEntry = libraryManifest.find((e) => e.path === "library/loc/PK-48 LOC-IV.rkt") ?? libraryManifest[0];
+    const urlRocketPath = new URLSearchParams(location.search).get("rocket");
+    const urlEntry = urlRocketPath ? libraryManifest.find((e) => e.path === urlRocketPath) : undefined;
+    const defaultEntry = urlEntry ?? libraryManifest.find((e) => e.path === "library/loc/PK-48 LOC-IV.rkt") ?? libraryManifest[0];
     if (defaultEntry) await selectLibraryEntry(defaultEntry);
   } catch (err) {
     activeRocketSource = `Failed to load the rocket library: ${err instanceof Error ? err.message : String(err)} — upload a file instead.`;
