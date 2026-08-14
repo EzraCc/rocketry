@@ -4,6 +4,7 @@
   "version": "0.1.1",
   "type": "module",
   "description": "Browser-based flight simulator for basic model/high-power rockets",
+  "license": "GPL-3.0-or-later",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

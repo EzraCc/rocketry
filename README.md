@@ -8,12 +8,15 @@ actual integration).
 This is an independent project — not a fork, submodule, or dependent package of OpenRocket.
 Physics is re-derived/re-implemented from OpenRocket's published algorithms (classical Barrowman
 component buildup, with a corrected fin-body interference factor) rather than transcribed
-verbatim, so this project carries no GPL encumbrance from OpenRocket's codebase. Accuracy is
-checked directly against real OpenRocket Java simulations and RockSim's own embedded data for a
-curated set of real rocket+motor cases — see the validation report (`public/validation-report.html`,
-served at `/validation-report.html`, linked from the site's own footer), generated from
-`validation/`, regenerate with `validation/openrocket-oracle/run.sh` +
-`npx tsx validation/openrocket-oracle/fetch-motor-fixtures.ts` + `npx tsx validation/build-report.ts`).
+verbatim. Licensed under **GPLv3** (see `LICENSE`) — deliberately matching OpenRocket's own
+license, not because this project's independently-derived code requires it, but to keep the door
+open for future collaboration and cross-compatibility with OpenRocket rather than diverging on
+licensing terms. Accuracy is checked directly against real OpenRocket Java simulations and
+RockSim's own embedded data for a curated set of real rocket+motor cases — see the validation
+report (`public/validation-report.html`, served at `/validation-report.html`, linked from the
+site's own footer), generated from `validation/`, regenerate with
+`validation/openrocket-oracle/run.sh` + `npx tsx validation/openrocket-oracle/fetch-motor-fixtures.ts`
++ `npx tsx validation/build-report.ts`).
 
 ## What it does
 

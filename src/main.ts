@@ -1291,8 +1291,6 @@ function renderMotorDetailHtml(meta: MotorSearchResult, samples: ThrustSample[])
   const start = massAt(0);
   const mid = massAt(midT);
   const end = massAt(bt);
-  // See deriveMotorMassCurve's own doc comment for the priority/source rule this mirrors exactly.
-  const hasRealMassData = samples.length > 0 && samples.every((s) => s.propellantMassRemainingKg !== undefined);
 
   const html = `
     <h3>${meta.manufacturer} ${meta.designation}</h3>
@@ -1300,8 +1298,7 @@ function renderMotorDetailHtml(meta: MotorSearchResult, samples: ThrustSample[])
     <p>Thrust curve: ${samples.length} samples, burn time ${bt.toFixed(2)}s.
       Total impulse (integrated from curve): ${fmtImpulse(totalImpulse(motor))}
       (ThrustCurve.org reports ${meta.totImpulseNs === undefined || meta.totImpulseNs === null ? "—" : fmtImpulse(meta.totImpulseNs)}).
-      Peak thrust: ${fmtForce(Math.max(...samples.map((s) => s.thrust)))}.
-      Mass curve: ${hasRealMassData ? "real per-sample propellant mass from the motor's own source file" : "derived from total/propellant weight (this motor's source file has no per-sample mass data)"}.</p>
+      Peak thrust: ${fmtForce(Math.max(...samples.map((s) => s.thrust)))}.</p>
     <figure><div id="thrust-curve-chart"></div></figure>
     <figure>
       <table>
@@ -2039,10 +2036,11 @@ if (app) {
         <p>
           A web flight simulator for basic rockets. Physics is independently re-derived from
           <a href="https://github.com/openrocket/openrocket" target="_blank" rel="noopener">OpenRocket</a>'s
-          published algorithms (GPLv3) — not ported or copied, so this project carries no GPL encumbrance —
-          with some deliberate changes (e.g. a corrected fin-body interference factor).
+          published algorithms, with some deliberate changes (e.g. a corrected fin-body interference
+          factor). Licensed GPLv3, matching OpenRocket, to keep the door open for future
+          collaboration rather than diverging on licensing terms.
           Report issues and/or share real flight data with Ezra. Real data improves simulators.
-          <a href="/validation-report.html" target="_blank" rel="noopener">Validation report</a>.
+          <a href="validation-report.html" target="_blank" rel="noopener">Validation report</a>.
         </p>
       </hgroup>
       <div class="alpha-notice">
