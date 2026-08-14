@@ -40,6 +40,33 @@ function setCursorSynced(u: uPlot, opts: { left: number; top: number }): void {
 }
 
 /**
+ * Shared across all four synced charts: true once the reading has been "locked" in place --
+ * either by a desktop click (see wireDesktopClickLock) or by touching at all (see wireTouchScrub,
+ * which has always left the cursor in place after touchend, just under a different name until
+ * now). While locked, further mouse movement is ignored (see passthroughUnlessLocked) so the
+ * pinned reading stays put instead of sliding away the instant the mouse moves -- there was
+ * previously no way to actually hold a reading still to compare against the other charts.
+ * Cleared only by clearAllChartCursors (the reset button), which also unlocks.
+ */
+let scrubLocked = false;
+
+type MouseListener = (e: MouseEvent) => null;
+type MouseListenerFactory = (self: uPlot, targ: HTMLElement, handler: MouseListener) => MouseListener | null;
+
+/** cursor.bind factory for mousemove/mouseleave: passes the event through to uPlot's default handler unless scrubLocked, in which case it's swallowed -- this is what actually stops the crosshair from following the mouse (or clearing on mouseleave) once locked. */
+const passthroughUnlessLocked: MouseListenerFactory = (_self, _targ, handler) => (e) => {
+  if (!scrubLocked) handler(e);
+  return null;
+};
+
+/** Click-to-lock on desktop: the mouse has already tracked to this position via mousemove, so locking just means suppressing further movement (see passthroughUnlessLocked) rather than repositioning anything. */
+function wireDesktopClickLock(u: uPlot): void {
+  u.over.addEventListener("click", () => {
+    scrubLocked = true;
+  });
+}
+
+/**
  * uPlot's cursor only tracks mouse events out of the box (its own cursor.bind option is
  * mouse-only too, confirmed from its type defs — there's no built-in touch remapping), so a
  * finger drag does nothing to the crosshair/legend on a touchscreen unless wired up explicitly.
@@ -57,6 +84,7 @@ function wireTouchScrub(u: uPlot): void {
     const touch = e.touches[0];
     if (!touch) return;
     e.preventDefault();
+    scrubLocked = true; // same "hold it still" semantics as touchend below, set up front
     const rect = u.over.getBoundingClientRect();
     setCursorSynced(u, { left: touch.clientX - rect.left, top: touch.clientY - rect.top });
   };
@@ -67,8 +95,9 @@ function wireTouchScrub(u: uPlot): void {
   // actually something to read after lifting a finger) until clearAllChartCursors runs.
 }
 
-/** Moves every synced chart's cursor off-canvas, clearing the crosshair/legend readout — the reset button's whole job, since touch scrubbing (see wireTouchScrub) deliberately leaves the cursor in place after touchend rather than auto-clearing it like a mouse leaving the area would. */
+/** Moves every synced chart's cursor off-canvas and unlocks scrubbing — the reset button's whole job, since both touch scrubbing and a desktop click deliberately leave/lock the cursor in place (see wireTouchScrub/wireDesktopClickLock) rather than auto-clearing like a mouse leaving the area normally would. */
 export function clearAllChartCursors(): void {
+  scrubLocked = false;
   for (const chart of activeCharts) setCursorSynced(chart, { left: -10, top: -10 });
 }
 
@@ -88,16 +117,24 @@ interface Panel {
 const AXIS_STROKE = "#888888";
 const GRID_STROKE = "rgba(136, 136, 136, 0.2)";
 
+const X_AXIS_LABEL = "time (s)";
+
 function buildPanel(container: HTMLElement, time: Float64Array, panel: Panel): uPlot | null {
   if (container.clientWidth <= 0) return null;
   const opts: uPlot.Options = {
     title: `${panel.title} (${panel.unitLabel})`,
     width: container.clientWidth,
     height: 180,
-    cursor: { sync: { key: "flight-charts" } },
+    cursor: {
+      sync: { key: "flight-charts" },
+      bind: { mousemove: passthroughUnlessLocked, mouseleave: passthroughUnlessLocked },
+    },
     scales: { x: { time: false } },
     series: [
-      {},
+      // uPlot's legend defaults an unlabeled x-series to the generic "Value" -- name it after the
+      // x-axis itself (same string as the axis label below) so the legend row actually says what
+      // that first number is, not a placeholder.
+      { label: X_AXIS_LABEL },
       {
         label: panel.title,
         stroke: panel.stroke,
@@ -110,7 +147,7 @@ function buildPanel(container: HTMLElement, time: Float64Array, panel: Panel): u
       },
     ],
     axes: [
-      { label: "time (s)", stroke: AXIS_STROKE, grid: { stroke: GRID_STROKE }, ticks: { stroke: AXIS_STROKE } },
+      { label: X_AXIS_LABEL, stroke: AXIS_STROKE, grid: { stroke: GRID_STROKE }, ticks: { stroke: AXIS_STROKE } },
       {
         label: panel.unitLabel,
         stroke: AXIS_STROKE,
@@ -174,6 +211,7 @@ export function renderFlightChart(containerIds: {
     const chart = buildPanel(container, time, panel);
     if (chart) {
       wireTouchScrub(chart);
+      wireDesktopClickLock(chart);
       activeCharts.push(chart);
     }
   }

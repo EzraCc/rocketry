@@ -32,6 +32,10 @@ export interface MotorSearchResult {
 
 interface SearchResponse {
   results: MotorSearchResult[];
+  // Present on a 400: a specific, actionable message ("Invalid commonName value \"435\"." --
+  // e.g. missing the required impulse-class letter prefix, confirmed directly against the live
+  // API) that's far more useful to show a user than the bare HTTP status.
+  error?: string;
 }
 
 export async function searchMotors(query: {
@@ -56,11 +60,15 @@ export async function searchMotors(query: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ maxResults: 20, ...query }),
   });
+  // A 400 here is near-always a malformed filter value (e.g. a commonName search missing its
+  // impulse-class letter prefix, like "435" instead of "J435" -- confirmed directly against the
+  // live API), not a rate limit or outage; ThrustCurve.org's own error text says exactly what's
+  // wrong, so read the body even on failure and surface that instead of a bare HTTP status.
+  const data = (await res.json().catch(() => null)) as SearchResponse | null;
   if (!res.ok) {
-    throw new Error(`ThrustCurve.org search failed: ${res.status} ${res.statusText}`);
+    throw new Error(data?.error ? `ThrustCurve.org rejected this search: ${data.error}` : `ThrustCurve.org search failed: ${res.status} ${res.statusText}`);
   }
-  const data = (await res.json()) as SearchResponse;
-  return data.results ?? [];
+  return data?.results ?? [];
 }
 
 export interface MotorMetadata {
@@ -108,6 +116,7 @@ interface DownloadResult {
 
 interface DownloadResponse {
   results: DownloadResult[];
+  error?: string; // present on a 400, e.g. "No motor IDs specified to download files for."
 }
 
 /** Downloads pre-parsed thrust-curve samples for a motor. Prefers a "cert" source file if multiple exist, per ThrustCurve.org's own source-quality ordering. */
@@ -117,11 +126,11 @@ export async function downloadThrustSamples(motorId: string): Promise<ThrustSamp
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ motorIds: [motorId], data: "samples" }),
   });
+  const data = (await res.json().catch(() => null)) as DownloadResponse | null;
   if (!res.ok) {
-    throw new Error(`ThrustCurve.org download failed: ${res.status} ${res.statusText}`);
+    throw new Error(data?.error ? `ThrustCurve.org rejected this download: ${data.error}` : `ThrustCurve.org download failed: ${res.status} ${res.statusText}`);
   }
-  const data = (await res.json()) as DownloadResponse;
-  const withSamples = data.results.filter((r): r is DownloadResult & { samples: ThrustSample[] } =>
+  const withSamples = (data?.results ?? []).filter((r): r is DownloadResult & { samples: ThrustSample[] } =>
     Array.isArray(r.samples) && r.samples.length > 0,
   );
   if (withSamples.length === 0) {
@@ -158,15 +167,15 @@ export async function downloadInitialThrusts(motorIds: string[]): Promise<Map<st
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ motorIds, data: "samples" }),
   });
+  const data = (await res.json().catch(() => null)) as DownloadResponse | null;
   if (!res.ok) {
-    throw new Error(`ThrustCurve.org download failed: ${res.status} ${res.statusText}`);
+    throw new Error(data?.error ? `ThrustCurve.org rejected this download: ${data.error}` : `ThrustCurve.org download failed: ${res.status} ${res.statusText}`);
   }
-  const data = (await res.json()) as DownloadResponse;
 
   const sourceRank = (source: string): number =>
     source === "cert" ? 0 : source === "mfr" ? 1 : 2;
   const bestByMotor = new Map<string, DownloadResult & { samples: ThrustSample[] }>();
-  for (const r of data.results) {
+  for (const r of data?.results ?? []) {
     if (!Array.isArray(r.samples) || r.samples.length === 0) continue;
     const existing = bestByMotor.get(r.motorId);
     if (!existing || sourceRank(r.source) < sourceRank(existing.source)) {

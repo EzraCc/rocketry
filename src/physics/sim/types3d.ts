@@ -18,6 +18,7 @@ export interface FlightEvent3D {
   type: "LIFTOFF" | "LAUNCHROD" | "BURNOUT" | "APOGEE";
   time: number;
   altitude: number;
+  speed: number; // m/s, ground-relative -- same quantity as SimSample3D.speed, at this event's moment
 }
 
 export interface SimSample3D {

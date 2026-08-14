@@ -128,19 +128,19 @@ export function simulateFlight3D(rocket: Rocket): SimResult3D {
 
     if (!liftoffFired && V.dot(state.velocity, ctx.rodDirection) <= 0 && V.dot(next.velocity, ctx.rodDirection) > 0) {
       liftoffFired = true;
-      events.push({ type: "LIFTOFF", time: nextT, altitude: next.position.z });
+      events.push({ type: "LIFTOFF", time: nextT, altitude: next.position.z, speed: V.length(next.velocity) });
     }
 
     if (liftoffFired && !launchRodFired && V.dot(next.position, ctx.rodDirection) >= rocket.launchRodLength) {
       launchRodFired = true;
-      events.push({ type: "LAUNCHROD", time: nextT, altitude: next.position.z });
+      events.push({ type: "LAUNCHROD", time: nextT, altitude: next.position.z, speed: V.length(next.velocity) });
     }
 
     if (!burnoutFired && nextT >= bt - EPS) {
       burnoutFired = true;
       burnoutAltitude = next.position.z;
       tiltAtBurnoutDeg = tiltFromVerticalDeg(next.axis);
-      events.push({ type: "BURNOUT", time: nextT, altitude: next.position.z });
+      events.push({ type: "BURNOUT", time: nextT, altitude: next.position.z, speed: V.length(next.velocity) });
       if (!liftoffFired) {
         t = nextT;
         state = next;
@@ -154,7 +154,12 @@ export function simulateFlight3D(rocket: Rocket): SimResult3D {
       apogeeTime = t + frac * dt;
       apogeeAltitude = prevPositionZ + frac * (next.position.z - prevPositionZ);
       apogeeReached = true;
-      events.push({ type: "APOGEE", time: apogeeTime, altitude: apogeeAltitude });
+      // state.velocity is still the PREVIOUS step's velocity here (reassigned to `next` only
+      // after this block) -- interpolate it the same way altitude/time were above, rather than
+      // just using next.velocity, since vertical velocity crosses zero somewhere inside this step
+      // (that's the whole apogee-detection condition), not exactly at its end.
+      const apogeeVelocity = V.add(state.velocity, V.scale(V.sub(next.velocity, state.velocity), frac));
+      events.push({ type: "APOGEE", time: apogeeTime, altitude: apogeeAltitude, speed: V.length(apogeeVelocity) });
       pushSample(nextT, next);
       break;
     }

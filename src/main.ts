@@ -1179,7 +1179,7 @@ function renderFlightResultHtml(rocket: Rocket, result: SimResult3D, elapsedMs: 
   ].join("");
 
   const eventsRows = result.events
-    .map((e) => `<tr><td>${e.type}</td><td>${e.time.toFixed(2)} s</td><td>${fmtAltitude(e.altitude)}</td></tr>`)
+    .map((e) => `<tr><td>${e.type}</td><td>${e.time.toFixed(2)} s</td><td>${fmtAltitude(e.altitude)}</td><td>${fmtVelocity(e.speed)}</td></tr>`)
     .join("");
 
   return `
@@ -1208,7 +1208,7 @@ function renderFlightResultHtml(rocket: Rocket, result: SimResult3D, elapsedMs: 
     </div>
     <figure>
       <table>
-        <thead><tr><th>Event</th><th>Time</th><th>Altitude</th></tr></thead>
+        <thead><tr><th>Event</th><th>Time</th><th>Altitude</th><th>Velocity</th></tr></thead>
         <tbody>${eventsRows}</tbody>
       </table>
     </figure>
@@ -1343,6 +1343,14 @@ function wireWindImport(): void {
     const direction = Number(manualDirEl.value) || 0;
     activeWindProfile = speedMs > 0 ? constantWindProfile(speedMs, direction) : null;
     updateActiveWindLabel();
+    // A flight sim already run reflects whatever wind was active AT THE TIME -- without this,
+    // the only way to see a wind change take effect was to reselect a motor (which happens to
+    // rebuild the rocket-with-motor object and re-run the sim as a side effect of an unrelated
+    // action). Re-run directly here instead, if there's a motor to run it against.
+    if (lastMotorSelection) {
+      const motor = buildSelectedMotor(lastMotorSelection.meta, lastMotorSelection.samples);
+      void runFlightSim({ ...activeRocket, motor, windProfile: activeWindProfile });
+    }
   });
 }
 
