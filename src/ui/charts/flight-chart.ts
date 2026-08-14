@@ -24,6 +24,54 @@ function destroyActiveCharts(): void {
   activeCharts = [];
 }
 
+/**
+ * u.setCursor's public .d.ts only exposes (opts, fireHook) — but uPlot's actual implementation
+ * (uPlot.iife.js's updateCursor) takes a third internal _pub argument that gates whether the
+ * move gets published to OTHER synced-by-key chart instances: `if (_pub) pubSync(...)`. Omitting
+ * it (the public signature's default) means a manually-triggered setCursor moves only that one
+ * chart's own crosshair and never reaches the other three — confirmed directly: without this,
+ * touch-scrubbing the altitude chart left the speed/Mach/tilt legends stuck on "--" even though
+ * the exact same gesture works correctly (syncs across all four) via real mouse events, since
+ * uPlot's internal mousemove handler always passes _pub=true itself.
+ */
+type SetCursorInternal = (opts: { left: number; top: number }, fire: boolean, pub: boolean) => void;
+function setCursorSynced(u: uPlot, opts: { left: number; top: number }): void {
+  (u.setCursor as unknown as SetCursorInternal)(opts, true, true);
+}
+
+/**
+ * uPlot's cursor only tracks mouse events out of the box (its own cursor.bind option is
+ * mouse-only too, confirmed from its type defs — there's no built-in touch remapping), so a
+ * finger drag does nothing to the crosshair/legend on a touchscreen unless wired up explicitly.
+ * touchstart+touchmove both call setCursorSynced() with the touch point converted into u.over's
+ * local coordinate space (what setCursor expects) — touchstart alone (not just touchmove) so a
+ * single press-and-hold immediately shows a reading, not just once the finger starts moving.
+ *
+ * preventDefault on both events is what turns this into a deliberate "grab" gesture rather than
+ * letting the touch fall through to the page's normal vertical scroll — the tradeoff being that a
+ * touch that starts on a chart can no longer scroll the page from there, which is the intended
+ * "click and hold to scrub" behavior, not an accidental side effect.
+ */
+function wireTouchScrub(u: uPlot): void {
+  const setCursorFromTouch = (e: TouchEvent): void => {
+    const touch = e.touches[0];
+    if (!touch) return;
+    e.preventDefault();
+    const rect = u.over.getBoundingClientRect();
+    setCursorSynced(u, { left: touch.clientX - rect.left, top: touch.clientY - rect.top });
+  };
+  u.over.addEventListener("touchstart", setCursorFromTouch, { passive: false });
+  u.over.addEventListener("touchmove", setCursorFromTouch, { passive: false });
+  // touchend deliberately does NOT clear the cursor -- touch has no "mouse left the area"
+  // equivalent, so the crosshair/legend values from the last touch point persist (so there's
+  // actually something to read after lifting a finger) until clearAllChartCursors runs.
+}
+
+/** Moves every synced chart's cursor off-canvas, clearing the crosshair/legend readout — the reset button's whole job, since touch scrubbing (see wireTouchScrub) deliberately leaves the cursor in place after touchend rather than auto-clearing it like a mouse leaving the area would. */
+export function clearAllChartCursors(): void {
+  for (const chart of activeCharts) setCursorSynced(chart, { left: -10, top: -10 });
+}
+
 interface Panel {
   containerId: string;
   title: string;
@@ -124,6 +172,9 @@ export function renderFlightChart(containerIds: {
     const container = document.getElementById(panel.containerId);
     if (!container) continue;
     const chart = buildPanel(container, time, panel);
-    if (chart) activeCharts.push(chart);
+    if (chart) {
+      wireTouchScrub(chart);
+      activeCharts.push(chart);
+    }
   }
 }

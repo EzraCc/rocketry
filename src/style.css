@@ -64,14 +64,44 @@ th.sortable-th:hover {
 }
 
 /* Motor results table has enough columns to overflow narrow/mobile viewports -- scroll the table
-   itself horizontally rather than letting it force the whole page wider or squeeze every column
-   unreadably thin. */
+   itself both ways (x for columns, y once there are enough rows) rather than letting it force the
+   whole page wider or squeeze every column unreadably thin. Bounded height is what makes a
+   vertical scrollbar happen at all -- without it the figure just grows with the table and there's
+   nothing for the sticky header below to stick within. */
 #motor-results figure {
-  overflow-x: auto;
+  overflow: auto;
+  max-height: 70vh;
 }
 
 #motor-results table {
   white-space: nowrap;
+  /* Sticky cells need separate borders -- Pico's default border-collapse:collapse makes
+     position:sticky cells render incorrectly (or not stick at all) in some browsers. */
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+/* Frozen header row + frozen first (Motor) column, spreadsheet-style, so it's always clear which
+   motor a row is and what column you're looking at once you've scrolled either direction. The
+   corner cell (thead th:first-child) needs the higher z-index since it sticks on BOTH axes at
+   once and must stay above plain sticky-top header cells scrolling under it horizontally. */
+#motor-results thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--pico-background-color);
+}
+
+#motor-results td:first-child,
+#motor-results th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--pico-background-color);
+}
+
+#motor-results thead th:first-child {
+  z-index: 2;
 }
 
 /* Draggable column headers (see wireColumnDragReorder in main.ts) -- grab cursor is the only
@@ -84,13 +114,19 @@ th.sortable-th:hover {
   cursor: grabbing;
 }
 
-/* Pico's .grid defaults to one column per direct child (4, here) -- too cramped for a chart
-   with its own axis labels, so pin it to 2 columns and let Pico's existing narrow-viewport
-   breakpoint (already wired into .grid) collapse it to 1. */
+/* Pico's .grid is a single column below 768px and auto-fit above it. A chart with its own axis
+   labels needs more room than auto-fit gives it at 4-up, so pin 2 columns -- but ONLY above
+   Pico's own breakpoint; scoping the override to the same media query lets mobile keep Pico's
+   natural single column instead of forcing two cramped, barely-readable charts side by side. */
 .flight-charts-grid {
-  grid-template-columns: repeat(2, 1fr) !important;
   gap: 1rem 1.5rem;
   margin: 1rem 0;
+}
+
+@media (min-width: 768px) {
+  .flight-charts-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
 }
 
 .flight-chart {
@@ -104,6 +140,12 @@ th.sortable-th:hover {
 [data-info-toggle] {
   cursor: pointer;
   text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.75rem;
+  min-height: 1.75rem;
+  vertical-align: middle;
 }
 
 .info-panel {
@@ -121,13 +163,19 @@ th.sortable-th:hover {
 
 /* Pencil-icon (and reset-icon) inline edit for stat cards (see wireInlineEditStat,
    renderMassStat/renderCgStat in main.ts) -- plain unstyled buttons so they read as icons, not
-   form controls. */
+   form controls. Padded out to a ~2rem (32px) touch target despite the small glyph -- a bare
+   0.75rem character is unreliable to tap on a phone. */
 .edit-pencil {
   all: unset;
   cursor: pointer;
-  margin-left: 0.35rem;
-  font-size: 0.75rem;
+  margin-left: 0.1rem;
+  font-size: 0.9rem;
   opacity: 0.55;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2rem;
+  min-height: 2rem;
   vertical-align: middle;
 }
 

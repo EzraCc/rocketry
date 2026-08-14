@@ -22,7 +22,7 @@ import { burnTime, getThrustAt, totalImpulse } from "./physics/motor/motor-model
 import { deriveMotorMassCurve, getMotorMassAt } from "./physics/mass/motor-mass-curve.js";
 import { combinedMassAt, motorAxialPosition } from "./physics/mass/combined-mass.js";
 import type { SimResult3D } from "./physics/sim/types3d.js";
-import { renderFlightChart } from "./ui/charts/flight-chart.js";
+import { renderFlightChart, clearAllChartCursors } from "./ui/charts/flight-chart.js";
 import { simulateFlight3DInWorker } from "./worker/sim-worker-client.js";
 import { windAt, constantWindProfile, type WindProfile } from "./model/wind.js";
 import {
@@ -305,6 +305,20 @@ function wireInfoToggles(): void {
 }
 
 /**
+ * Delegated (same #app pattern as wireInfoToggles) click handler for the "Clear chart scrub"
+ * button rendered alongside the flight charts — needed because touch scrubbing (see
+ * wireTouchScrub in flight-chart.ts) deliberately leaves the crosshair/legend readout in place
+ * after lifting a finger, rather than auto-clearing like a mouse moving away would; this is the
+ * only way to dismiss it on a touch device.
+ */
+function wireChartCursorReset(): void {
+  document.querySelector("#app")?.addEventListener("click", (e) => {
+    if (!(e.target as HTMLElement).closest("#chart-cursor-reset")) return;
+    clearAllChartCursors();
+  });
+}
+
+/**
  * Generic delegated wiring (same #app-ancestor pattern as wireInfoToggles) for a pencil-icon
  * inline-edit stat: click `#{idPrefix}-edit-btn` to swap `#{idPrefix}-value` for
  * `#{idPrefix}-input`, commit on blur or Enter. Shared by the mass and CG stat cards below, which
@@ -419,7 +433,7 @@ function renderMassStat(rocket: Rocket): string {
       <strong
         ><span id="mass-stat-value">${fmtMass(displayKg)}</span
         ><button type="button" id="mass-stat-edit-btn" class="edit-pencil" aria-label="Edit ${label.toLowerCase()}">✏️</button
-        ><input type="number" id="mass-stat-input" class="inline-edit-stat-input" value="${massToInput(displayKg).toFixed(2)}" min="0" step="1" hidden
+        ><input type="number" inputmode="decimal" id="mass-stat-input" class="inline-edit-stat-input" value="${massToInput(displayKg).toFixed(2)}" min="0" step="1" hidden
         /><button type="button" id="mass-stat-reset-btn" class="edit-pencil" aria-label="Reset to the file's dry mass" title="Reset to ${fmtMass(baseDryMassKg)} (this file's dry mass)" hidden>↺</button
       ></strong>
       <br /><small id="mass-stat-label">${label}</small>
@@ -443,7 +457,7 @@ function renderCgStat(): string {
       <strong
         ><span id="cg-stat-value">${valueHtml}</span
         ><button type="button" id="cg-stat-edit-btn" class="edit-pencil" aria-label="Edit loaded CG">✏️</button
-        ><input type="number" id="cg-stat-input" class="inline-edit-stat-input" value="${hasCg ? lengthToInput(activeLoadedCgM).toFixed(2) : ""}" placeholder="${lengthInputUnitLabel()}" min="0" step="0.1" hidden
+        ><input type="number" inputmode="decimal" id="cg-stat-input" class="inline-edit-stat-input" value="${hasCg ? lengthToInput(activeLoadedCgM).toFixed(2) : ""}" placeholder="${lengthInputUnitLabel()}" min="0" step="0.1" hidden
       /></strong>
       <br /><small id="cg-stat-label">Loaded CG (from nose)</small>
     </div>
@@ -599,7 +613,7 @@ const motorSectionHtml = `
           <select id="motor-impulse-class" aria-busy="true"><option value="">Loading…</option></select>
         </label>
         <label>Common name
-          <input id="motor-common-name" type="text" value="${urlFilterValue("commonName")}" placeholder="e.g. C6, K400" />
+          <input id="motor-common-name" type="text" autocapitalize="characters" autocomplete="off" spellcheck="false" value="${urlFilterValue("commonName")}" placeholder="e.g. C6, K400" />
         </label>
       </div>
       <p id="motor-mount-note"><small></small></p>
@@ -891,7 +905,19 @@ function renderMotorResults(): string {
 function renderAndWireResults(): void {
   const resultsEl = document.querySelector<HTMLDivElement>("#motor-results");
   if (!resultsEl) return;
+  // A full innerHTML replacement below throws away the old <figure> (and whatever scroll position
+  // it had) and builds a brand-new one at (0, 0) -- capture the old scroll offset first and
+  // restore it on the new one, or every sort-click/nogo-toggle/etc re-render would silently snap
+  // the table back to its top-left, undoing whatever the user had scrolled to.
+  const prevFigure = resultsEl.querySelector("figure");
+  const prevScrollLeft = prevFigure?.scrollLeft ?? 0;
+  const prevScrollTop = prevFigure?.scrollTop ?? 0;
   resultsEl.innerHTML = renderMotorResults();
+  const newFigure = resultsEl.querySelector("figure");
+  if (newFigure) {
+    newFigure.scrollLeft = prevScrollLeft;
+    newFigure.scrollTop = prevScrollTop;
+  }
   resultsEl.querySelectorAll<HTMLAnchorElement>("a[data-motor-index]").forEach((a) => {
     a.addEventListener("click", (evt) => {
       evt.preventDefault();
@@ -1036,9 +1062,11 @@ async function selectMotor(meta: MotorSearchResult): Promise<void> {
     // meaningful for a different one -- revert to the file's base dry mass before applying this
     // motor, so its "Loaded mass" is base dry + this motor, not a stale carried-over figure. A
     // direct dry-mass edit (dryMassOverriddenViaLoadedEdit false) is motor-independent and stays.
+    let dryMassReverted = false;
     if (dryMassOverriddenViaLoadedEdit) {
       activeDryMassKg = baseDryMassKg;
       dryMassOverriddenViaLoadedEdit = false;
+      dryMassReverted = true;
     }
     lastMotorSelection = { meta, samples };
     const { html, rocketWithMotor } = renderMotorDetailHtml(meta, samples);
@@ -1047,6 +1075,10 @@ async function selectMotor(meta: MotorSearchResult): Promise<void> {
     // a motor's known -- re-render it here, not just the motor detail panel above, or it'd keep
     // showing the stale dry-only figure/label until some unrelated re-render happened to fire.
     renderActiveRocketDisplay();
+    // If dry mass just got reverted above, the search results table's T:W column (computed
+    // against activeDryMassKg) needs refreshing too, or it'd keep showing ratios flagged against
+    // the stale, now-discarded back-solved mass.
+    if (dryMassReverted) renderAndWireResults();
     void runFlightSim(rocketWithMotor);
   } catch (err) {
     detailEl.innerHTML = `<p><mark>Failed to load thrust curve: ${err instanceof Error ? err.message : String(err)}</mark></p>`;
@@ -1149,6 +1181,12 @@ function renderFlightResultHtml(rocket: Rocket, result: SimResult3D, elapsedMs: 
     </small></p>
     ${warningsHtml}
     <div class="grid stats-grid">${stats}</div>
+    <p>
+      <button type="button" id="chart-cursor-reset" class="outline secondary" style="width: auto;">
+        Clear chart scrub
+      </button>
+      <small>Press and drag on a chart to scrub through the flight; tap the button above to clear it.</small>
+    </p>
     <div class="grid flight-charts-grid">
       <div id="chart-altitude" class="flight-chart"></div>
       <div id="chart-speed" class="flight-chart"></div>
@@ -1241,8 +1279,8 @@ const windSectionHtml = `
       </p>
     </header>
     <div class="grid">
-      <label>Constant wind speed (<span id="wind-speed-unit-label">m/s</span>) <input type="number" id="wind-manual-speed" value="0" min="0" step="0.5" /></label>
-      <label>From direction (deg, compass) <input type="number" id="wind-manual-direction" value="0" min="0" max="360" step="5" /></label>
+      <label>Constant wind speed (<span id="wind-speed-unit-label">m/s</span>) <input type="number" inputmode="decimal" id="wind-manual-speed" value="0" min="0" step="0.5" /></label>
+      <label>From direction (deg, compass) <input type="number" inputmode="numeric" id="wind-manual-direction" value="0" min="0" max="360" step="5" /></label>
       <div style="align-self: end;">
         <button type="button" id="wind-manual-apply">Use constant wind</button>
       </div>
@@ -1631,6 +1669,7 @@ if (app) {
   wireInfoToggles();
   wireMassStatEdit();
   wireCgStatEdit();
+  wireChartCursorReset();
   void initLibrary();
   const urlParams = new URLSearchParams(location.search);
   const hadUrlFilters = (Object.keys(FILTER_DEFAULTS) as FilterKey[]).some((k) => urlParams.has(k));
