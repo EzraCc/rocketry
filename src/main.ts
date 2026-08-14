@@ -8,8 +8,9 @@ import { defaultRocket, type Rocket, type SelectedMotor } from "./model/rocket.j
 import { isBodyComponent, type Component } from "./model/component.js";
 import { unzipOrkXml } from "./formats/ork/unzip.js";
 import { parseOrkXml } from "./formats/ork/parse.js";
-import { parseRocksimXml } from "./formats/rocksim/parse.js";
+import { parseRocksimXml, type DescentDevice } from "./formats/rocksim/parse.js";
 import { parseRasaeroXml } from "./formats/rasaero/parse.js";
+import { IsaAtmosphere } from "./physics/atmosphere/isa-model.js";
 import {
   searchMotors,
   downloadThrustSamples,
@@ -114,6 +115,7 @@ function applyParsedRocket(
     motorMountDiameterM?: number;
     unsupportedFeatures?: string[];
     embeddedCpM?: number;
+    descentDevices?: DescentDevice[];
   },
   source: string,
   displayName?: string,
@@ -123,6 +125,7 @@ function applyParsedRocket(
   activeEmbeddedCpM = parsed.embeddedCpM;
   activeCpOverrideM = undefined;
   cpOverrideSource = null;
+  activeDescentDevices = parsed.descentDevices ?? [];
   // dryMassBreakdown's own per-part cgXM positions inherit the same unsupported-geometry problem
   // as estimatedDryCgM (e.g. an ExternalPod's contents get a wrong position -- see parse.ts), even
   // though the file's total mass (estimatedDryMassKg, summed from this same breakdown) is still
@@ -225,6 +228,14 @@ let activeEmbeddedCpM: number | undefined;
  */
 let activeCpOverrideM: number | undefined;
 let cpOverrideSource: "manual" | "simfile" | null = null;
+
+/**
+ * Recovery devices (drogue/main parachutes, streamers) found in the active file -- only RockSim
+ * (.rkt) files carry these (parseRocksimXml's own descentDevices; .ork/RASAero parsers don't
+ * extract this yet), so empty for uploads of those formats. Set by applyParsedRocket, read by
+ * renderDescentDevicesSection to compute/show each device's descent rate.
+ */
+let activeDescentDevices: DescentDevice[] = [];
 
 /**
  * Dry (motor-out) mass — what a library/file load actually reports, and
@@ -706,6 +717,7 @@ function renderRocketSection(rocket: Rocket, mach: number, subtitle: string): st
         ${renderSchematicSvg(rocket.components, displayCpX, hasCg ? activeLoadedCgM : undefined)}
       </figure>
       ${renderComponentBreakdownTable()}
+      ${renderDescentDevicesSection()}
     </article>
   `;
 }
@@ -740,6 +752,57 @@ function renderComponentBreakdownTable(): string {
           <tbody>${rows}</tbody>
         </table>
       </figure>
+    </details>
+  `;
+}
+
+/** Standard sea-level air density (kg/m^3) via this project's own ISA model at altitude 0 -- the reference density renderDescentDevicesSection uses for every device, not the actual deployment altitude (drogue deploys near apogee, main typically much lower at a preset altitude the file doesn't reliably record either) -- a documented simplification, not an attempt at per-device altitude accuracy. */
+const SEA_LEVEL_AIR_DENSITY_KGM3 = new IsaAtmosphere().at(0).density;
+const STANDARD_GRAVITY_MS2 = 9.80665; // matches isa-model.ts's own G0
+
+/**
+ * Drogue/main descent rate for each recovery device found in the file (parseRocksimXml's own
+ * descentDevices -- RockSim only, see activeDescentDevices' own doc comment), via the standard
+ * terminal-velocity equation v = sqrt(2*m*g / (rho*Cd*A)). Requires a motor to be selected: the
+ * descending mass is the rocket's dry mass PLUS the spent motor casing (loaded mass minus
+ * propellant, since the propellant itself is long gone by the time a chute opens) -- not just dry
+ * mass, which would leave the spent casing's real weight out and understate the rate, and not full
+ * loaded mass either, which would still be carrying propellant that's already burned by then.
+ * Requested specifically so these numbers can be handed to splashcast (the external launch-day
+ * wind/drift predictor this project's own wind import already reads FROM -- see
+ * splashcast-import.ts), which needs a descent rate per device to predict drift, not just canopy
+ * area/CD.
+ */
+function renderDescentDevicesSection(): string {
+  if (activeDescentDevices.length === 0) return "";
+  const motor = lastMotorSelection ? buildSelectedMotor(lastMotorSelection.meta, lastMotorSelection.samples) : null;
+  const descentMassKg = motor ? activeDryMassKg + (motor.totalMassKg - motor.propellantMassKg) : null;
+
+  const rows = activeDescentDevices
+    .map((d) => {
+      const rate =
+        descentMassKg !== null
+          ? Math.sqrt((2 * descentMassKg * STANDARD_GRAVITY_MS2) / (SEA_LEVEL_AIR_DENSITY_KGM3 * d.dragCoefficient * d.dragAreaM2))
+          : null;
+      const label = `${d.role === "drogue" ? "Drogue" : "Main"} ${d.type}`;
+      return `<tr><td>${label}</td><td>${d.dragAreaM2.toFixed(3)} m²</td><td>${d.dragCoefficient.toFixed(2)}</td><td>${rate !== null ? fmtVelocity(rate) : "—"}</td></tr>`;
+    })
+    .join("");
+
+  return `
+    <details>
+      <summary>Recovery devices (${activeDescentDevices.length}, descent rate at sea-level density)</summary>
+      <figure>
+        <table>
+          <thead><tr><th>Device</th><th>Drag area</th><th>Drag coefficient</th><th>Descent rate</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </figure>
+      ${
+        descentMassKg === null
+          ? `<p><small>Descent rate needs a motor selected -- descending mass is dry mass + spent motor casing (loaded mass minus propellant), which needs to know how much propellant the selected motor carries.</small></p>`
+          : ""
+      }
     </details>
   `;
 }
