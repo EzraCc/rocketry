@@ -132,3 +132,51 @@ export async function downloadThrustSamples(motorId: string): Promise<ThrustSamp
   withSamples.sort((a, b) => sourceRank(a.source) - sourceRank(b.source));
   return withSamples[0]!.samples;
 }
+
+/**
+ * Batch-fetches just enough of each motor's thrust curve to read its INITIAL thrust (right after
+ * ignition, not the burn-wide peak — those aren't the same motor, e.g. many BP motors have their
+ * peak partway through the burn) for every motor in one request, rather than one download.json
+ * round-trip per row of a search-results table. `download.json` accepts an array of motorIds
+ * directly (confirmed against the live API), so this is the same endpoint as
+ * downloadThrustSamples, just requesting many motors' samples at once instead of one motor's full
+ * curve.
+ *
+ * Digitized curves conventionally start with an explicit (t=0, F=0) origin point, so the literal
+ * first sample is usually zero and not what "initial thrust" means here -- this returns the first
+ * sample with thrust actually above zero, i.e. the value right as the motor lights.
+ *
+ * Motors ThrustCurve.org has no data file for are silently omitted from the result map (not
+ * thrown) -- a partial table is more useful than failing the whole batch over one bad motor.
+ */
+export async function downloadInitialThrusts(motorIds: string[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (motorIds.length === 0) return out;
+
+  const res = await fetch(`${API_BASE}/download.json`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ motorIds, data: "samples" }),
+  });
+  if (!res.ok) {
+    throw new Error(`ThrustCurve.org download failed: ${res.status} ${res.statusText}`);
+  }
+  const data = (await res.json()) as DownloadResponse;
+
+  const sourceRank = (source: string): number =>
+    source === "cert" ? 0 : source === "mfr" ? 1 : 2;
+  const bestByMotor = new Map<string, DownloadResult & { samples: ThrustSample[] }>();
+  for (const r of data.results) {
+    if (!Array.isArray(r.samples) || r.samples.length === 0) continue;
+    const existing = bestByMotor.get(r.motorId);
+    if (!existing || sourceRank(r.source) < sourceRank(existing.source)) {
+      bestByMotor.set(r.motorId, r as DownloadResult & { samples: ThrustSample[] });
+    }
+  }
+
+  for (const [motorId, result] of bestByMotor) {
+    const ignitionSample = result.samples.find((s) => s.thrust > 0) ?? result.samples[0];
+    if (ignitionSample) out.set(motorId, ignitionSample.thrust);
+  }
+  return out;
+}

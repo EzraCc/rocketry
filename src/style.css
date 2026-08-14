@@ -63,6 +63,27 @@ th.sortable-th:hover {
   color: var(--pico-primary);
 }
 
+/* Motor results table has enough columns to overflow narrow/mobile viewports -- scroll the table
+   itself horizontally rather than letting it force the whole page wider or squeeze every column
+   unreadably thin. */
+#motor-results figure {
+  overflow-x: auto;
+}
+
+#motor-results table {
+  white-space: nowrap;
+}
+
+/* Draggable column headers (see wireColumnDragReorder in main.ts) -- grab cursor is the only
+   affordance needed; native HTML5 drag-and-drop handles the rest. */
+#motor-results th[data-col-key] {
+  cursor: grab;
+}
+
+#motor-results th[data-col-key]:active {
+  cursor: grabbing;
+}
+
 /* Pico's .grid defaults to one column per direct child (4, here) -- too cramped for a chart
    with its own axis labels, so pin it to 2 columns and let Pico's existing narrow-viewport
    breakpoint (already wired into .grid) collapse it to 1. */

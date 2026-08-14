@@ -13,6 +13,7 @@ import { parseRasaeroXml } from "./formats/rasaero/parse.js";
 import {
   searchMotors,
   downloadThrustSamples,
+  downloadInitialThrusts,
   getMotorMetadata,
   type MotorSearchResult,
   type ThrustSample,
@@ -617,22 +618,53 @@ interface MotorColumn {
 const STANDARD_GRAVITY = 9.80665; // m/s^2 -- for converting loaded mass to weight (thrust:weight ratio is a force:force comparison, not force:mass)
 
 /**
+ * Initial (ignition) thrust per motorId — NOT the same as MotorSearchResult.maxThrustN (the
+ * burn-wide peak, which for many motors, especially progressive-burn BP ones, happens well after
+ * ignition, not at t=0). Search metadata alone doesn't carry this; it's batch-fetched from each
+ * motor's actual thrust curve (see loadInitialThrustsForCurrentResults) after a search returns,
+ * one request covering every result row rather than one download per row.
+ */
+let initialThrustByMotorId = new Map<string, number>();
+let initialThrustLoading = false;
+
+/** Fetches initial thrust for every motor in currentResults, in one batched request -- guards against a slower, now-superseded fetch overwriting a newer search's results if the user searches again before this one lands. */
+async function loadInitialThrustsForCurrentResults(): Promise<void> {
+  const forResults = currentResults;
+  const ids = forResults.map((m) => m.motorId);
+  if (ids.length === 0) return;
+  initialThrustLoading = true;
+  renderAndWireResults();
+  try {
+    const fetched = await downloadInitialThrusts(ids);
+    if (currentResults !== forResults) return; // a newer search superseded this one -- discard
+    initialThrustByMotorId = fetched;
+  } catch {
+    // Leave initialThrustByMotorId as-is -- initial-thrust/T:W columns just show "—" for these
+    // motors rather than failing the whole search-results display over one batch-fetch error.
+  } finally {
+    if (currentResults === forResults) initialThrustLoading = false;
+    renderAndWireResults();
+  }
+}
+
+/**
  * Thrust:weight ratio using loaded weight (this rocket's current dry mass + the row's own motor
- * mass) and the motor's peak thrust ("initial thrust" per the safety-rule convention this is
- * checked against — the worst-case moment right off the pad, not the burn-averaged figure).
- * Thresholds are the standard hobby-rocketry safety guidance: below 3:1 the rocket may not clear
- * the launch rod with stable velocity (a real hazard, not just underperformance) — nogo. 3-5:1 is
- * flyable but marginal. 5-7:1 is a normal, unremarkable ratio. Above 7:1 is comfortably brisk.
- * Returns null when the motor's weight isn't published (unusual, but ThrustCurve.org does omit it
- * for some entries) — nothing to flag without a real number.
+ * mass) and the motor's INITIAL thrust (see initialThrustByMotorId above) — the worst-case moment
+ * right off the pad is what the safety threshold below is actually checking, not a burn-averaged
+ * or peak-anywhere-in-the-burn figure. Thresholds are the standard hobby-rocketry safety guidance:
+ * below 3:1 the rocket may not clear the launch rod with stable velocity (a real hazard, not just
+ * underperformance) — nogo. 3-5:1 is flyable but marginal. 5-7:1 is a normal, unremarkable ratio.
+ * Above 7:1 is comfortably brisk. Returns null when the motor's weight isn't published, or initial
+ * thrust hasn't been fetched/found yet — nothing to flag without real numbers for both sides.
  */
 function computeThrustToWeight(m: MotorSearchResult): { ratio: number; label: string; color: string } | null {
   if (m.totalWeightG === undefined || m.totalWeightG === null || Number.isNaN(m.totalWeightG)) return null;
-  if (m.maxThrustN === undefined || m.maxThrustN === null || Number.isNaN(m.maxThrustN)) return null;
+  const initialThrustN = initialThrustByMotorId.get(m.motorId);
+  if (initialThrustN === undefined) return null;
   const loadedMassKg = activeDryMassKg + m.totalWeightG / 1000;
   const loadedWeightN = loadedMassKg * STANDARD_GRAVITY;
   if (loadedWeightN <= 0) return null;
-  const ratio = m.maxThrustN / loadedWeightN;
+  const ratio = initialThrustN / loadedWeightN;
   if (ratio < 3) return { ratio, label: "nogo", color: "var(--pico-del-color, #c0392b)" };
   if (ratio < 5) return { ratio, label: "marginal", color: "#b8860b" };
   if (ratio <= 7) return { ratio, label: "ok", color: "inherit" };
@@ -674,10 +706,14 @@ const MOTOR_COLUMNS: MotorColumn[] = [
     value: (m) => m.avgThrustN,
   },
   {
-    key: "peakThrust",
-    label: "Peak (initial) thrust",
-    format: (m) => (m.maxThrustN === undefined || m.maxThrustN === null || Number.isNaN(m.maxThrustN) ? "—" : fmtForce(m.maxThrustN)),
-    value: (m) => m.maxThrustN,
+    key: "initialThrust",
+    label: "Initial thrust",
+    format: (m) => {
+      const v = initialThrustByMotorId.get(m.motorId);
+      if (v !== undefined) return fmtForce(v);
+      return initialThrustLoading ? "…" : "—";
+    },
+    value: (m) => initialThrustByMotorId.get(m.motorId),
   },
   {
     key: "thrustToWeight",
@@ -692,6 +728,16 @@ const MOTOR_COLUMNS: MotorColumn[] = [
 
 let currentResults: MotorSearchResult[] = [];
 let sortState: { key: string; dir: 1 | -1 } | null = null;
+
+/** Display order of MOTOR_COLUMNS' keys — reorderable by dragging a header (see wireColumnDragReorder). Starts as MOTOR_COLUMNS' own declared order and persists across searches/re-renders, since it's a user preference, not per-search state. */
+let motorColumnOrder: string[] = MOTOR_COLUMNS.map((c) => c.key);
+
+function orderedMotorColumns(): MotorColumn[] {
+  return motorColumnOrder.map((key) => MOTOR_COLUMNS.find((c) => c.key === key)).filter((c): c is MotorColumn => c !== undefined);
+}
+
+/** Nogo motors (T:W < 3:1 for this rocket) are hidden by default -- a real safety threshold, not just a sort preference, so burying it at the bottom of a long sorted list isn't enough. Toggled via the "Show nogo motors" link rendered in renderMotorResults. */
+let showNogoMotors = false;
 
 function compareValues(a: string | number | undefined, b: string | number | undefined, dir: 1 | -1): number {
   if (a === undefined && b === undefined) return 0;
@@ -710,18 +756,39 @@ function sortedResults(): MotorSearchResult[] {
 
 function renderMotorResults(): string {
   if (currentResults.length === 0) return "<p>No motors found.</p>";
-  const rows = sortedResults()
+  const sorted = sortedResults();
+  const nogoCount = sorted.filter((m) => computeThrustToWeight(m)?.label === "nogo").length;
+  const visible = showNogoMotors ? sorted : sorted.filter((m) => computeThrustToWeight(m)?.label !== "nogo");
+
+  const toggleNote =
+    nogoCount > 0
+      ? `<p><small>${
+          showNogoMotors
+            ? `Showing all ${sorted.length} motors, including ${nogoCount} flagged nogo.`
+            : `${nogoCount} nogo motor${nogoCount === 1 ? "" : "s"} hidden by default (thrust:weight below 3:1, per safety guidance).`
+        } <a href="#" id="toggle-nogo-motors">${showNogoMotors ? "Hide nogo motors" : "Show nogo motors"}</a></small></p>`
+      : "";
+
+  if (visible.length === 0) {
+    return `${toggleNote}<p>All ${sorted.length} matching motors are flagged nogo for this rocket's current weight.</p>`;
+  }
+
+  const columns = orderedMotorColumns();
+  const rows = visible
     .map((m) => {
       const realIndex = currentResults.indexOf(m);
-      const cells = MOTOR_COLUMNS.map((c) => `<td>${c.format(m).replace("__I__", String(realIndex))}</td>`).join("");
+      const cells = columns.map((c) => `<td>${c.format(m).replace("__I__", String(realIndex))}</td>`).join("");
       return `<tr>${cells}</tr>`;
     })
     .join("");
-  const headers = MOTOR_COLUMNS.map((c) => {
-    const arrow = sortState?.key === c.key ? (sortState.dir === 1 ? " ▲" : " ▼") : "";
-    return `<th class="sortable-th" data-sort-key="${c.key}">${c.label}${arrow}</th>`;
-  }).join("");
+  const headers = columns
+    .map((c) => {
+      const arrow = sortState?.key === c.key ? (sortState.dir === 1 ? " ▲" : " ▼") : "";
+      return `<th class="sortable-th" draggable="true" data-sort-key="${c.key}" data-col-key="${c.key}" title="Click to sort, drag to reorder">${c.label}${arrow}</th>`;
+    })
+    .join("");
   return `
+    ${toggleNote}
     <figure>
       <table>
         <thead><tr>${headers}</tr></thead>
@@ -747,6 +814,45 @@ function renderAndWireResults(): void {
     th.addEventListener("click", () => {
       const key = th.dataset["sortKey"]!;
       sortState = sortState?.key === key ? { key, dir: sortState.dir === 1 ? -1 : 1 } : { key, dir: 1 };
+      renderAndWireResults();
+    });
+  });
+  resultsEl.querySelector<HTMLAnchorElement>("#toggle-nogo-motors")?.addEventListener("click", (evt) => {
+    evt.preventDefault();
+    showNogoMotors = !showNogoMotors;
+    renderAndWireResults();
+  });
+  wireColumnDragReorder(resultsEl);
+}
+
+/**
+ * Native HTML5 drag-and-drop to reorder motor table columns — no library needed for a single
+ * flat row of headers. Dropping column A onto column B moves A to B's current position (not a
+ * swap), matching how dragging a column in a spreadsheet behaves.
+ */
+let draggedMotorColumnKey: string | null = null;
+
+function wireColumnDragReorder(resultsEl: HTMLElement): void {
+  resultsEl.querySelectorAll<HTMLTableCellElement>("th[data-col-key]").forEach((th) => {
+    th.addEventListener("dragstart", (evt) => {
+      draggedMotorColumnKey = th.dataset["colKey"] ?? null;
+      (evt as DragEvent).dataTransfer?.setData("text/plain", draggedMotorColumnKey ?? "");
+      if ((evt as DragEvent).dataTransfer) (evt as DragEvent).dataTransfer!.effectAllowed = "move";
+    });
+    th.addEventListener("dragover", (evt) => {
+      evt.preventDefault(); // required for this element to be a valid drop target
+      if ((evt as DragEvent).dataTransfer) (evt as DragEvent).dataTransfer!.dropEffect = "move";
+    });
+    th.addEventListener("drop", (evt) => {
+      evt.preventDefault();
+      const targetKey = th.dataset["colKey"];
+      if (!draggedMotorColumnKey || !targetKey || draggedMotorColumnKey === targetKey) return;
+      const fromIdx = motorColumnOrder.indexOf(draggedMotorColumnKey);
+      const toIdx = motorColumnOrder.indexOf(targetKey);
+      if (fromIdx === -1 || toIdx === -1) return;
+      motorColumnOrder.splice(fromIdx, 1);
+      motorColumnOrder.splice(toIdx, 0, draggedMotorColumnKey);
+      draggedMotorColumnKey = null;
       renderAndWireResults();
     });
   });
@@ -998,7 +1104,9 @@ async function performSearch(): Promise<void> {
       currentResults = await searchMotors({ ...baseQuery, diameter: diameter ? Number(diameter) : undefined });
     }
     sortState = null;
+    initialThrustByMotorId = new Map();
     renderAndWireResults();
+    void loadInitialThrustsForCurrentResults();
   } catch (err) {
     resultsEl.innerHTML = `<p><mark>Search failed: ${err instanceof Error ? err.message : String(err)}</mark></p>`;
   } finally {
