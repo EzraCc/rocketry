@@ -1,0 +1,17 @@
+{
+  "cpXMm": 1075.923610319729,
+  "cgAtLiftoffMm": 991.5662908242612,
+  "massAtLiftoffKg": 1.286,
+  "refDiameterMm": 101.6,
+  "stabilityMarginCalibers": 0.8302885777112969,
+  "apogeeAltitudeM": 245.35500294048714,
+  "apogeeTimeS": 6.736388165114692,
+  "apogeeEventTimeS": 6.736388165114692,
+  "maxVelocityMs": 83.5849482202874,
+  "maxMach": 0.24568485749401955,
+  "maxAccelerationMs2": 283.9869823703761,
+  "label": "apogee-zephyr-g339n",
+  "rocketPath": "public/library/apogee/Zephyr.rkt",
+  "motorManufacturer": "AeroTech",
+  "motorDesignation": "G339N"
+}

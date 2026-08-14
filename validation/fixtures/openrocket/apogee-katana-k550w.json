@@ -1,0 +1,17 @@
+{
+  "cpXMm": 1545.2672502714738,
+  "cgAtLiftoffMm": 1436.198774298328,
+  "massAtLiftoffKg": 3.49736,
+  "refDiameterMm": 101.6,
+  "stabilityMarginCalibers": 1.0735086217829304,
+  "apogeeAltitudeM": 1875.1026459470127,
+  "apogeeTimeS": 16.006000000000096,
+  "apogeeEventTimeS": 16.006000000000096,
+  "maxVelocityMs": 331.62501712018116,
+  "maxMach": 0.9797051997162657,
+  "maxAccelerationMs2": 219.20879322406725,
+  "label": "apogee-katana-k550w",
+  "rocketPath": "public/library/apogee/Katana.rkt",
+  "motorManufacturer": "AeroTech",
+  "motorDesignation": "K550W"
+}

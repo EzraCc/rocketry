@@ -1,0 +1,17 @@
+{
+  "cpXMm": 1789.3352287602686,
+  "cgAtLiftoffMm": 1406.0581643442047,
+  "massAtLiftoffKg": 4.593027819117755,
+  "refDiameterMm": 79.375,
+  "stabilityMarginCalibers": 4.8286874257141905,
+  "apogeeAltitudeM": 55.391803073347155,
+  "apogeeTimeS": 3.93023061671913,
+  "apogeeEventTimeS": 3.93023061671913,
+  "maxVelocityMs": 27.751335884219507,
+  "maxMach": 0.08183498891937722,
+  "maxAccelerationMs2": 31.8580235870712,
+  "label": "wildman-cerberus-h128w",
+  "rocketPath": "public/library/wildman/Cerberus.rkt",
+  "motorManufacturer": "AeroTech",
+  "motorDesignation": "H128W"
+}

@@ -1176,7 +1176,12 @@ function renderFlightResultHtml(rocket: Rocket, result: SimResult3D, elapsedMs: 
   // as propellant burns, so liftoff is the safety-relevant worst case to check, not burnout.
   const massCurve = rocket.motor ? deriveMotorMassCurve(rocket.motor) : null;
   const launchCgX = massCurve ? combinedMassAt(rocket, massCurve, 0).cgX : rocket.dryCg;
-  const { cpX, refDiameter } = computeBarrowman(rocket.components, 0.3);
+  // Mach 0.1 (~100fps) -- the actually safety-relevant rail-exit speed, not an arbitrary
+  // "typical flight" number. CP shifts slightly aft (more stable-looking) as Mach rises in the
+  // subsonic band (traced to the fin CNa1 compressibility term in fin-calc.ts, which nose/body
+  // CNa has no equivalent of) -- checking stability at a higher Mach than this would be mildly
+  // optimistic relative to the moment stability actually matters most.
+  const { cpX, refDiameter } = computeBarrowman(rocket.components, 0.1);
   const stability = checkStability(cpX, launchCgX, refDiameter, rocket.motor !== null);
 
   const notFlyableHtml = !stability.flyable
@@ -1417,7 +1422,9 @@ const orkSectionHtml = `
 function renderActiveRocketDisplay(): void {
   const el = document.querySelector<HTMLDivElement>("#active-rocket-display");
   if (!el) return;
-  el.innerHTML = renderRocketSection(activeRocket, 0.3, activeRocketSource, activeKnownCp);
+  // Mach 0.1 (~100fps) -- see renderFlightResultHtml's identical comment: the safety-relevant
+  // rail-exit speed, not an arbitrary "typical flight" number.
+  el.innerHTML = renderRocketSection(activeRocket, 0.1, activeRocketSource, activeKnownCp);
 }
 
 function wireOrkImport(): void {

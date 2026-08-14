@@ -1,0 +1,127 @@
+{
+  "meta": {
+    "motorId": "5f4294d20002310000000015",
+    "manufacturer": "Estes Industries",
+    "manufacturerAbbrev": "Estes",
+    "designation": "C6",
+    "commonName": "C6",
+    "impulseClass": "C",
+    "diameter": 18,
+    "length": 70,
+    "type": "SU",
+    "certOrg": "National Association of Rocketry",
+    "avgThrustN": 4.74,
+    "maxThrustN": 14.09,
+    "totImpulseNs": 8.82,
+    "burnTimeS": 1.86,
+    "dataFiles": 4,
+    "infoUrl": "http://nar.org/SandT/pdf/Estes/C6.pdf",
+    "totalWeightG": 24.1,
+    "propWeightG": 10.8,
+    "delays": "0,3,5,7",
+    "delayAdjustable": false,
+    "propInfo": "black powder",
+    "sparky": false,
+    "updatedOn": "2019-10-05",
+    "availability": "regular",
+    "source_url": "http://www.thrustcurve.org/motors/Estes/C6/"
+  },
+  "samples": [
+    {
+      "time": 0.031,
+      "thrust": 0.946
+    },
+    {
+      "time": 0.092,
+      "thrust": 4.826
+    },
+    {
+      "time": 0.139,
+      "thrust": 9.936
+    },
+    {
+      "time": 0.192,
+      "thrust": 14.09
+    },
+    {
+      "time": 0.209,
+      "thrust": 11.446
+    },
+    {
+      "time": 0.231,
+      "thrust": 7.381
+    },
+    {
+      "time": 0.248,
+      "thrust": 6.151
+    },
+    {
+      "time": 0.292,
+      "thrust": 5.489
+    },
+    {
+      "time": 0.37,
+      "thrust": 4.921
+    },
+    {
+      "time": 0.475,
+      "thrust": 4.448
+    },
+    {
+      "time": 0.671,
+      "thrust": 4.258
+    },
+    {
+      "time": 0.702,
+      "thrust": 4.542
+    },
+    {
+      "time": 0.723,
+      "thrust": 4.164
+    },
+    {
+      "time": 0.85,
+      "thrust": 4.448
+    },
+    {
+      "time": 1.063,
+      "thrust": 4.353
+    },
+    {
+      "time": 1.211,
+      "thrust": 4.353
+    },
+    {
+      "time": 1.242,
+      "thrust": 4.069
+    },
+    {
+      "time": 1.303,
+      "thrust": 4.258
+    },
+    {
+      "time": 1.468,
+      "thrust": 4.353
+    },
+    {
+      "time": 1.656,
+      "thrust": 4.448
+    },
+    {
+      "time": 1.821,
+      "thrust": 4.448
+    },
+    {
+      "time": 1.834,
+      "thrust": 2.933
+    },
+    {
+      "time": 1.847,
+      "thrust": 1.325
+    },
+    {
+      "time": 1.86,
+      "thrust": 0
+    }
+  ]
+}

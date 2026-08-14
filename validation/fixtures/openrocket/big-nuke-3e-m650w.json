@@ -1,0 +1,17 @@
+{
+  "cpXMm": 1497.0735529429942,
+  "cgAtLiftoffMm": 1401.7842291121456,
+  "massAtLiftoffKg": 13.136738349075042,
+  "refDiameterMm": 140.716,
+  "stabilityMarginCalibers": 0.6771747621510598,
+  "apogeeAltitudeM": 3904.2582131157733,
+  "apogeeTimeS": 27.250000000000224,
+  "apogeeEventTimeS": 27.250000000000224,
+  "maxVelocityMs": 296.674669368245,
+  "maxMach": 0.8837031008851246,
+  "maxAccelerationMs2": 91.7141656933984,
+  "label": "big-nuke-3e-m650w",
+  "rocketPath": "public/library/loc/Big Nuke 3E.rkt",
+  "motorManufacturer": "AeroTech",
+  "motorDesignation": "M650W"
+}

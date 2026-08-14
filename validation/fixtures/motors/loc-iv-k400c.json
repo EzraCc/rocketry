@@ -1,0 +1,122 @@
+{
+  "meta": {
+    "motorId": "5f4294d20002310000000450",
+    "manufacturer": "AeroTech",
+    "manufacturerAbbrev": "AeroTech",
+    "designation": "K400C",
+    "commonName": "K400",
+    "impulseClass": "K",
+    "diameter": 54,
+    "length": 359,
+    "type": "SU",
+    "certOrg": "Tripoli Rocketry Association, Inc.",
+    "avgThrustN": 409,
+    "maxThrustN": 546,
+    "totImpulseNs": 1304,
+    "burnTimeS": 3.2,
+    "dataFiles": 2,
+    "totalWeightG": 1194,
+    "propWeightG": 493,
+    "delays": "6,8,10,12,14",
+    "delayAdjustable": true,
+    "propInfo": "Classic",
+    "sparky": false,
+    "updatedOn": "2025-08-10",
+    "availability": "regular",
+    "source_url": "http://www.thrustcurve.org/motors/AeroTech/K400C/"
+  },
+  "samples": [
+    {
+      "time": 0.008,
+      "thrust": 376.374
+    },
+    {
+      "time": 0.025,
+      "thrust": 526.181
+    },
+    {
+      "time": 0.034,
+      "thrust": 548.466
+    },
+    {
+      "time": 0.063,
+      "thrust": 500.182
+    },
+    {
+      "time": 0.178,
+      "thrust": 527.419
+    },
+    {
+      "time": 0.394,
+      "thrust": 522.467
+    },
+    {
+      "time": 0.69,
+      "thrust": 502.658
+    },
+    {
+      "time": 1.003,
+      "thrust": 487.801
+    },
+    {
+      "time": 1.494,
+      "thrust": 446.944
+    },
+    {
+      "time": 2.002,
+      "thrust": 402.374
+    },
+    {
+      "time": 2.243,
+      "thrust": 377.612
+    },
+    {
+      "time": 2.501,
+      "thrust": 363.994
+    },
+    {
+      "time": 2.658,
+      "thrust": 354.089
+    },
+    {
+      "time": 2.772,
+      "thrust": 337.994
+    },
+    {
+      "time": 2.844,
+      "thrust": 304.566
+    },
+    {
+      "time": 2.882,
+      "thrust": 268.662
+    },
+    {
+      "time": 2.929,
+      "thrust": 177.044
+    },
+    {
+      "time": 2.963,
+      "thrust": 116.379
+    },
+    {
+      "time": 3.001,
+      "thrust": 99.046
+    },
+    {
+      "time": 3.064,
+      "thrust": 94.094
+    },
+    {
+      "time": 3.123,
+      "thrust": 61.904
+    },
+    {
+      "time": 3.208,
+      "thrust": 18.571
+    },
+    {
+      "time": 3.259,
+      "thrust": 0
+    }
+  ]
+}

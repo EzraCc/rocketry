@@ -1,0 +1,17 @@
+{
+  "cpXMm": 258.8674932735086,
+  "cgAtLiftoffMm": 191.97477017350894,
+  "massAtLiftoffKg": 0.10094524040876295,
+  "refDiameterMm": 25.0012,
+  "stabilityMarginCalibers": 2.6755804961361718,
+  "apogeeAltitudeM": 231.31269607457077,
+  "apogeeTimeS": 7.293839831497783,
+  "apogeeEventTimeS": 7.339512506808964,
+  "maxVelocityMs": 67.58251999699401,
+  "maxMach": 0.1994106283010866,
+  "maxAccelerationMs2": 131.5643594002466,
+  "label": "mach1-patriot-bt50-c6",
+  "rocketPath": "public/library/mach1/Patriot BT50.rkt",
+  "motorManufacturer": "Estes",
+  "motorDesignation": "C6"
+}

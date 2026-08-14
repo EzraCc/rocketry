@@ -1,0 +1,71 @@
+{
+  "meta": {
+    "motorId": "5f4294d200023100000001cb",
+    "manufacturer": "AeroTech",
+    "manufacturerAbbrev": "AeroTech",
+    "designation": "G339N",
+    "commonName": "G339",
+    "impulseClass": "G",
+    "diameter": 38,
+    "length": 97,
+    "type": "reload",
+    "certOrg": "Tripoli Rocketry Association, Inc.",
+    "avgThrustN": 307.53,
+    "maxThrustN": 503.51,
+    "totImpulseNs": 108.9,
+    "burnTimeS": 0.35,
+    "dataFiles": 2,
+    "totalWeightG": 181,
+    "propWeightG": 49,
+    "delays": "P",
+    "delayAdjustable": false,
+    "caseInfo": "RMS-38/120",
+    "propInfo": "Warp 9",
+    "sparky": false,
+    "updatedOn": "2019-04-17",
+    "availability": "regular",
+    "source_url": "http://www.thrustcurve.org/motors/AeroTech/G339N/"
+  },
+  "samples": [
+    {
+      "time": 0.009,
+      "thrust": 371
+    },
+    {
+      "time": 0.05,
+      "thrust": 375
+    },
+    {
+      "time": 0.1,
+      "thrust": 375
+    },
+    {
+      "time": 0.15,
+      "thrust": 364
+    },
+    {
+      "time": 0.2,
+      "thrust": 349
+    },
+    {
+      "time": 0.25,
+      "thrust": 310
+    },
+    {
+      "time": 0.3,
+      "thrust": 264
+    },
+    {
+      "time": 0.324,
+      "thrust": 257
+    },
+    {
+      "time": 0.342,
+      "thrust": 39
+    },
+    {
+      "time": 0.359,
+      "thrust": 0
+    }
+  ]
+}

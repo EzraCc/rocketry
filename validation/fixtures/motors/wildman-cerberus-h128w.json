@@ -1,0 +1,135 @@
+{
+  "meta": {
+    "motorId": "5f4294d20002310000000083",
+    "manufacturer": "AeroTech",
+    "manufacturerAbbrev": "AeroTech",
+    "designation": "H128W",
+    "commonName": "H128",
+    "impulseClass": "H",
+    "diameter": 29,
+    "length": 194,
+    "type": "reload",
+    "certOrg": "Tripoli Rocketry Association, Inc.",
+    "avgThrustN": 128,
+    "maxThrustN": 168.7,
+    "totImpulseNs": 172.9,
+    "burnTimeS": 1.27,
+    "dataFiles": 2,
+    "totalWeightG": 206,
+    "propWeightG": 94.2,
+    "delays": "4,6,8,10",
+    "delayAdjustable": false,
+    "caseInfo": "RMS-29/180",
+    "propInfo": "White Lightning",
+    "sparky": false,
+    "updatedOn": "2019-04-17",
+    "availability": "regular",
+    "source_url": "http://www.thrustcurve.org/motors/AeroTech/H128W/"
+  },
+  "samples": [
+    {
+      "time": 0.024,
+      "thrust": 102.423
+    },
+    {
+      "time": 0.074,
+      "thrust": 175.203
+    },
+    {
+      "time": 0.125,
+      "thrust": 181.379
+    },
+    {
+      "time": 0.176,
+      "thrust": 179.281
+    },
+    {
+      "time": 0.226,
+      "thrust": 181.423
+    },
+    {
+      "time": 0.277,
+      "thrust": 186.074
+    },
+    {
+      "time": 0.328,
+      "thrust": 190.483
+    },
+    {
+      "time": 0.378,
+      "thrust": 189.509
+    },
+    {
+      "time": 0.429,
+      "thrust": 186.162
+    },
+    {
+      "time": 0.48,
+      "thrust": 184.114
+    },
+    {
+      "time": 0.53,
+      "thrust": 180.3
+    },
+    {
+      "time": 0.581,
+      "thrust": 174.144
+    },
+    {
+      "time": 0.632,
+      "thrust": 172.019
+    },
+    {
+      "time": 0.683,
+      "thrust": 169.36
+    },
+    {
+      "time": 0.734,
+      "thrust": 166.017
+    },
+    {
+      "time": 0.784,
+      "thrust": 161.882
+    },
+    {
+      "time": 0.835,
+      "thrust": 157.331
+    },
+    {
+      "time": 0.886,
+      "thrust": 153.073
+    },
+    {
+      "time": 0.936,
+      "thrust": 151.985
+    },
+    {
+      "time": 0.988,
+      "thrust": 139.902
+    },
+    {
+      "time": 1.039,
+      "thrust": 87.865
+    },
+    {
+      "time": 1.089,
+      "thrust": 40.857
+    },
+    {
+      "time": 1.14,
+      "thrust": 14.328
+    },
+    {
+      "time": 1.191,
+      "thrust": 4.33
+    },
+    {
+      "time": 1.242,
+      "thrust": 1.55
+    },
+    {
+      "time": 1.293,
+      "thrust": 0
+    }
+  ]
+}

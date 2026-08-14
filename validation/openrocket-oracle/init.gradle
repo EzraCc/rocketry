@@ -1,0 +1,40 @@
+// External Gradle init script -- NOT part of the openrocket repo (openrocket is used read-only,
+// as reference material for this project's independent physics re-derivation; see this project's
+// own plan for why). Adds a throwaway task to :core that compiles and runs RocketryOracle.java
+// (source lives alongside this file, in the rocketry repo) against :core's own test sourceSet, so
+// it gets Gradle's REAL dependency resolution for free -- crucially the SQLite JDBC driver the
+// bundled motor database needs (org.xerial:sqlite-jdbc, confirmed in core/build.gradle) --
+// instead of hand-constructing a classpath by hand.
+//
+// Not meant to be invoked directly; see run.sh for the one-command entry point, which sets
+// ROCKETRY_REPO_DIR before calling this.
+
+def repoDir = System.getenv('ROCKETRY_REPO_DIR')
+if (repoDir == null || repoDir.isEmpty()) {
+    throw new GradleException("ROCKETRY_REPO_DIR not set -- run via validation/openrocket-oracle/run.sh, not this init script directly")
+}
+def oracleSrcDir = new File(repoDir, 'validation/openrocket-oracle')
+
+rootProject {
+    afterEvaluate {
+        project(':core') {
+            sourceSets {
+                test {
+                    java {
+                        srcDir oracleSrcDir
+                    }
+                }
+            }
+            tasks.register('runRocketryOracle', JavaExec) {
+                group = 'rocketry'
+                description = 'Runs the RocketryOracle validation harness (see rocketry/validation/openrocket-oracle/)'
+                dependsOn 'testClasses'
+                classpath = sourceSets.test.runtimeClasspath
+                mainClass.set('RocketryOracle')
+                environment 'ROCKETRY_REPO_DIR', repoDir
+                standardOutput = System.out
+                errorOutput = System.err
+            }
+        }
+    }
+}

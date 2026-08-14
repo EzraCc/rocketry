@@ -1,0 +1,135 @@
+{
+  "meta": {
+    "motorId": "5f4294d20002310000000146",
+    "manufacturer": "AeroTech",
+    "manufacturerAbbrev": "AeroTech",
+    "designation": "K550W",
+    "commonName": "K550",
+    "impulseClass": "K",
+    "diameter": 54,
+    "length": 410,
+    "type": "reload",
+    "certOrg": "Tripoli Rocketry Association, Inc.",
+    "avgThrustN": 396.8,
+    "maxThrustN": 655.3,
+    "totImpulseNs": 1539.118,
+    "burnTimeS": 3.879,
+    "dataFiles": 2,
+    "totalWeightG": 1487.36,
+    "propWeightG": 889.1,
+    "delays": "6,8,10,12,14",
+    "delayAdjustable": false,
+    "caseInfo": "RMS-54/1706",
+    "propInfo": "White Lightning",
+    "sparky": false,
+    "updatedOn": "2019-04-17",
+    "availability": "regular",
+    "source_url": "http://www.thrustcurve.org/motors/AeroTech/K550W/"
+  },
+  "samples": [
+    {
+      "time": 0.065,
+      "thrust": 604.264
+    },
+    {
+      "time": 0.196,
+      "thrust": 642.625
+    },
+    {
+      "time": 0.327,
+      "thrust": 682.197
+    },
+    {
+      "time": 0.458,
+      "thrust": 732.995
+    },
+    {
+      "time": 0.591,
+      "thrust": 758.236
+    },
+    {
+      "time": 0.723,
+      "thrust": 780.289
+    },
+    {
+      "time": 0.854,
+      "thrust": 794.452
+    },
+    {
+      "time": 0.985,
+      "thrust": 797.939
+    },
+    {
+      "time": 1.117,
+      "thrust": 797.601
+    },
+    {
+      "time": 1.249,
+      "thrust": 773.842
+    },
+    {
+      "time": 1.381,
+      "thrust": 711.608
+    },
+    {
+      "time": 1.512,
+      "thrust": 646.522
+    },
+    {
+      "time": 1.644,
+      "thrust": 590.724
+    },
+    {
+      "time": 1.775,
+      "thrust": 537.505
+    },
+    {
+      "time": 1.907,
+      "thrust": 491.012
+    },
+    {
+      "time": 2.04,
+      "thrust": 445.836
+    },
+    {
+      "time": 2.171,
+      "thrust": 401.461
+    },
+    {
+      "time": 2.302,
+      "thrust": 364.291
+    },
+    {
+      "time": 2.433,
+      "thrust": 319.614
+    },
+    {
+      "time": 2.566,
+      "thrust": 255.577
+    },
+    {
+      "time": 2.698,
+      "thrust": 172.573
+    },
+    {
+      "time": 2.829,
+      "thrust": 103.501
+    },
+    {
+      "time": 2.96,
+      "thrust": 51.795
+    },
+    {
+      "time": 3.092,
+      "thrust": 26.814
+    },
+    {
+      "time": 3.224,
+      "thrust": 15.203
+    },
+    {
+      "time": 3.356,
+      "thrust": 0
+    }
+  ]
+}

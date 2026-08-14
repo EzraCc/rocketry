@@ -1,0 +1,44 @@
+[
+  {
+    "label": "loc-iv-k400c",
+    "rocketPath": "public/library/loc/PK-48 LOC-IV.rkt",
+    "motorManufacturer": "AeroTech",
+    "motorDesignation": "K400C",
+    "note": "The project's own gold-standard reference case (RockSim's own CP for this exact file is independently hand-verified elsewhere) — 38mm mount. No saved simulation in the file itself, K400C picked manually (same motor scripts/export-ascent-path.ts already uses)."
+  },
+  {
+    "label": "big-nuke-3e-m650w",
+    "rocketPath": "public/library/loc/Big Nuke 3E.rkt",
+    "motorManufacturer": "AeroTech",
+    "motorDesignation": "M650W",
+    "note": "76mm mount. Real, vendor-saved simulation motor -- this exact file has 3 saved sims (M1297W/M650W/L850W), M650W picked as the mid-size one."
+  },
+  {
+    "label": "apogee-katana-k550w",
+    "rocketPath": "public/library/apogee/Katana.rkt",
+    "motorManufacturer": "AeroTech",
+    "motorDesignation": "K550W",
+    "note": "54mm mount. Real, vendor-saved simulation motor (this file has dozens, spanning I100-L990)."
+  },
+  {
+    "label": "apogee-zephyr-g339n",
+    "rocketPath": "public/library/apogee/Zephyr.rkt",
+    "motorManufacturer": "AeroTech",
+    "motorDesignation": "G339N",
+    "note": "38.7mm mount. Real, vendor-saved simulation motor. (This file's saved sims also include H120-RL, but that exact designation no longer resolves on ThrustCurve.org -- confirmed directly, likely discontinued/renamed since the file was saved -- so G339N was used instead, still one of the file's own embedded choices.)"
+  },
+  {
+    "label": "wildman-cerberus-h128w",
+    "rocketPath": "public/library/wildman/Cerberus.rkt",
+    "motorManufacturer": "AeroTech",
+    "motorDesignation": "H128W",
+    "note": "29mm mount. Freeform-fin geometry, not trapezoidal -- exercises a different code path than the LOC/Apogee cases above. (This file's saved sims list H160-SK/H180-SK/etc, but none of those exact designations resolve on ThrustCurve.org currently -- confirmed directly, likely a RockSim-internal or since-renamed motor database -- so H128W, a real, current, correctly-sized 29mm AeroTech H motor, was used instead.)"
+  },
+  {
+    "label": "mach1-patriot-bt50-c6",
+    "rocketPath": "public/library/mach1/Patriot BT50.rkt",
+    "motorManufacturer": "Estes",
+    "motorDesignation": "C6",
+    "note": "18mm mount, small/low-power end of the library. No saved simulation in the file, Estes C6 picked manually (classic, always-in-the-database motor -- same one OpenRocketCoreTest itself uses to sanity-check the motor DB, just C6 instead of B6). Manufacturer specified explicitly -- multiple vendors make a \"C6\", confirmed directly (ThrustCurve.org's own search also returns a Quest Aerospace C6) -- without pinning it, the Java harness and the TS motor-fixture fetch could each independently pick a DIFFERENT one sharing the same bare designation."
+  }
+]

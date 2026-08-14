@@ -1,0 +1,116 @@
+{
+  "meta": {
+    "motorId": "5f4294d200023100000001d7",
+    "manufacturer": "AeroTech",
+    "manufacturerAbbrev": "AeroTech",
+    "designation": "M650W",
+    "commonName": "M650",
+    "impulseClass": "M",
+    "diameter": 75,
+    "length": 801,
+    "type": "reload",
+    "certOrg": "National Association of Rocketry",
+    "avgThrustN": 656,
+    "maxThrustN": 1475,
+    "totImpulseNs": 5964,
+    "burnTimeS": 9.13,
+    "dataFiles": 2,
+    "infoUrl": "https://nar.org/SandT/pdf/Aerotech/M650W.pdf",
+    "totalWeightG": 5125,
+    "propWeightG": 3351,
+    "delays": "P",
+    "delayAdjustable": false,
+    "caseInfo": "RMS-75/6400",
+    "propInfo": "White Lightning",
+    "sparky": false,
+    "updatedOn": "2022-07-23",
+    "availability": "regular",
+    "source_url": "http://www.thrustcurve.org/motors/AeroTech/M650W/"
+  },
+  "samples": [
+    {
+      "time": 0,
+      "thrust": 0
+    },
+    {
+      "time": 0.08,
+      "thrust": 1240
+    },
+    {
+      "time": 0.12,
+      "thrust": 1328
+    },
+    {
+      "time": 0.25,
+      "thrust": 1230
+    },
+    {
+      "time": 0.5,
+      "thrust": 1142
+    },
+    {
+      "time": 1,
+      "thrust": 1071
+    },
+    {
+      "time": 1.5,
+      "thrust": 1048
+    },
+    {
+      "time": 2,
+      "thrust": 1018
+    },
+    {
+      "time": 2.5,
+      "thrust": 982
+    },
+    {
+      "time": 3,
+      "thrust": 950
+    },
+    {
+      "time": 3.5,
+      "thrust": 853
+    },
+    {
+      "time": 4,
+      "thrust": 781
+    },
+    {
+      "time": 5,
+      "thrust": 595
+    },
+    {
+      "time": 6,
+      "thrust": 443
+    },
+    {
+      "time": 7,
+      "thrust": 297
+    },
+    {
+      "time": 8,
+      "thrust": 155
+    },
+    {
+      "time": 9,
+      "thrust": 88
+    },
+    {
+      "time": 10,
+      "thrust": 32
+    },
+    {
+      "time": 10.5,
+      "thrust": 12
+    },
+    {
+      "time": 11,
+      "thrust": 4
+    },
+    {
+      "time": 11.5,
+      "thrust": 0
+    }
+  ]
+}
