@@ -1957,6 +1957,9 @@ if (app) {
       ${orkSectionHtml}
       ${windSectionHtml}
       ${motorSectionHtml}
+      <footer>
+        <small><a href="/validation-report.html" target="_blank" rel="noopener">Validation report</a> — how this project's computed CP/CG/flight results compare against real OpenRocket simulations and RockSim's own data, for a curated set of real rocket+motor cases.</small>
+      </footer>
     </main>
   `;
   renderActiveRocketDisplay();

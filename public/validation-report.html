@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>rocketry — validation report</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1a1a1a; --muted: #666666; --border: #dddddd;
+    --head-bg: #f4f4f5; --delta-high: #c0392b; --link: #2f6feb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #14161a; --fg: #e8e8e8; --muted: #9a9a9a; --border: #33363b; --head-bg: #1e2126; --delta-high: #ff6b6b; --link: #6ea8fe; }
+  }
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--fg); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; margin: 0; padding: 1.5rem; line-height: 1.5; }
+  h1 { font-size: 1.4rem; margin: 0 0 0.25rem; }
+  .subtitle { color: var(--muted); margin: 0 0 1rem; font-size: 0.9rem; }
+  a { color: var(--link); }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 6px; max-width: 100%; }
+  table { border-collapse: collapse; width: 100%; min-width: 900px; font-size: 0.85rem; }
+  th, td { padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; white-space: nowrap; }
+  thead th { position: sticky; top: 0; background: var(--head-bg); z-index: 2; white-space: normal; }
+  tbody th[scope="row"] { position: sticky; left: 0; background: var(--bg); z-index: 1; border-right: 1px solid var(--border); }
+  thead th:first-child { position: sticky; left: 0; z-index: 3; }
+  .src { color: var(--muted); font-size: 0.75rem; display: inline-block; width: 3.6rem; }
+  .delta { color: var(--muted); font-size: 0.78rem; }
+  .delta-high { color: var(--delta-high); font-weight: 600; }
+  footer { margin-top: 1.5rem; color: var(--muted); font-size: 0.8rem; }
+</style>
+</head>
+<body>
+  <h1>rocketry — validation report</h1>
+  <p class="subtitle">
+    This project's own computed values vs. real OpenRocket (Java) simulations and RockSim's own embedded CP,
+    for 6 real rocket+motor cases. CP compared at Mach 0.1 (~100fps, the safety-relevant rail-exit speed).
+    "Ours" is the full pipeline a real user sees (this project's own geometry-derived dry CG/mass feeding its own flight sim),
+    not an isolated aero-only comparison. RockSim contributes CP only (see this report's generation script for why).
+    Deltas are Ours vs. OpenRocket. Generated 2026-08-14 from
+    <a href="https://github.com/openrocket/openrocket" target="_blank" rel="noopener">OpenRocket</a>-derived fixtures — see
+    <code>validation/</code> in the repo for how.
+  </p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Rocket / Motor</th>
+          <th>CP</th>
+          <th>Dry CG</th>
+          <th>Loaded CG</th>
+          <th>Max velocity</th>
+          <th>Apogee</th>
+        </tr>
+      </thead>
+      <tbody>
+      <tr>
+        <th scope="row">PK-48 LOC-IV<br /><small>AeroTech K400C</small></th>
+        <td><span class="src">Ours</span> 946.6 mm<br /><span class="src">OR</span> 904.7 mm<br /><span class="src">RockSim</span> 899.2 mm<br /><span class="delta">Δ +41.9 mm (+4.6%)</span></td>
+        <td><span class="src">Ours</span> 688.9 mm<br /><span class="src">OR</span> 761.0 mm<br /><span class="delta">Δ -72.0 mm (-9.5%)</span></td>
+        <td><span class="src">Ours</span> 851.3 mm<br /><span class="src">OR</span> 894.7 mm<br /><span class="delta">Δ -43.4 mm (-4.9%)</span></td>
+        <td><span class="src">Ours</span> 377.8 m/s<br /><span class="src">OR</span> 373.5 m/s<br /><span class="delta">Δ +4.4 m/s (+1.2%)</span></td>
+        <td><span class="src">Ours</span> 2397.1 m<br /><span class="src">OR</span> 2238.9 m<br /><span class="delta">Δ +158.2 m (+7.1%)</span></td>
+      </tr>
+      <tr>
+        <th scope="row">Big Nuke 3E<br /><small>AeroTech M650W</small></th>
+        <td><span class="src">Ours</span> 1557.2 mm<br /><span class="src">OR</span> 1497.1 mm<br /><span class="src">RockSim</span> 1525.6 mm<br /><span class="delta">Δ +60.1 mm (+4.0%)</span></td>
+        <td><span class="src">Ours</span> 1239.0 mm<br /><span class="src">OR</span> 1254.8 mm<br /><span class="delta">Δ -15.8 mm (-1.3%)</span></td>
+        <td><span class="src">Ours</span> 1389.5 mm<br /><span class="src">OR</span> 1401.8 mm<br /><span class="delta">Δ -12.3 mm (-0.9%)</span></td>
+        <td><span class="src">Ours</span> 304.1 m/s<br /><span class="src">OR</span> 296.7 m/s<br /><span class="delta">Δ +7.5 m/s (+2.5%)</span></td>
+        <td><span class="src">Ours</span> 4202.8 m<br /><span class="src">OR</span> 3904.3 m<br /><span class="delta">Δ +298.5 m (+7.6%)</span></td>
+      </tr>
+      <tr>
+        <th scope="row">Katana<br /><small>AeroTech K550W</small></th>
+        <td><span class="src">Ours</span> 1584.4 mm<br /><span class="src">OR</span> 1545.3 mm<br /><span class="src">RockSim</span> 1551.2 mm<br /><span class="delta">Δ +39.2 mm (+2.5%)</span></td>
+        <td><span class="src">Ours</span> 1224.3 mm<br /><span class="src">OR</span> 1244.6 mm<br /><span class="delta">Δ -20.3 mm (-1.6%)</span></td>
+        <td><span class="src">Ours</span> 1408.0 mm<br /><span class="src">OR</span> 1436.2 mm<br /><span class="delta">Δ -28.2 mm (-2.0%)</span></td>
+        <td><span class="src">Ours</span> 344.1 m/s<br /><span class="src">OR</span> 331.6 m/s<br /><span class="delta">Δ +12.5 m/s (+3.8%)</span></td>
+        <td><span class="src">Ours</span> 2406.1 m<br /><span class="src">OR</span> 1875.1 m<br /><span class="delta delta-high">Δ +531.0 m (+28.3%)</span></td>
+      </tr>
+      <tr>
+        <th scope="row">Zephyr<br /><small>AeroTech G339N</small></th>
+        <td><span class="src">Ours</span> 1115.8 mm<br /><span class="src">OR</span> 1075.9 mm<br /><span class="src">RockSim</span> 1071.9 mm<br /><span class="delta">Δ +39.9 mm (+3.7%)</span></td>
+        <td><span class="src">Ours</span> 958.0 mm<br /><span class="src">OR</span> 929.7 mm<br /><span class="delta">Δ +28.3 mm (+3.0%)</span></td>
+        <td><span class="src">Ours</span> 1002.1 mm<br /><span class="src">OR</span> 991.6 mm<br /><span class="delta">Δ +10.5 mm (+1.1%)</span></td>
+        <td><span class="src">Ours</span> 64.3 m/s<br /><span class="src">OR</span> 83.6 m/s<br /><span class="delta delta-high">Δ -19.3 m/s (-23.1%)</span></td>
+        <td><span class="src">Ours</span> 190.7 m<br /><span class="src">OR</span> 245.4 m<br /><span class="delta delta-high">Δ -54.7 m (-22.3%)</span></td>
+      </tr>
+      <tr>
+        <th scope="row">Cerberus<br /><small>AeroTech H128W</small></th>
+        <td><span class="src">Ours</span> 1817.9 mm<br /><span class="src">OR</span> 1789.3 mm<br /><span class="src">RockSim</span> 1734.3 mm<br /><span class="delta">Δ +28.5 mm (+1.6%)</span></td>
+        <td><span class="src">Ours</span> —<br /><span class="src">OR</span> 1377.0 mm</td>
+        <td><span class="src">Ours</span> —<br /><span class="src">OR</span> 1406.1 mm</td>
+        <td><span class="src">Ours</span> —<br /><span class="src">OR</span> 27.8 m/s</td>
+        <td><span class="src">Ours</span> —<br /><span class="src">OR</span> 55.4 m</td>
+      </tr>
+      <tr>
+        <th scope="row">Patriot BT50<br /><small>Estes C6</small></th>
+        <td><span class="src">Ours</span> 277.8 mm<br /><span class="src">OR</span> 258.9 mm<br /><span class="src">RockSim</span> 258.8 mm<br /><span class="delta">Δ +18.9 mm (+7.3%)</span></td>
+        <td><span class="src">Ours</span> 141.4 mm<br /><span class="src">OR</span> 146.2 mm<br /><span class="delta">Δ -4.7 mm (-3.2%)</span></td>
+        <td><span class="src">Ours</span> 187.8 mm<br /><span class="src">OR</span> 192.0 mm<br /><span class="delta">Δ -4.2 mm (-2.2%)</span></td>
+        <td><span class="src">Ours</span> 69.7 m/s<br /><span class="src">OR</span> 67.6 m/s<br /><span class="delta">Δ +2.2 m/s (+3.2%)</span></td>
+        <td><span class="src">Ours</span> 271.2 m<br /><span class="src">OR</span> 231.3 m<br /><span class="delta">Δ +39.9 m (+17.3%)</span></td>
+      </tr>
+      </tbody>
+    </table>
+  </div>
+  <footer>rocketry is an independent, GPL-avoiding re-derivation of OpenRocket's Barrowman physics — see the project README for details.</footer>
+</body>
+</html>
