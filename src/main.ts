@@ -968,8 +968,15 @@ function syncMotorMountUi(): void {
   }
   const nearest = nearestStandardDiameterMm(activeMotorMountDiameterMm);
   // Motor mount diameter is always mm, not run through fmtLength's cm/in toggle -- same reasoning
-  // as the motor search results' Diameter column.
-  noteEl.textContent = `Motor mount: ${activeMotorMountDiameterMm.toFixed(1)}mm — diameter filter set to the closest standard size${nearest !== null ? ` (${nearest}mm)` : ""}, larger sizes disabled (physically won't fit). Check "use motor adapter" to also allow smaller motors.`;
+  // as the motor search results' Diameter column. Leads with the nearest standard motor class (the
+  // figure that actually matters for picking a motor), with the raw measured ID as a secondary
+  // parenthetical -- NOT framed as "rounded to the closest size," which reads as flagging a
+  // discrepancy that needs explaining. A tube's real ID is routinely a fraction of a mm off its
+  // nominal motor class (a 38mm motor needs some clearance to physically slide into a 38.x mm
+  // tube) -- normal manufacturing reality, not something to call out every time.
+  noteEl.textContent = `Motor mount: ${nearest !== null ? `${nearest}mm` : `${activeMotorMountDiameterMm.toFixed(1)}mm`}${
+    nearest !== null ? ` (measured ID ${activeMotorMountDiameterMm.toFixed(1)}mm)` : ""
+  } — larger sizes disabled, they physically won't fit. Check "use motor adapter" to also allow smaller motors.`;
   if (!diaEl) return;
 
   // A motor wider than the mount can't physically go in, adapter or not (the adapter checkbox is
