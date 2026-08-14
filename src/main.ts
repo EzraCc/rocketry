@@ -476,7 +476,12 @@ function afterDryMassChanged(): void {
   renderAndWireResults();
   if (lastMotorSelection) {
     const rocketWithMotor = renderMotorDetailAndMountChart(lastMotorSelection.meta, lastMotorSelection.samples);
-    if (rocketWithMotor) void runFlightSim(rocketWithMotor);
+    // Motor search/detail stays available for unsupported-geometry rockets (a user can still want
+    // to know what a motor looks like -- thrust curve, mass, real ThrustCurve.org data, none of
+    // which depends on the rocket it'd be attached to) -- only the actual flight simulation is
+    // gated, since that's the part this project's aero model can't trust for that geometry (see
+    // activeUnsupportedFeatures' own doc comment).
+    if (rocketWithMotor && activeUnsupportedFeatures.length === 0) void runFlightSim(rocketWithMotor);
   }
 }
 
@@ -572,7 +577,12 @@ function wireCgStatEdit(): void {
     renderActiveRocketDisplay();
     if (lastMotorSelection) {
       const rocketWithMotor = renderMotorDetailAndMountChart(lastMotorSelection.meta, lastMotorSelection.samples);
-      if (rocketWithMotor) void runFlightSim(rocketWithMotor);
+      // Motor search/detail stays available for unsupported-geometry rockets (a user can still want
+    // to know what a motor looks like -- thrust curve, mass, real ThrustCurve.org data, none of
+    // which depends on the rocket it'd be attached to) -- only the actual flight simulation is
+    // gated, since that's the part this project's aero model can't trust for that geometry (see
+    // activeUnsupportedFeatures' own doc comment).
+    if (rocketWithMotor && activeUnsupportedFeatures.length === 0) void runFlightSim(rocketWithMotor);
     }
   });
 
@@ -585,7 +595,12 @@ function wireCgStatEdit(): void {
     renderActiveRocketDisplay();
     if (lastMotorSelection) {
       const rocketWithMotor = renderMotorDetailAndMountChart(lastMotorSelection.meta, lastMotorSelection.samples);
-      if (rocketWithMotor) void runFlightSim(rocketWithMotor);
+      // Motor search/detail stays available for unsupported-geometry rockets (a user can still want
+    // to know what a motor looks like -- thrust curve, mass, real ThrustCurve.org data, none of
+    // which depends on the rocket it'd be attached to) -- only the actual flight simulation is
+    // gated, since that's the part this project's aero model can't trust for that geometry (see
+    // activeUnsupportedFeatures' own doc comment).
+    if (rocketWithMotor && activeUnsupportedFeatures.length === 0) void runFlightSim(rocketWithMotor);
     }
   });
 }
@@ -694,7 +709,7 @@ function renderRocketSection(rocket: Rocket, mach: number, subtitle: string): st
       </header>
       ${
         activeUnsupportedFeatures.length > 0
-          ? `<p><mark>Not currently supported: ${activeUnsupportedFeatures.join(", ")}. Motor search and flight simulation are disabled for this rocket — CP above is still computed from its geometry, and the original file is still viewable/downloadable above.</mark></p>`
+          ? `<p><mark>Not currently supported: ${activeUnsupportedFeatures.join(", ")}. Flight simulation is disabled for this rocket — CP above is still computed from its geometry, motor search still works, and the original file is still viewable/downloadable above.</mark></p>`
           : ""
       }
       <div class="grid stats-grid">${stats}</div>
@@ -1321,7 +1336,11 @@ function renderMotorDetailHtml(meta: MotorSearchResult, samples: ThrustSample[])
         </tbody>
       </table>
     </figure>
-    <div id="flight-sim-section"><p aria-busy="true">Simulating flight…</p></div>
+    <div id="flight-sim-section">${
+      activeUnsupportedFeatures.length > 0
+        ? `<p><mark>Flight simulation not available: ${activeUnsupportedFeatures.join(", ")}.</mark> This rocket's geometry isn't modeled well enough for a trustworthy simulation yet -- the motor data above is still real (its own thrust/mass curve doesn't depend on the rocket it's attached to).</p>`
+        : `<p aria-busy="true">Simulating flight…</p>`
+    }</div>
   `;
   return { html, rocketWithMotor };
 }
@@ -1379,7 +1398,12 @@ async function selectMotor(meta: MotorSearchResult): Promise<void> {
     // against activeDryMassKg) needs refreshing too, or it'd keep showing ratios flagged against
     // the stale, now-discarded back-solved mass.
     if (dryMassReverted) renderAndWireResults();
-    if (rocketWithMotor) void runFlightSim(rocketWithMotor);
+    // Motor search/detail stays available for unsupported-geometry rockets (a user can still want
+    // to know what a motor looks like -- thrust curve, mass, real ThrustCurve.org data, none of
+    // which depends on the rocket it'd be attached to) -- only the actual flight simulation is
+    // gated, since that's the part this project's aero model can't trust for that geometry (see
+    // activeUnsupportedFeatures' own doc comment).
+    if (rocketWithMotor && activeUnsupportedFeatures.length === 0) void runFlightSim(rocketWithMotor);
   } catch (err) {
     detailEl.innerHTML = `<p><mark>Failed to load thrust curve: ${err instanceof Error ? err.message : String(err)}</mark></p>`;
   }
@@ -1513,10 +1537,6 @@ async function performSearch(): Promise<void> {
   const resultsEl = document.querySelector<HTMLDivElement>("#motor-results");
   const submitBtn = document.querySelector<HTMLButtonElement>("#motor-search-form button[type=submit]");
   if (!resultsEl) return;
-  // Belt-and-suspenders alongside updateMotorSectionAvailability hiding the form -- a hidden
-  // form's inputs shouldn't be submittable, but don't run a search against unmodeled geometry
-  // even if something (e.g. a stale URL-param-triggered search) gets past that.
-  if (activeUnsupportedFeatures.length > 0) return;
 
   const mfg = filterElement("manufacturer")?.value.trim() ?? "";
   const diameter = filterElement("diameter")?.value.trim() ?? "";
@@ -1688,35 +1708,26 @@ function renderActiveRocketDisplay(): void {
 }
 
 /**
- * Disables motor search/flight-sim for the active rocket whenever it has activeUnsupportedFeatures
+ * Shows an informational (non-blocking) notice when the active rocket has activeUnsupportedFeatures
  * (external pods, tube fins, ring tails, cluster motor mounts, multiple stages -- see its own doc
- * comment) -- this tool's aero/mass model has no representation for that geometry, so running a
- * simulation would silently produce a wrong answer rather than a missing one. The rocket's own info
- * (name, CP, schematic) and the raw file (download button) stay available regardless -- only the
- * motor search form and any previously-shown results/detail are blocked. Called every time the
- * active rocket changes (renderActiveRocketDisplay), since that's the one thing that can flip
+ * comment). Motor search/browsing stays fully available regardless -- a user can still want to know
+ * what a motor looks like (thrust curve, mass, real ThrustCurve.org data) independent of whether
+ * this project's aero model can simulate the rocket it'd go in. Only the actual flight simulation is
+ * blocked (see the runFlightSim call sites, each gated on activeUnsupportedFeatures directly) --
+ * this tool's aero/mass model has no representation for that geometry, so running a sim would
+ * silently produce a wrong answer rather than a missing one. Called every time the active rocket
+ * changes (renderActiveRocketDisplay), since that's the one thing that can flip
  * activeUnsupportedFeatures.
  */
 function updateMotorSectionAvailability(): void {
-  const form = document.querySelector<HTMLFormElement>("#motor-search-form");
-  const resultsEl = document.querySelector<HTMLDivElement>("#motor-results");
-  const detailEl = document.querySelector<HTMLDivElement>("#motor-detail");
   const noticeEl = document.querySelector<HTMLDivElement>("#motor-section-unsupported-notice");
-  if (!form || !resultsEl || !detailEl) return;
+  if (!noticeEl) return;
 
   const unsupported = activeUnsupportedFeatures.length > 0;
-  form.hidden = unsupported;
-  if (unsupported) {
-    resultsEl.innerHTML = "";
-    detailEl.innerHTML = "";
-    if (noticeEl) {
-      noticeEl.hidden = false;
-      noticeEl.innerHTML = `<p><mark>Not currently supported: ${activeUnsupportedFeatures.join(", ")}.</mark> This rocket's geometry isn't modeled well enough for a trustworthy motor search or flight simulation yet.</p>`;
-    }
-  } else if (noticeEl) {
-    noticeEl.hidden = true;
-    noticeEl.innerHTML = "";
-  }
+  noticeEl.hidden = !unsupported;
+  noticeEl.innerHTML = unsupported
+    ? `<p><mark>Not currently supported: ${activeUnsupportedFeatures.join(", ")}.</mark> This rocket's geometry isn't modeled well enough for a trustworthy flight simulation yet -- motor search still works, so you can still look up a motor's own data.</p>`
+    : "";
 }
 
 function wireOrkImport(): void {
