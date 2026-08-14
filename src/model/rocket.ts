@@ -9,7 +9,10 @@ export interface SelectedMotor {
   length: number; // m
   totalMassKg: number;
   propellantMassKg: number;
-  samples: { time: number; thrust: number }[];
+  // propellantMassRemainingKg mirrors ThrustSample's own field (physics/motor/thrustcurve-client.ts)
+  // -- declared inline rather than imported to keep this model module independent of the API client
+  // -- see that field's own doc comment for what it means and when it's present.
+  samples: { time: number; thrust: number; propellantMassRemainingKg?: number }[];
   delay: number; // s
 }
 

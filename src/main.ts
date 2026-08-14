@@ -901,8 +901,9 @@ const motorSectionHtml = `
         Search <a href="https://www.thrustcurve.org" target="_blank" rel="noopener">ThrustCurve.org</a> live from the
         browser — no backend, CORS is open on their API — and attach a real motor to your rocket above
         (the library selection by default, or whatever you imported).
-        Shows its thrust curve, its derived mass curve (ThrustCurve.org has no mass-vs-time data, only total /
-        propellant weight, so mass loss is derived assuming it's proportional to cumulative thrust impulse), and the
+        Shows its thrust curve and its mass curve -- the real per-sample propellant mass when the motor's own
+        source file has one (RockSim/.rse files do; noted below when it applies), otherwise derived from total/
+        propellant weight assuming mass loss is proportional to cumulative thrust impulse -- and the
         combined rocket mass/CG at ignition, mid-burn, and burnout.
       </p>
     </header>
@@ -1320,6 +1321,8 @@ function renderMotorDetailHtml(meta: MotorSearchResult, samples: ThrustSample[])
   const start = massAt(0);
   const mid = massAt(midT);
   const end = massAt(bt);
+  // See deriveMotorMassCurve's own doc comment for the priority/source rule this mirrors exactly.
+  const hasRealMassData = samples.length > 0 && samples.every((s) => s.propellantMassRemainingKg !== undefined);
 
   const html = `
     <h3>${meta.manufacturer} ${meta.designation}</h3>
@@ -1327,7 +1330,8 @@ function renderMotorDetailHtml(meta: MotorSearchResult, samples: ThrustSample[])
     <p>Thrust curve: ${samples.length} samples, burn time ${bt.toFixed(2)}s.
       Total impulse (integrated from curve): ${fmtImpulse(totalImpulse(motor))}
       (ThrustCurve.org reports ${meta.totImpulseNs === undefined || meta.totImpulseNs === null ? "—" : fmtImpulse(meta.totImpulseNs)}).
-      Peak thrust: ${fmtForce(Math.max(...samples.map((s) => s.thrust)))}.</p>
+      Peak thrust: ${fmtForce(Math.max(...samples.map((s) => s.thrust)))}.
+      Mass curve: ${hasRealMassData ? "real per-sample propellant mass from the motor's own source file" : "derived from total/propellant weight (this motor's source file has no per-sample mass data)"}.</p>
     <figure><div id="thrust-curve-chart"></div></figure>
     <figure>
       <table>

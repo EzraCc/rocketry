@@ -4,9 +4,13 @@
  * Confirmed working directly from a browser (or Node) with no backend proxy:
  * CORS is fully open (access-control-allow-origin reflects the request
  * origin, methods GET/POST/PUT/DELETE, credentials true — verified via curl
- * against the live API). `download.json` with `data:"samples"` returns
- * pre-parsed {time, thrust} points directly as JSON, so no RASP .eng text
- * parsing is needed for this path.
+ * against the live API). `download.json` with `data:"both"` returns
+ * pre-parsed {time, thrust} points directly as JSON (no RASP .eng text
+ * parsing needed for that part) PLUS the base64-encoded raw source file --
+ * decoded/parsed here only for RockSim-format (.rse) files, which carry a
+ * real per-sample propellant-mass-remaining value RASP (.eng) files don't
+ * (see downloadThrustSamples/parseRseEngDataMassKg and
+ * ThrustSample.propellantMassRemainingKg).
  */
 const API_BASE = "https://www.thrustcurve.org/api/v1";
 
@@ -104,6 +108,16 @@ export async function getMotorMetadata(): Promise<MotorMetadata> {
 export interface ThrustSample {
   time: number;
   thrust: number;
+  /**
+   * Propellant mass REMAINING at this instant (kg, counting down to 0 by burnout) -- real,
+   * file-sourced data, not derived. Only ever present for RockSim-format (.rse) source files,
+   * which carry a real <eng-data t="..." f="..." m="..." cg="..."/> per sample (confirmed directly
+   * against a real file, e.g. AeroTech J340M -- m starts at the motor's own propWt and counts down
+   * to 0 exactly at burnout). RASP (.eng) format files -- the majority, including most "cert"
+   * source data -- have no such field, plain time/thrust pairs only; undefined in that case, and
+   * deriveMotorMassCurve (motor-mass-curve.ts) falls back to its own impulse-proportional estimate.
+   */
+  propellantMassRemainingKg?: number;
 }
 
 interface DownloadResult {
@@ -112,6 +126,8 @@ interface DownloadResult {
   format: string;
   source: string;
   samples?: ThrustSample[];
+  /** Base64-encoded raw source file (requested via data:"both" alongside samples) -- only decoded/parsed when format is "RockSim", to pull each sample's own real propellant-mass-remaining value (see ThrustSample.propellantMassRemainingKg). */
+  data?: string;
 }
 
 interface DownloadResponse {
@@ -119,12 +135,41 @@ interface DownloadResponse {
   error?: string; // present on a 400, e.g. "No motor IDs specified to download files for."
 }
 
-/** Downloads pre-parsed thrust-curve samples for a motor. Prefers a "cert" source file if multiple exist, per ThrustCurve.org's own source-quality ordering. */
+/**
+ * Parses propellant-mass-remaining (kg) out of a RockSim-format (.rse) raw file's own
+ * <eng-data t="..." m="..."/> entries, in document order -- the SAME entries ThrustCurve.org's own
+ * "samples" extraction is built from for this format (confirmed directly: for a real motor, the
+ * "samples" time/thrust values matched this file's own <eng-data> t/f values exactly, point for
+ * point), so zipping these masses onto the samples array by index is a straight 1:1 correspondence,
+ * not a separate/re-interpolated time series. Returns null (not a partial/best-effort array) if the
+ * file can't be decoded, has no <eng-data> tags, or any tag is missing a numeric m= value -- an
+ * all-or-nothing real curve, never a mix of real and guessed points.
+ */
+export function parseRseEngDataMassKg(base64Data: string): number[] | null {
+  let xml: string;
+  try {
+    xml = atob(base64Data);
+  } catch {
+    return null;
+  }
+  const tags = Array.from(xml.matchAll(/<eng-data\b([^/>]*)\/>/g));
+  if (tags.length === 0) return null;
+  const massesKg: number[] = [];
+  for (const tag of tags) {
+    const match = tag[1]!.match(/\bm="([^"]*)"/);
+    const massG = match ? Number.parseFloat(match[1]!) : Number.NaN;
+    if (!Number.isFinite(massG)) return null;
+    massesKg.push(massG / 1000);
+  }
+  return massesKg;
+}
+
+/** Downloads pre-parsed thrust-curve samples for a motor, plus each sample's own real propellant-mass-remaining when the winning source file has one (see ThrustSample.propellantMassRemainingKg). Prefers a "cert" source file if multiple exist, per ThrustCurve.org's own source-quality ordering -- unaffected by which file happens to carry real mass data, since curve quality/certification matters more than that. */
 export async function downloadThrustSamples(motorId: string): Promise<ThrustSample[]> {
   const res = await fetch(`${API_BASE}/download.json`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ motorIds: [motorId], data: "samples" }),
+    body: JSON.stringify({ motorIds: [motorId], data: "both" }),
   });
   const data = (await res.json().catch(() => null)) as DownloadResponse | null;
   if (!res.ok) {
@@ -139,7 +184,19 @@ export async function downloadThrustSamples(motorId: string): Promise<ThrustSamp
   const sourceRank = (source: string): number =>
     source === "cert" ? 0 : source === "mfr" ? 1 : 2;
   withSamples.sort((a, b) => sourceRank(a.source) - sourceRank(b.source));
-  return withSamples[0]!.samples;
+  const winner = withSamples[0]!;
+
+  if (winner.format === "RockSim" && winner.data) {
+    const massesKg = parseRseEngDataMassKg(winner.data);
+    // Only trust the zip-by-index when counts match exactly -- ThrustCurve.org's own "samples"
+    // extraction and this file's raw <eng-data> tags are normally the same points, but falling
+    // back to derivation (rather than guessing an alignment) if that ever isn't true is safer than
+    // risking a mass value attached to the wrong time.
+    if (massesKg && massesKg.length === winner.samples.length) {
+      return winner.samples.map((s, i) => ({ ...s, propellantMassRemainingKg: massesKg[i] }));
+    }
+  }
+  return winner.samples;
 }
 
 /**
