@@ -144,3 +144,11 @@ export function velocityAxisUnitLabel(): string {
 export function velocityAxisValue(ms: number): number {
   return current === "metric" ? ms : ms * MS_TO_MPH;
 }
+
+export function forceAxisUnitLabel(): string {
+  return current === "metric" ? "N" : "lbf";
+}
+
+export function forceAxisValue(n: number): number {
+  return current === "metric" ? n : n * N_TO_LBF;
+}

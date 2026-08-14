@@ -1,7 +1,8 @@
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 import type { SimSample3D } from "../../physics/sim/types3d.js";
-import { altitudeAxisUnitLabel, altitudeAxisValue, velocityAxisUnitLabel, velocityAxisValue } from "../units.js";
+import type { ThrustSample } from "../../physics/motor/thrustcurve-client.js";
+import { altitudeAxisUnitLabel, altitudeAxisValue, forceAxisUnitLabel, forceAxisValue, velocityAxisUnitLabel, velocityAxisValue } from "../units.js";
 
 /**
  * Four small time-series charts (altitude, speed, Mach, tilt-from-vertical)
@@ -22,6 +23,38 @@ let activeCharts: uPlot[] = [];
 function destroyActiveCharts(): void {
   for (const chart of activeCharts) chart.destroy();
   activeCharts = [];
+}
+
+/**
+ * Separate from activeCharts/destroyActiveCharts -- the thrust-curve chart lives in the motor
+ * detail panel, mounted/torn down on motor selection and dry-mass/CG edits, on a different
+ * lifecycle than the flight-result charts (mounted once a simulation completes, which can still be
+ * showing the PREVIOUS motor's results while a new one's thrust curve is already up).
+ */
+let thrustChart: uPlot | null = null;
+
+/**
+ * The raw thrust-vs-time curve for whichever motor is currently selected — the actual sampled
+ * ThrustCurve.org data (see this project's own linear interpolation in
+ * physics/motor/interpolation.ts, and OpenRocket's own ThrustCurveMotor.getThrust, which
+ * interpolates the same way over the same kind of real sample data), not a simplified
+ * average/linear model — so a long-tail or spiky motor (M650-family, H128W, etc.) shows its real
+ * non-linear shape here, not a smoothed approximation.
+ */
+export function renderThrustCurveChart(containerId: string, samples: ThrustSample[]): void {
+  thrustChart?.destroy();
+  thrustChart = null;
+  const container = document.getElementById(containerId);
+  if (!container || samples.length < 2) return;
+  const time = Float64Array.from(samples.map((s) => s.time));
+  thrustChart = buildPanel(container, time, {
+    containerId,
+    title: "Thrust",
+    unitLabel: forceAxisUnitLabel(),
+    values: Float64Array.from(samples.map((s) => forceAxisValue(s.thrust))),
+    stroke: "#e8590c",
+    axisDecimals: 0,
+  });
 }
 
 /**

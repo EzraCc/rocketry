@@ -22,7 +22,7 @@ import { burnTime, getThrustAt, totalImpulse } from "./physics/motor/motor-model
 import { deriveMotorMassCurve, getMotorMassAt } from "./physics/mass/motor-mass-curve.js";
 import { combinedMassAt, motorAxialPosition } from "./physics/mass/combined-mass.js";
 import type { SimResult3D } from "./physics/sim/types3d.js";
-import { renderFlightChart, clearAllChartCursors } from "./ui/charts/flight-chart.js";
+import { renderFlightChart, renderThrustCurveChart, clearAllChartCursors } from "./ui/charts/flight-chart.js";
 import { simulateFlight3DInWorker } from "./worker/sim-worker-client.js";
 import { windAt, constantWindProfile, type WindProfile } from "./model/wind.js";
 import {
@@ -123,11 +123,18 @@ async function loadLibraryManifest(): Promise<LibraryManifestEntry[]> {
  * estimatedDryMassKg over the generic placeholder when available).
  */
 function applyParsedRocket(
-  parsed: { name: string; components: Component[]; estimatedDryMassKg?: number; motorMountDiameterM?: number },
+  parsed: {
+    name: string;
+    components: Component[];
+    estimatedDryMassKg?: number;
+    motorMountDiameterM?: number;
+    unsupportedFeatures?: string[];
+  },
   source: string,
   knownCp?: { label: string; mm: number }[],
   displayName?: string,
 ): void {
+  activeUnsupportedFeatures = parsed.unsupportedFeatures ?? [];
   const motorMountComponent = parsed.components.find((c) => c.type === "bodytube" && c.isMotorMount);
   const bodyComponents = parsed.components.filter(isBodyComponent);
   const motorMountId = motorMountComponent?.id ?? bodyComponents[bodyComponents.length - 1]?.id ?? "";
@@ -181,9 +188,27 @@ function applyParsedRocket(
 let activeRocket: Rocket = defaultRocket();
 /** Reference CP values to show alongside the active rocket, when it came from a library entry with known-good values to compare against — cleared when a file is uploaded instead. */
 let activeKnownCp: { label: string; mm: number }[] | undefined;
+/**
+ * Set by selectLibraryEntry, cleared by wireOrkImport's upload handler -- the currently-active
+ * rocket's own library manifest entry, when it came from the library (not an upload, which the
+ * user already has a copy of locally). Only source of a download link for the raw file: this
+ * project's own stop-gap for editing (view/verify/tweak the real .rkt in RockSim or a text editor,
+ * then re-upload) until in-app editing exists -- also makes this site useful as a place to just
+ * find real sim files, independent of running anything here.
+ */
+let activeLibraryEntry: LibraryManifestEntry | null = null;
 let activeRocketSource = "Loading the rocket library…";
 /** Set by applyParsedRocket — the actual motor-fitting diameter (mm), used to pre-fill and constrain the motor search's diameter filter. Real value when available, else the rocket's own reference (outer body) diameter. */
 let activeMotorMountDiameterMm: number | null = null;
+/**
+ * Set by applyParsedRocket from parseRocksimXml's own unsupportedFeatures (empty for .ork/.CDX1
+ * uploads, which have no such concept) -- geometry (external pods, tube fins, ring tails, cluster
+ * motor mounts, multiple stages) this tool can locate in a file but doesn't model well enough to
+ * simulate correctly. Non-empty blocks motor search/flight simulation (see
+ * updateMotorSectionAvailability) while still showing the rocket's basic info and CP; the file
+ * itself is still viewable/downloadable regardless.
+ */
+let activeUnsupportedFeatures: string[] = [];
 
 /**
  * Dry (motor-out) mass — what a library/file load actually reports, and
@@ -381,12 +406,8 @@ function afterDryMassChanged(): void {
   // pre-edit mass.
   renderAndWireResults();
   if (lastMotorSelection) {
-    const detailEl = document.querySelector<HTMLDivElement>("#motor-detail");
-    if (detailEl) {
-      const { html, rocketWithMotor } = renderMotorDetailHtml(lastMotorSelection.meta, lastMotorSelection.samples);
-      detailEl.innerHTML = html;
-      void runFlightSim(rocketWithMotor);
-    }
+    const rocketWithMotor = renderMotorDetailAndMountChart(lastMotorSelection.meta, lastMotorSelection.samples);
+    if (rocketWithMotor) void runFlightSim(rocketWithMotor);
   }
 }
 
@@ -471,12 +492,8 @@ function wireCgStatEdit(): void {
     rederiveDryCg();
     renderActiveRocketDisplay();
     if (lastMotorSelection) {
-      const detailEl = document.querySelector<HTMLDivElement>("#motor-detail");
-      if (detailEl) {
-        const { html, rocketWithMotor } = renderMotorDetailHtml(lastMotorSelection.meta, lastMotorSelection.samples);
-        detailEl.innerHTML = html;
-        void runFlightSim(rocketWithMotor);
-      }
+      const rocketWithMotor = renderMotorDetailAndMountChart(lastMotorSelection.meta, lastMotorSelection.samples);
+      if (rocketWithMotor) void runFlightSim(rocketWithMotor);
     }
   });
 }
@@ -520,7 +537,17 @@ function renderRocketSection(rocket: Rocket, mach: number, subtitle: string, kno
       <header>
         <h2>${rocket.name}</h2>
         <p>${subtitle} · static Barrowman results at Mach ${mach}${hasCg ? "" : " — loaded mass/CG not entered, so no stability margin is shown"}</p>
+        ${
+          activeLibraryEntry
+            ? `<p><a href="${activeLibraryEntry.path}" download="${activeLibraryEntry.path.split("/").pop()}">⭳ Download original .rkt file</a> — view/verify it in RockSim, tweak it, then re-upload above.</p>`
+            : ""
+        }
       </header>
+      ${
+        activeUnsupportedFeatures.length > 0
+          ? `<p><mark>Not currently supported: ${activeUnsupportedFeatures.join(", ")}. Motor search and flight simulation are disabled for this rocket — CP above is still computed from its geometry, and the original file is still viewable/downloadable above.</mark></p>`
+          : ""
+      }
       <div class="grid stats-grid">${stats}</div>
       ${renderInfoPanel(
         "cp-method-info",
@@ -633,6 +660,7 @@ const motorSectionHtml = `
         combined rocket mass/CG at ignition, mid-burn, and burnout.
       </p>
     </header>
+    <div id="motor-section-unsupported-notice" hidden></div>
     <form id="motor-search-form">
       <div class="grid">
         <label>Manufacturer
@@ -705,8 +733,17 @@ function syncMotorMountUi(): void {
   const nearest = nearestStandardDiameterMm(activeMotorMountDiameterMm);
   // Motor mount diameter is always mm, not run through fmtLength's cm/in toggle -- same reasoning
   // as the motor search results' Diameter column.
-  noteEl.textContent = `Motor mount: ${activeMotorMountDiameterMm.toFixed(1)}mm — diameter filter set to the closest standard size${nearest !== null ? ` (${nearest}mm)` : ""}. Check "use motor adapter" to also allow smaller motors.`;
-  if (diaEl && nearest !== null && [...diaEl.options].some((o) => o.value === String(nearest))) {
+  noteEl.textContent = `Motor mount: ${activeMotorMountDiameterMm.toFixed(1)}mm — diameter filter set to the closest standard size${nearest !== null ? ` (${nearest}mm)` : ""}, larger sizes disabled (physically won't fit). Check "use motor adapter" to also allow smaller motors.`;
+  if (!diaEl) return;
+
+  // A motor wider than the mount can't physically go in, adapter or not (the adapter checkbox is
+  // the other direction -- a smaller motor shimmed up to fit a bigger mount). +0.5mm tolerance so
+  // an exact-fit standard size (e.g. a 38mm option on a 38.6mm mount) isn't disabled by float noise.
+  for (const opt of Array.from(diaEl.options)) {
+    if (opt.value === "") continue; // "Any" always stays enabled
+    opt.disabled = Number(opt.value) > activeMotorMountDiameterMm + 0.5;
+  }
+  if (nearest !== null && [...diaEl.options].some((o) => o.value === String(nearest))) {
     diaEl.value = String(nearest);
   }
 }
@@ -1038,6 +1075,7 @@ function renderMotorDetailHtml(meta: MotorSearchResult, samples: ThrustSample[])
       Total impulse (integrated from curve): ${fmtImpulse(totalImpulse(motor))}
       (ThrustCurve.org reports ${meta.totImpulseNs === undefined || meta.totImpulseNs === null ? "—" : fmtImpulse(meta.totImpulseNs)}).
       Peak thrust: ${fmtForce(Math.max(...samples.map((s) => s.thrust)))}.</p>
+    <figure><div id="thrust-curve-chart"></div></figure>
     <figure>
       <table>
         <thead>
@@ -1076,6 +1114,21 @@ function renderMotorDetailHtml(meta: MotorSearchResult, samples: ThrustSample[])
   return { html, rocketWithMotor };
 }
 
+/**
+ * Renders the motor detail panel into #motor-detail and mounts its thrust-curve chart — shared by
+ * every place that re-renders the panel (initial selection, dry mass/CG edits, unit toggle) so the
+ * chart doesn't need remounting separately at each call site. Returns rocketWithMotor for callers
+ * that also need to re-run the flight sim; null if #motor-detail isn't in the DOM.
+ */
+function renderMotorDetailAndMountChart(meta: MotorSearchResult, samples: ThrustSample[]): Rocket | null {
+  const detailEl = document.querySelector<HTMLDivElement>("#motor-detail");
+  if (!detailEl) return null;
+  const { html, rocketWithMotor } = renderMotorDetailHtml(meta, samples);
+  detailEl.innerHTML = html;
+  renderThrustCurveChart("thrust-curve-chart", samples);
+  return rocketWithMotor;
+}
+
 async function selectMotor(meta: MotorSearchResult): Promise<void> {
   const detailEl = document.querySelector<HTMLDivElement>("#motor-detail");
   if (!detailEl) return;
@@ -1105,8 +1158,7 @@ async function selectMotor(meta: MotorSearchResult): Promise<void> {
       dryMassReverted = true;
     }
     lastMotorSelection = { meta, samples };
-    const { html, rocketWithMotor } = renderMotorDetailHtml(meta, samples);
-    detailEl.innerHTML = html;
+    const rocketWithMotor = renderMotorDetailAndMountChart(meta, samples);
     // The mass stat card switches from "Dry mass" to "Loaded mass" (dry + this motor's mass) once
     // a motor's known -- re-render it here, not just the motor detail panel above, or it'd keep
     // showing the stale dry-only figure/label until some unrelated re-render happened to fire.
@@ -1115,7 +1167,7 @@ async function selectMotor(meta: MotorSearchResult): Promise<void> {
     // against activeDryMassKg) needs refreshing too, or it'd keep showing ratios flagged against
     // the stale, now-discarded back-solved mass.
     if (dryMassReverted) renderAndWireResults();
-    void runFlightSim(rocketWithMotor);
+    if (rocketWithMotor) void runFlightSim(rocketWithMotor);
   } catch (err) {
     detailEl.innerHTML = `<p><mark>Failed to load thrust curve: ${err instanceof Error ? err.message : String(err)}</mark></p>`;
   }
@@ -1248,6 +1300,10 @@ async function performSearch(): Promise<void> {
   const resultsEl = document.querySelector<HTMLDivElement>("#motor-results");
   const submitBtn = document.querySelector<HTMLButtonElement>("#motor-search-form button[type=submit]");
   if (!resultsEl) return;
+  // Belt-and-suspenders alongside updateMotorSectionAvailability hiding the form -- a hidden
+  // form's inputs shouldn't be submittable, but don't run a search against unmodeled geometry
+  // even if something (e.g. a stale URL-param-triggered search) gets past that.
+  if (activeUnsupportedFeatures.length > 0) return;
 
   const mfg = filterElement("manufacturer")?.value.trim() ?? "";
   const diameter = filterElement("diameter")?.value.trim() ?? "";
@@ -1425,6 +1481,39 @@ function renderActiveRocketDisplay(): void {
   // Mach 0.1 (~100fps) -- see renderFlightResultHtml's identical comment: the safety-relevant
   // rail-exit speed, not an arbitrary "typical flight" number.
   el.innerHTML = renderRocketSection(activeRocket, 0.1, activeRocketSource, activeKnownCp);
+  updateMotorSectionAvailability();
+}
+
+/**
+ * Disables motor search/flight-sim for the active rocket whenever it has activeUnsupportedFeatures
+ * (external pods, tube fins, ring tails, cluster motor mounts, multiple stages -- see its own doc
+ * comment) -- this tool's aero/mass model has no representation for that geometry, so running a
+ * simulation would silently produce a wrong answer rather than a missing one. The rocket's own info
+ * (name, CP, schematic) and the raw file (download button) stay available regardless -- only the
+ * motor search form and any previously-shown results/detail are blocked. Called every time the
+ * active rocket changes (renderActiveRocketDisplay), since that's the one thing that can flip
+ * activeUnsupportedFeatures.
+ */
+function updateMotorSectionAvailability(): void {
+  const form = document.querySelector<HTMLFormElement>("#motor-search-form");
+  const resultsEl = document.querySelector<HTMLDivElement>("#motor-results");
+  const detailEl = document.querySelector<HTMLDivElement>("#motor-detail");
+  const noticeEl = document.querySelector<HTMLDivElement>("#motor-section-unsupported-notice");
+  if (!form || !resultsEl || !detailEl) return;
+
+  const unsupported = activeUnsupportedFeatures.length > 0;
+  form.hidden = unsupported;
+  if (unsupported) {
+    resultsEl.innerHTML = "";
+    detailEl.innerHTML = "";
+    if (noticeEl) {
+      noticeEl.hidden = false;
+      noticeEl.innerHTML = `<p><mark>Not currently supported: ${activeUnsupportedFeatures.join(", ")}.</mark> This rocket's geometry isn't modeled well enough for a trustworthy motor search or flight simulation yet.</p>`;
+    }
+  } else if (noticeEl) {
+    noticeEl.hidden = true;
+    noticeEl.innerHTML = "";
+  }
 }
 
 function wireOrkImport(): void {
@@ -1458,6 +1547,7 @@ function wireOrkImport(): void {
         }
 
         applyParsedRocket(parsed, `Uploaded: ${file.name}`, undefined);
+        activeLibraryEntry = null; // an uploaded file has no library manifest entry to link a download to
 
         const massNote = parsed.estimatedDryMassKg && parsed.estimatedDryMassKg > 0
           ? ` Dry mass prefilled at ${fmtMass(activeDryMassKg)} from the file's own (structural-only) component masses — check it, then set loaded CG below (pencil icons on each figure — CG is never guessed).`
@@ -1615,6 +1705,7 @@ async function selectLibraryEntry(entry: LibraryManifestEntry): Promise<void> {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const parsed = parseRocksimXml(await res.text());
     applyParsedRocket(parsed, `From the library: ${entry.vendor} — ${entry.name}`, LIBRARY_KNOWN_CP[entry.path], entry.name);
+    activeLibraryEntry = entry;
 
     if (warningsEl) {
       const parseNote = parsed.warnings.length
@@ -1698,11 +1789,8 @@ function refreshAllUnitDisplays(): void {
   if (libraryManifest.length > 0) renderLibraryResults();
   renderAndWireResults();
   if (lastMotorSelection) {
-    const detailEl = document.querySelector<HTMLDivElement>("#motor-detail");
-    if (detailEl) {
-      detailEl.innerHTML = renderMotorDetailHtml(lastMotorSelection.meta, lastMotorSelection.samples).html;
-      rerenderFlightResultOnly();
-    }
+    renderMotorDetailAndMountChart(lastMotorSelection.meta, lastMotorSelection.samples);
+    rerenderFlightResultOnly();
   }
   updateWindManualUnitDisplay();
   updateActiveWindLabel();
