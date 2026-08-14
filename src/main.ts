@@ -126,13 +126,6 @@ function applyParsedRocket(
   activeCpOverrideM = undefined;
   cpOverrideSource = null;
   activeDescentDevices = parsed.descentDevices ?? [];
-  // dryMassBreakdown's own per-part cgXM positions inherit the same unsupported-geometry problem
-  // as estimatedDryCgM (e.g. an ExternalPod's contents get a wrong position -- see parse.ts), even
-  // though the file's total mass (estimatedDryMassKg, summed from this same breakdown) is still
-  // valid regardless of position accuracy. Withhold the per-part table for unsupported files rather
-  // than showing individually wrong positions; parseRocksimXml itself already withholds
-  // estimatedDryCgM the same way, for the same reason.
-  activeDryMassBreakdown = activeUnsupportedFeatures.length === 0 ? parsed.dryMassBreakdown : undefined;
   const motorMountComponent = parsed.components.find((c) => c.type === "bodytube" && c.isMotorMount);
   const bodyComponents = parsed.components.filter(isBodyComponent);
   const motorMountId = motorMountComponent?.id ?? bodyComponents[bodyComponents.length - 1]?.id ?? "";
@@ -276,14 +269,6 @@ let activeEstimatedDryCgM: number | undefined;
  * geometry-derived estimate) until the reset icon or a fresh file load clears it again.
  */
 let cgOverriddenByUser = false;
-/**
- * The active file's own per-part mass/CG breakdown (parseRocksimXml's dryMassBreakdown) -- shown
- * as a component table alongside the CG stat, matching what OpenRocket's own UI shows (component
- * name, mass, CG contribution) since this project already has to walk the same data to compute
- * activeEstimatedDryCgM. Undefined under the same conditions as activeEstimatedDryCgM above.
- */
-let activeDryMassBreakdown: { name: string; massKg: number; cgXM: number }[] | undefined;
-
 /** Builds a SelectedMotor from ThrustCurve.org search/download data — shared by rederiveDryCg (below) and renderMotorDetailHtml, so both construct the exact same motor object from the same inputs. */
 function buildSelectedMotor(meta: MotorSearchResult, samples: ThrustSample[]): SelectedMotor {
   return {
@@ -681,6 +666,11 @@ function renderRocketSection(rocket: Rocket, mach: number, subtitle: string): st
     renderCpStat(cpX),
     renderCgStat(),
     stat("Ref. diameter", fmtLength(refDiameter)),
+    // Always mm, not run through fmtLength's cm/in toggle -- same reasoning as the motor search's
+    // own mount-diameter note and its Diameter column: this is the number that determines what
+    // motor physically fits, and mm is how motor case sizes are actually named/discussed (a "38mm"
+    // motor), not a value anyone thinks of in cm or inches.
+    activeMotorMountDiameterMm !== null ? stat("Motor mount", `${activeMotorMountDiameterMm.toFixed(1)}mm`) : "",
     margin !== null
       ? stat(
           "Stability margin",
@@ -716,43 +706,8 @@ function renderRocketSection(rocket: Rocket, mach: number, subtitle: string): st
       <figure class="schematic">
         ${renderSchematicSvg(rocket.components, displayCpX, hasCg ? activeLoadedCgM : undefined)}
       </figure>
-      ${renderComponentBreakdownTable()}
       ${renderDescentDevicesSection()}
     </article>
-  `;
-}
-
-/**
- * Component-by-component mass/CG breakdown (name, mass, % of dry mass, CG from nose) — the same
- * data this project already has to walk to compute activeEstimatedDryCgM (parseRocksimXml's
- * dryMassBreakdown), shown so the UI surfaces what it's already tracking rather than only the
- * final derived number, matching OpenRocket's own component-analysis display. Undefined/empty for
- * RASAero files and unsupported-geometry RockSim files (same conditions as activeEstimatedDryCgM),
- * in which case this renders nothing rather than an empty table. Sorted nose-to-tail (ascending
- * CG position) since that's how a builder would actually walk the physical rocket, not by mass.
- */
-function renderComponentBreakdownTable(): string {
-  const breakdown = activeDryMassBreakdown;
-  if (!breakdown || breakdown.length === 0) return "";
-  const totalMassKg = breakdown.reduce((sum, p) => sum + p.massKg, 0);
-  if (totalMassKg <= 0) return "";
-  const rows = [...breakdown]
-    .sort((a, b) => a.cgXM - b.cgXM)
-    .map((p) => {
-      const pct = (p.massKg / totalMassKg) * 100;
-      return `<tr><td>${p.name}</td><td>${fmtMass(p.massKg)}</td><td>${pct.toFixed(1)}%</td><td>${fmtLength(p.cgXM)}</td></tr>`;
-    })
-    .join("");
-  return `
-    <details>
-      <summary>Component breakdown (${breakdown.length} parts, from the file's own per-part mass/CG data)</summary>
-      <figure>
-        <table>
-          <thead><tr><th>Component</th><th>Mass</th><th>% of dry mass</th><th>CG (from nose)</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </figure>
-    </details>
   `;
 }
 
@@ -1520,7 +1475,8 @@ function renderFlightResultHtml(rocket: Rocket, result: SimResult3D, elapsedMs: 
     .join("");
 
   return `
-    <h3>Flight simulation <small>(ascent to apogee, ${windLabel} — M4)</small></h3>
+    <div class="section-divider"></div>
+    <h3>Flight simulation <small>(ascent to apogee, ${windLabel})</small></h3>
     ${notFlyableHtml}
     ${stabilityWarningsHtml}
     <p><small>
@@ -2068,13 +2024,14 @@ if (app) {
     ${renderUnitToggleHtml()}
     <main class="container">
       <hgroup>
-        <h1>🚀 OpenRocket Web Simulator</h1>
+        <h1>🚀 rocketry — flight simulator</h1>
         <p>
-          A web flight simulator for basic rockets. Physics ported and adapted from
-          <a href="https://github.com/openrocket/openrocket" target="_blank" rel="noopener">OpenRocket</a>
-          (GPLv3) — re-derived for the web, with some deliberate changes (full list to be added soon). 
+          A web flight simulator for basic rockets. Physics is independently re-derived from
+          <a href="https://github.com/openrocket/openrocket" target="_blank" rel="noopener">OpenRocket</a>'s
+          published algorithms (GPLv3) — not ported or copied, so this project carries no GPL encumbrance —
+          with some deliberate changes (e.g. a corrected fin-body interference factor).
           Report issues and/or share real flight data with Ezra. Real data improves simulators.
-          <a href="/validation-report.html" target="_blank" rel="noopener">Validation report</a>. 
+          <a href="/validation-report.html" target="_blank" rel="noopener">Validation report</a>.
         </p>
       </hgroup>
       ${orkSectionHtml}

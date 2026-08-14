@@ -54,7 +54,16 @@ export function renderThrustCurveChart(containerId: string, samples: ThrustSampl
     values: Float64Array.from(samples.map((s) => forceAxisValue(s.thrust))),
     stroke: "#e8590c",
     axisDecimals: 0,
+    // Some real motor source files don't sample from ignition (confirmed real, not hypothetical:
+    // AeroTech J570W's own "cert" curve starts at t=0.039s, already well into the thrust rise) --
+    // without pinning the axis, uPlot's default auto-range would start at that first sample instead
+    // of 0, silently hiding that the curve doesn't cover the true start of the burn.
+    xMin: 0,
   });
+  if (thrustChart) {
+    wireTouchScrub(thrustChart);
+    wireDesktopClickLock(thrustChart);
+  }
 }
 
 /**
@@ -142,6 +151,8 @@ interface Panel {
   stroke: string;
   /** Decimal places for the y-axis tick labels — uPlot's default (up to ~6 significant figures) reads as "calculator output," not a human-scale figure (e.g. "1234.5678900001 m" for altitude). Tuned per quantity: whole meters/feet for altitude, one decimal for speed, two for Mach (where the second decimal is the whole point of showing it at all). */
   axisDecimals: number;
+  /** Pins the x-axis's minimum instead of uPlot's default auto-range (which starts at the first data point) — only the thrust chart needs this (see renderThrustCurveChart's own comment for why); the four flight-result charts always have a real t=0 sample, so leave this undefined there. */
+  xMin?: number;
 }
 
 // uPlot draws axis ticks/labels/grid on <canvas>, not DOM text, so CSS (and hence Pico's
@@ -162,7 +173,7 @@ function buildPanel(container: HTMLElement, time: Float64Array, panel: Panel): u
       sync: { key: "flight-charts" },
       bind: { mousemove: passthroughUnlessLocked, mouseleave: passthroughUnlessLocked },
     },
-    scales: { x: { time: false } },
+    scales: { x: { time: false, range: panel.xMin === undefined ? undefined : (_u, _dataMin, dataMax) => [panel.xMin!, dataMax] } },
     series: [
       // uPlot's legend defaults an unlabeled x-series to the generic "Value" -- name it after the
       // x-axis itself (same string as the axis label below) so the legend row actually says what

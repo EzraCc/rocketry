@@ -192,3 +192,25 @@ th.sortable-th:hover {
   padding: 0.15rem 0.35rem;
   margin: 0;
 }
+
+/* uPlot's default legend behavior: clicking a series' label toggles that series' own visibility
+   off. Pointless (worse than pointless -- confusing, looks broken) on a single-series chart, which
+   is every chart in this app right now -- clicking the only line makes the whole chart go blank
+   with no visible way back short of a reload. Re-enable (remove this) if/when a chart actually has
+   multiple series worth isolating. CSS pointer-events, not a uPlot option -- there's no built-in
+   "disable legend click" flag, this keeps the legend's hover/value display working, just not the
+   click-to-toggle part (onMouse("click", ...) is bound directly to .u-label, so this stops the
+   event from ever reaching it). */
+.u-legend .u-label {
+  pointer-events: none;
+}
+
+/* Marks the transition from motor-detail content (thrust curve, mass table) into the flight
+   simulation results below it -- without this the "Flight simulation" heading just blends into a
+   wall of motor data above it, when it's actually the most important result on the page. */
+.section-divider {
+  height: 12px;
+  border-radius: var(--pico-border-radius);
+  background: var(--pico-primary);
+  margin: 2.5rem 0 1.5rem 0;
+}
