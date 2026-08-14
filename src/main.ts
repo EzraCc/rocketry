@@ -593,9 +593,31 @@ function syncFormToUrl(): void {
   });
 }
 
-/** Writes the selected library rocket's manifest path into the URL's "rocket" param, so the exact rocket (not the vendor/diameter/name search filters used to find it) is shareable/bookmarkable and re-selected on load — see initLibrary. Keyed by path, not id: ids are assigned sequentially at manifest-generation time and shift whenever the library's entry count changes (see LIBRARY_KNOWN_CP's own doc comment), while path is stable. */
-function syncSelectedRocketToUrl(path: string): void {
-  updateUrlParams((params) => params.set("rocket", path));
+/**
+ * Human-scannable id for a library entry, used as the "rocket" URL param — vendor + name,
+ * lowercased with runs of non-alphanumerics collapsed to a single "-" (e.g. "LOC" + "Big Nuke 3E"
+ * -> "loc-big-nuke-3e"). Only a-z0-9- ever appears in the result, so it never needs
+ * percent-encoding in a query string (unlike the manifest path, which contains "/" and spaces --
+ * URLSearchParams renders those as %2F and + on write, exactly the "ugly, can't scan it" URL this
+ * replaces). Not the manifest path itself: ids are assigned sequentially at manifest-generation
+ * time and shift whenever the library's entry count changes (see LIBRARY_KNOWN_CP's own doc
+ * comment), so path was already the right stable choice to key off of -- this just encodes it
+ * more readably, resolved back to a real entry by matching this same slug (see
+ * findLibraryEntryBySlug) rather than by decoding it back into a literal path.
+ */
+function slugifyLibraryEntry(entry: LibraryManifestEntry): string {
+  const slugify = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return `${slugify(entry.vendor)}-${slugify(entry.name)}`;
+}
+
+/** Resolves a "rocket" URL param back to a manifest entry by matching slugifyLibraryEntry -- the inverse of that function, not a path decode (see its doc comment for why). */
+function findLibraryEntryBySlug(manifest: LibraryManifestEntry[], slug: string): LibraryManifestEntry | undefined {
+  return manifest.find((e) => slugifyLibraryEntry(e) === slug);
+}
+
+/** Writes the selected library rocket's slug (see slugifyLibraryEntry) into the URL's "rocket" param, so the exact rocket (not the vendor/diameter/name search filters used to find it) is shareable/bookmarkable and re-selected on load — see initLibrary. */
+function syncSelectedRocketToUrl(entry: LibraryManifestEntry): void {
+  updateUrlParams((params) => params.set("rocket", slugifyLibraryEntry(entry)));
 }
 
 const motorSectionHtml = `
@@ -1562,7 +1584,7 @@ function renderLibraryResults(): void {
       evt.preventDefault();
       const entry = libraryManifest.find((e) => e.id === a.dataset["libId"]);
       if (!entry) return;
-      void selectLibraryEntry(entry).then(() => syncSelectedRocketToUrl(entry.path));
+      void selectLibraryEntry(entry).then(() => syncSelectedRocketToUrl(entry));
     });
   });
   resultsEl.querySelectorAll<HTMLTableCellElement>("th[data-sort-key]").forEach((th) => {
@@ -1625,8 +1647,8 @@ async function initLibrary(): Promise<void> {
     populateLibraryFilterOptions();
     wireLibraryPicker();
 
-    const urlRocketPath = new URLSearchParams(location.search).get("rocket");
-    const urlEntry = urlRocketPath ? libraryManifest.find((e) => e.path === urlRocketPath) : undefined;
+    const urlRocketSlug = new URLSearchParams(location.search).get("rocket");
+    const urlEntry = urlRocketSlug ? findLibraryEntryBySlug(libraryManifest, urlRocketSlug) : undefined;
     const defaultEntry = urlEntry ?? libraryManifest.find((e) => e.path === "library/loc/PK-48 LOC-IV.rkt") ?? libraryManifest[0];
     if (defaultEntry) await selectLibraryEntry(defaultEntry);
   } catch (err) {
