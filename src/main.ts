@@ -698,7 +698,7 @@ function renderRocketSection(rocket: Rocket, mach: number, subtitle: string): st
         <p>${subtitle} · static Barrowman results at Mach ${mach}${hasCg ? "" : " — loaded mass/CG not entered, so no stability margin is shown"}</p>
         ${
           activeLibraryEntry
-            ? `<p><a href="${activeLibraryEntry.path}" download="${activeLibraryEntry.path.split("/").pop()}">⭳ Download original .rkt file</a> — view/verify it in RockSim, tweak it, then re-upload above.</p>`
+            ? `<p><a href="${activeLibraryEntry.path}" download="${activeLibraryEntry.path.split("/").pop()}">⭳ Download Simfile</a> — browser editing not supported. You'll need to edit and re-upload the file.</p>`
             : ""
         }
       </header>
@@ -756,8 +756,6 @@ function renderComponentBreakdownTable(): string {
   `;
 }
 
-/** Standard sea-level air density (kg/m^3) via this project's own ISA model at altitude 0 -- the reference density renderDescentDevicesSection uses for every device, not the actual deployment altitude (drogue deploys near apogee, main typically much lower at a preset altitude the file doesn't reliably record either) -- a documented simplification, not an attempt at per-device altitude accuracy. */
-const SEA_LEVEL_AIR_DENSITY_KGM3 = new IsaAtmosphere().at(0).density;
 const STANDARD_GRAVITY_MS2 = 9.80665; // matches isa-model.ts's own G0
 
 /**
@@ -768,6 +766,17 @@ const STANDARD_GRAVITY_MS2 = 9.80665; // matches isa-model.ts's own G0
  * propellant, since the propellant itself is long gone by the time a chute opens) -- not just dry
  * mass, which would leave the spent casing's real weight out and understate the rate, and not full
  * loaded mass either, which would still be carrying propellant that's already burned by then.
+ *
+ * Air density is looked up at activeRocket.launchAltitude (site elevation MSL, the same field the
+ * real ascent simulation already uses -- see engine3d.ts/derivatives.ts), NOT a hardcoded sea-level
+ * constant -- a higher site means thinner air, means a REAL descent rate faster than a sea-level
+ * calc would predict. There's no UI to set launchAltitude yet (it's always 0 today; splashcast
+ * import parses a real site_elev_ft but isn't wired into the live app -- see
+ * splashcast-import.ts/wireWindImport's own TODO), so this is currently equivalent to sea level in
+ * practice, but reads the correct field so it's already right the moment site elevation lands, with
+ * nothing further to fix here. Deployment-altitude-specific density (drogue near apogee vs. main
+ * much lower) is a further refinement this doesn't attempt.
+ *
  * Requested specifically so these numbers can be handed to splashcast (the external launch-day
  * wind/drift predictor this project's own wind import already reads FROM -- see
  * splashcast-import.ts), which needs a descent rate per device to predict drift, not just canopy
@@ -777,12 +786,13 @@ function renderDescentDevicesSection(): string {
   if (activeDescentDevices.length === 0) return "";
   const motor = lastMotorSelection ? buildSelectedMotor(lastMotorSelection.meta, lastMotorSelection.samples) : null;
   const descentMassKg = motor ? activeDryMassKg + (motor.totalMassKg - motor.propellantMassKg) : null;
+  const airDensityKgM3 = new IsaAtmosphere().at(activeRocket.launchAltitude).density;
 
   const rows = activeDescentDevices
     .map((d) => {
       const rate =
         descentMassKg !== null
-          ? Math.sqrt((2 * descentMassKg * STANDARD_GRAVITY_MS2) / (SEA_LEVEL_AIR_DENSITY_KGM3 * d.dragCoefficient * d.dragAreaM2))
+          ? Math.sqrt((2 * descentMassKg * STANDARD_GRAVITY_MS2) / (airDensityKgM3 * d.dragCoefficient * d.dragAreaM2))
           : null;
       const label = `${d.role === "drogue" ? "Drogue" : "Main"} ${d.type}`;
       return `<tr><td>${label}</td><td>${d.dragAreaM2.toFixed(3)} m²</td><td>${d.dragCoefficient.toFixed(2)}</td><td>${rate !== null ? fmtVelocity(rate) : "—"}</td></tr>`;
@@ -791,7 +801,7 @@ function renderDescentDevicesSection(): string {
 
   return `
     <details>
-      <summary>Recovery devices (${activeDescentDevices.length}, descent rate at sea-level density)</summary>
+      <summary>Recovery devices (${activeDescentDevices.length}, descent rate at launch-site air density)</summary>
       <figure>
         <table>
           <thead><tr><th>Device</th><th>Drag area</th><th>Drag coefficient</th><th>Descent rate</th></tr></thead>
@@ -800,7 +810,7 @@ function renderDescentDevicesSection(): string {
       </figure>
       ${
         descentMassKg === null
-          ? `<p><small>Descent rate needs a motor selected -- descending mass is dry mass + spent motor casing (loaded mass minus propellant), which needs to know how much propellant the selected motor carries.</small></p>`
+          ? `<p><small>Select a motor to see descent rates. Spent motor mass affects the calculation.</small></p>`
           : ""
       }
     </details>
@@ -1684,19 +1694,9 @@ function wireWindImport(): void {
 const orkSectionHtml = `
   <article>
     <header>
-      <h2>Your rocket</h2>
+      <h2>Rocket</h2>
       <p>
-        Pick a known rocket from the library, or upload a real OpenRocket <code>.ork</code>, RockSim
-        <code>.rkt</code>, or RASAero <code>.CDX1</code> file — nose cone, body tube(s),
-        transition/boat tail/fin can, and trapezoidal or freeform fins are imported (single-stage
-        only; multi-stage files use just the first/sustainer stage). Mass and CG stay manual, per
-        this tool's design — enter them below as <strong>loaded</strong> values (the fully
-        assembled rocket, motor installed — however you'd actually balance and weigh it on a
-        stand), not the bare dry airframe; internally this tool derives the dry mass/CG it needs
-        for burn simulation by subtracting whichever motor you select further down. For .ork
-        files, the file's own default motor selection pre-fills the motor search further down
-        (RockSim and RASAero files carry no motor data at all, only mount geometry, so you'll need
-        to search for a motor yourself either way).
+        Select a rocket simfile from the library, or upload your own (.ork, .rkt, or .CDX1). 
       </p>
     </header>
     <details id="library-picker">
@@ -2064,21 +2064,18 @@ if (app) {
     ${renderUnitToggleHtml()}
     <main class="container">
       <hgroup>
-        <h1>🚀 rocketry</h1>
+        <h1>🚀 OpenRocket Web Simulator</h1>
         <p>
-          A client-side flight simulator for basic rockets. Physics ported and adapted from
+          A web flight simulator for basic rockets. Physics ported and adapted from
           <a href="https://github.com/openrocket/openrocket" target="_blank" rel="noopener">OpenRocket</a>
-          (GPLv3) — re-derived independently rather than copied, with some deliberate changes (e.g. a
-          corrected fin-body interference factor; a full list of deviations from stock OpenRocket is
-          still TODO).
+          (GPLv3) — re-derived for the web, with some deliberate changes (full list to be added soon). 
+          Report issues and/or share real flight data with Ezra. Real data improves simulators.
+          <a href="/validation-report.html" target="_blank" rel="noopener">Validation report</a>. 
         </p>
       </hgroup>
       ${orkSectionHtml}
       ${windSectionHtml}
       ${motorSectionHtml}
-      <footer>
-        <small><a href="/validation-report.html" target="_blank" rel="noopener">Validation report</a> — how this project's computed CP/CG/flight results compare against real OpenRocket simulations and RockSim's own data, for a curated set of real rocket+motor cases.</small>
-      </footer>
     </main>
   `;
   renderActiveRocketDisplay();
