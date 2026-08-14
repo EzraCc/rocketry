@@ -26,30 +26,33 @@ export interface ParsedRocksimRocket {
   /** RockSim files carry no motor data at all (only mount geometry) — always empty; motor selection is always the caller's job, same as for .ork. */
   warnings: string[];
   /**
-   * Sum of every <CalcMass> entry in the sustainer stage's part tree (kg),
-   * 0 if none present — see dryMassBreakdown's doc comment for exactly how
-   * this is computed (a real tree-walk, not a flat document scan; this field
-   * is now just the sum of that breakdown's own massKg values, kept as its
-   * own field since most callers only need the total). RockSim computes and
-   * caches this per-part from that part's own <Density>/<Material> and
-   * geometry — including internal hardware this project doesn't model
-   * aerodynamically (couplers, centering rings, bulkheads, motor mount tube,
-   * recovery gear), which really does add to what the motor has to lift.
-   * This is NOT the same as porting OpenRocket's own material-density mass
-   * calculator (RockSimHandler.java's importer ignores these cached fields
-   * entirely and recomputes mass itself from the same density/geometry
-   * inputs) — that calculator is explicitly out of this project's MVP scope.
-   * This is a cheaper, honest middle ground: real numbers already sitting in
-   * the file, not a guess — cross-checked directly against OpenRocket's own
-   * independently-computed dry mass for 6 real library files (see
-   * validation/openrocket-comparison.test.ts), agreeing within a few
-   * percent in every case.
+   * The sustainer's dry mass (kg), 0 if unavailable. Two possible sources, checked in this order
+   * (see parseRocksimXml's own comment at the point this is decided):
+   *
+   * 1. RockSim's own whole-stage "known mass" override (<UseKnownMass>1</UseKnownMass> +
+   *    <Stage3Mass>) -- a real scale measurement the file's author entered, preferred whenever
+   *    present since it doesn't depend on this parser's own per-part sum being right.
+   * 2. Sum of every <CalcMass>/<KnownMass> entry in the sustainer stage's part tree -- see
+   *    dryMassBreakdown's doc comment for exactly how this is computed (a real tree-walk, not a
+   *    flat document scan; this field is the sum of that breakdown's own massKg values). RockSim
+   *    computes and caches this per-part from that part's own <Density>/<Material> and geometry --
+   *    including internal hardware this project doesn't model aerodynamically (couplers, centering
+   *    rings, bulkheads, motor mount tube, recovery gear), which really does add to what the motor
+   *    has to lift. This is NOT the same as porting OpenRocket's own material-density mass
+   *    calculator (RockSimHandler.java's importer ignores these cached fields entirely and
+   *    recomputes mass itself) -- that's explicitly out of this project's MVP scope. This is a
+   *    cheaper, honest middle ground: real numbers already sitting in the file, not a guess -- but
+   *    only as good as RockSim's own per-part density assumptions, which a known-mass override
+   *    (source 1) exists specifically to correct for when they're off (confirmed real, not
+   *    hypothetical: the library's own Zephyr.rkt has a known mass 38% lighter than this parser's
+   *    own tree-sum -- see parseRocksimXml).
    */
   estimatedDryMassKg: number;
   /**
-   * Mass-weighted dry CG (m from nose tip), or undefined if the sustainer
-   * stage has no mass-contributing parts at all. See dryMassBreakdown for
-   * how each contributing part's own absolute position is resolved.
+   * Mass-weighted dry CG (m from nose tip), or undefined if unavailable. Same two sources/priority
+   * as estimatedDryMassKg above (RockSim's <Stage3CG> known-mass-override pairing, else the
+   * tree-walk's own moment sum) -- see dryMassBreakdown for how each tree-walk part's absolute
+   * position is resolved when that's the source in use.
    */
   estimatedDryCgM?: number;
   /**
@@ -78,6 +81,10 @@ export interface ParsedRocksimRocket {
    * Cross-checked against OpenRocket's own independently-computed dry CG
    * for 6 real library files (see validation/openrocket-comparison.test.ts)
    * before this was trusted for anything CG-related.
+   *
+   * Empty (not just unused) whenever estimatedDryMassKg/estimatedDryCgM came from RockSim's own
+   * known-mass override instead -- it wouldn't sum to that total, and showing a per-part table that
+   * visibly doesn't add up to the number above it would read as a bug, not a feature.
    */
   dryMassBreakdown: { name: string; massKg: number; cgXM: number }[];
   /**
@@ -577,10 +584,42 @@ export function parseRocksimXml(xmlText: string): ParsedRocksimRocket {
   ).length;
   if (motorMountFlagCount > 1) unsupportedFeatures.push("cluster motor mounts");
 
-  const estimatedDryMassKg = dryMassBreakdown.reduce((sum, part) => sum + part.massKg, 0);
-  const totalMoment = dryMassBreakdown.reduce((sum, part) => sum + part.massKg * part.cgXM, 0);
-  const estimatedDryCgM =
-    unsupportedFeatures.length === 0 && estimatedDryMassKg > 0 ? totalMoment / estimatedDryMassKg : undefined;
+  // RockSim has its own whole-stage "known mass/CG" override -- a real scale/balance measurement
+  // the file's own author entered (RocketDesign's <UseKnownMass>1</UseKnownMass>, paired with
+  // <Stage3Mass>/<Stage3CG> for the sustainer specifically; RockSim numbers stages top-down, same
+  // as Stage3Parts above), which RockSim itself uses INSTEAD of summing the per-part
+  // Calc/KnownMass tree below when set. Checked first and preferred over the tree-walk sum: a real
+  // measurement of the assembled airframe is strictly more trustworthy than this parser's own
+  // per-part sum, which depends on every part's own density/geometry being modeled correctly by
+  // RockSim in the first place -- confirmed concretely on the library's own Zephyr.rkt (real case,
+  // not hypothetical): UseKnownMass=1, Stage3Mass=1096g, Stage3CG=927.1mm, while this parser's own
+  // component sum computed 1508g/958.0mm -- a 38% mass overcount from summing parts whose
+  // individual density assumptions don't hold up, that the file's own author had already measured
+  // around by entering a real known mass/CG directly. 12/339 library files set this flag.
+  //
+  // The per-part dryMassBreakdown is withheld (not just left inconsistent with the total) when
+  // this override applies -- it wouldn't sum to the authoritative Stage3Mass/CG figure, and showing
+  // a breakdown that visibly doesn't add up to the number above it would read as a bug, not a
+  // feature. components (this parser's aerodynamic geometry) is entirely unaffected either way --
+  // this override is mass/CG-only, RockSim has no equivalent "known CP" concept.
+  const useKnownMass = text(design, "UseKnownMass") === "1";
+  const knownStage3MassG = num(design, "Stage3Mass", 0);
+
+  let estimatedDryMassKg: number;
+  let estimatedDryCgM: number | undefined;
+  let finalDryMassBreakdown: { name: string; massKg: number; cgXM: number }[];
+
+  if (useKnownMass && knownStage3MassG > 0) {
+    estimatedDryMassKg = knownStage3MassG / 1000;
+    estimatedDryCgM = num(design, "Stage3CG", 0) * MM_TO_M;
+    finalDryMassBreakdown = [];
+  } else {
+    estimatedDryMassKg = dryMassBreakdown.reduce((sum, part) => sum + part.massKg, 0);
+    const totalMoment = dryMassBreakdown.reduce((sum, part) => sum + part.massKg * part.cgXM, 0);
+    estimatedDryCgM = unsupportedFeatures.length === 0 && estimatedDryMassKg > 0 ? totalMoment / estimatedDryMassKg : undefined;
+    finalDryMassBreakdown = dryMassBreakdown;
+  }
+
   const motorMountDiameterM = extractMotorMountDiameterM(design);
   const descentDevices = extractDescentDevices(design);
 
@@ -590,7 +629,7 @@ export function parseRocksimXml(xmlText: string): ParsedRocksimRocket {
     warnings,
     estimatedDryMassKg,
     estimatedDryCgM,
-    dryMassBreakdown,
+    dryMassBreakdown: finalDryMassBreakdown,
     motorMountDiameterM,
     descentDevices,
     unsupportedFeatures,
