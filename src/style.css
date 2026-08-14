@@ -119,8 +119,9 @@ th.sortable-th:hover {
   color: var(--pico-muted-color);
 }
 
-/* Pencil-icon inline edit for the mass stat card (see renderMassStat/wireMassStatEdit in
-   main.ts) -- pencil is a plain unstyled button so it reads as an icon, not a form control. */
+/* Pencil-icon (and reset-icon) inline edit for stat cards (see wireInlineEditStat,
+   renderMassStat/renderCgStat in main.ts) -- plain unstyled buttons so they read as icons, not
+   form controls. */
 .edit-pencil {
   all: unset;
   cursor: pointer;
@@ -135,7 +136,7 @@ th.sortable-th:hover {
   opacity: 1;
 }
 
-.mass-stat-input {
+.inline-edit-stat-input {
   width: 6rem;
   display: inline-block;
   font-size: 1.15rem;

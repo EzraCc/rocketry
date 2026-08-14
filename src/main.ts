@@ -153,13 +153,15 @@ function applyParsedRocket(
 
   // estimatedDryMassKg (RockSim's own <CalcMass> sum, see parse.ts) is structural-only -- it never
   // includes a motor, which matches what's shown by default (dry mass, until a motor's picked).
-  // With no estimate in the file, keep whatever dry mass is already set rather than resetting to
-  // the 50g placeholder on every rocket switch.
+  // With no estimate in the file, keep whatever base dry mass is already set rather than resetting
+  // to the 50g placeholder on every rocket switch.
   if (parsed.estimatedDryMassKg && parsed.estimatedDryMassKg > 0) {
-    activeDryMassKg = parsed.estimatedDryMassKg;
-  } else if (!activeDryMassKg || activeDryMassKg <= 0) {
-    activeDryMassKg = 0.05;
+    baseDryMassKg = parsed.estimatedDryMassKg;
+  } else if (!baseDryMassKg || baseDryMassKg <= 0) {
+    baseDryMassKg = 0.05;
   }
+  activeDryMassKg = baseDryMassKg;
+  dryMassOverriddenViaLoadedEdit = false;
   activeLoadedCgM = 0; // forces the user to actually enter it -- never guessed from geometry
   rederiveDryCg();
 
@@ -196,6 +198,10 @@ let activeMotorMountDiameterMm: number | null = null;
  * loaded rocket, so activeRocket.dryCg is always derived, never entered.
  */
 let activeDryMassKg = 0.05;
+/** The dry mass exactly as loaded from the current file (or the 50g placeholder if the file had none) — never changed by editing, only by loading a new rocket. What the mass stat's reset icon reverts to, and what a motor CHANGE (not just a re-edit) reverts to if the loaded-mass field was the thing last edited (see dryMassOverriddenViaLoadedEdit) — that back-solve is only valid for the motor it was solved against. */
+let baseDryMassKg = 0.05;
+/** True only when activeDryMassKg's current value came from editing LOADED mass (a motor was selected at edit time, so the entered figure got back-solved into a dry mass entangled with that specific motor's own mass). False after a fresh file load, a direct dry-mass edit (motor-independent — stays valid across motor changes), or a reset. Checked by selectMotor: switching motors while this is true means the back-solved dry mass is stale for the new motor, so it reverts to baseDryMassKg first. */
+let dryMassOverriddenViaLoadedEdit = false;
 let activeLoadedCgM = 0; // 0 = unset, forces the user to actually enter it -- never guessed from geometry
 
 /** Builds a SelectedMotor from ThrustCurve.org search/download data — shared by rederiveDryCg (below) and renderMotorDetailHtml, so both construct the exact same motor object from the same inputs. */
@@ -299,62 +305,100 @@ function wireInfoToggles(): void {
 }
 
 /**
- * One-time delegated wiring (same #app-ancestor pattern as wireInfoToggles) for the mass stat
- * card's pencil-icon inline edit: click the pencil to swap the display span for a real number
- * input, commit on blur or Enter. Always writes back to activeDryMassKg — if a motor's selected,
- * the entered figure is understood as LOADED mass (matching what's displayed) and the motor's own
- * mass is subtracted back out before storing, since activeDryMassKg is always the dry figure
- * internally regardless of what's currently shown.
+ * Generic delegated wiring (same #app-ancestor pattern as wireInfoToggles) for a pencil-icon
+ * inline-edit stat: click `#{idPrefix}-edit-btn` to swap `#{idPrefix}-value` for
+ * `#{idPrefix}-input`, commit on blur or Enter. Shared by the mass and CG stat cards below, which
+ * differ only in what committing the entered number actually does (mass back-solves against a
+ * possibly-selected motor; CG doesn't) — that's supplied by the caller as onCommit.
+ *
+ * mousedown on the (optional) `#{idPrefix}-reset-btn` is prevented so clicking it doesn't first
+ * blur the input (which would fire a commit with whatever partial value was being typed, then
+ * re-render and remove the button out from under the in-flight click) — verified this race is
+ * real, not hypothetical, by testing it directly.
  */
-function wireMassStatEdit(): void {
+function wireInlineEditStat(idPrefix: string, onCommit: (rawInputValue: number) => void): void {
   const appEl = document.querySelector("#app");
   if (!appEl) return;
 
   appEl.addEventListener("click", (e) => {
-    const btn = (e.target as HTMLElement).closest<HTMLElement>("#mass-stat-edit-btn");
+    const btn = (e.target as HTMLElement).closest<HTMLElement>(`#${idPrefix}-edit-btn`);
     if (!btn) return;
-    const valueEl = document.getElementById("mass-stat-value");
-    const inputEl = document.getElementById("mass-stat-input") as HTMLInputElement | null;
+    const valueEl = document.getElementById(`${idPrefix}-value`);
+    const inputEl = document.getElementById(`${idPrefix}-input`) as HTMLInputElement | null;
+    const resetBtn = document.getElementById(`${idPrefix}-reset-btn`);
     if (!valueEl || !inputEl) return;
     btn.hidden = true;
     valueEl.hidden = true;
     inputEl.hidden = false;
+    if (resetBtn) resetBtn.hidden = false;
     inputEl.focus();
     inputEl.select();
   });
 
-  const commitMassStatEdit = (): void => {
-    const inputEl = document.getElementById("mass-stat-input") as HTMLInputElement | null;
+  appEl.addEventListener("mousedown", (e) => {
+    if ((e.target as HTMLElement).closest(`#${idPrefix}-reset-btn`)) e.preventDefault();
+  });
+
+  const commit = (): void => {
+    const inputEl = document.getElementById(`${idPrefix}-input`) as HTMLInputElement | null;
     if (!inputEl || inputEl.hidden) return; // not in edit mode -- nothing to commit
-    const enteredKg = massFromInput(Number(inputEl.value) || 0);
-    const motor = lastMotorSelection ? buildSelectedMotor(lastMotorSelection.meta, lastMotorSelection.samples) : null;
-    activeDryMassKg = Math.max(motor ? enteredKg - motor.totalMassKg : enteredKg, 0);
-    rederiveDryCg();
-    renderActiveRocketDisplay();
-    // The motor search table's T:W column is computed against activeDryMassKg (see
-    // computeThrustToWeight) -- refresh it too, or it'd keep flagging ratios against the stale
-    // pre-edit mass.
-    renderAndWireResults();
-    if (lastMotorSelection) {
-      const detailEl = document.querySelector<HTMLDivElement>("#motor-detail");
-      if (detailEl) {
-        const { html, rocketWithMotor } = renderMotorDetailHtml(lastMotorSelection.meta, lastMotorSelection.samples);
-        detailEl.innerHTML = html;
-        void runFlightSim(rocketWithMotor);
-      }
-    }
+    onCommit(Number(inputEl.value) || 0);
   };
 
   // focusout (not blur) so this can live on the delegated #app listener -- blur doesn't bubble.
   appEl.addEventListener("focusout", (e) => {
-    if ((e.target as HTMLElement).id === "mass-stat-input") commitMassStatEdit();
+    if ((e.target as HTMLElement).id === `${idPrefix}-input`) commit();
   });
   appEl.addEventListener("keydown", (e) => {
     const ke = e as KeyboardEvent;
-    if ((ke.target as HTMLElement).id === "mass-stat-input" && ke.key === "Enter") {
+    if ((ke.target as HTMLElement).id === `${idPrefix}-input` && ke.key === "Enter") {
       ke.preventDefault();
       (ke.target as HTMLElement).blur(); // triggers the focusout handler above
     }
+  });
+}
+
+/** Re-renders everything downstream of a dry-mass change: the stats card, the motor table's T:W column, and (if a motor's selected) the motor detail panel + flight sim. Shared by the mass stat's commit and its reset. */
+function afterDryMassChanged(): void {
+  rederiveDryCg();
+  renderActiveRocketDisplay();
+  // The motor search table's T:W column is computed against activeDryMassKg (see
+  // computeThrustToWeight) -- refresh it too, or it'd keep flagging ratios against the stale
+  // pre-edit mass.
+  renderAndWireResults();
+  if (lastMotorSelection) {
+    const detailEl = document.querySelector<HTMLDivElement>("#motor-detail");
+    if (detailEl) {
+      const { html, rocketWithMotor } = renderMotorDetailHtml(lastMotorSelection.meta, lastMotorSelection.samples);
+      detailEl.innerHTML = html;
+      void runFlightSim(rocketWithMotor);
+    }
+  }
+}
+
+/**
+ * Wires the mass stat card's pencil-icon edit (writes back to activeDryMassKg — if a motor's
+ * selected, the entered figure is understood as LOADED mass, matching what's displayed, and the
+ * motor's own mass is subtracted back out before storing) plus its reset icon, which discards any
+ * edit and reverts to baseDryMassKg (the dry mass exactly as loaded from the file).
+ */
+function wireMassStatEdit(): void {
+  wireInlineEditStat("mass-stat", (rawInputValue) => {
+    const enteredKg = massFromInput(rawInputValue);
+    const motor = lastMotorSelection ? buildSelectedMotor(lastMotorSelection.meta, lastMotorSelection.samples) : null;
+    activeDryMassKg = Math.max(motor ? enteredKg - motor.totalMassKg : enteredKg, 0);
+    // Only a LOADED-mass edit (motor selected at edit time) is motor-entangled -- a direct
+    // dry-mass edit stays valid no matter what motor gets picked next.
+    dryMassOverriddenViaLoadedEdit = motor !== null;
+    afterDryMassChanged();
+  });
+
+  document.querySelector("#app")?.addEventListener("click", (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLElement>("#mass-stat-reset-btn");
+    if (!btn) return;
+    activeDryMassKg = baseDryMassKg;
+    dryMassOverriddenViaLoadedEdit = false;
+    afterDryMassChanged();
   });
 }
 
@@ -363,7 +407,8 @@ function wireMassStatEdit(): void {
  * either way, just relabeled/recomputed depending on whether a motor's known. Editing it always
  * writes back to activeDryMassKg (see wireMassStatEdit), subtracting the motor's mass back out
  * first if one's selected — so the user only ever has one number to think about at a time: "how
- * much does this weigh right now," whether that's the bare airframe or the thing on the pad.
+ * much does this weigh right now," whether that's the bare airframe or the thing on the pad. The
+ * reset icon (only shown while editing) discards the edit and goes back to the file's dry mass.
  */
 function renderMassStat(rocket: Rocket): string {
   const motor = lastMotorSelection ? buildSelectedMotor(lastMotorSelection.meta, lastMotorSelection.samples) : null;
@@ -374,11 +419,52 @@ function renderMassStat(rocket: Rocket): string {
       <strong
         ><span id="mass-stat-value">${fmtMass(displayKg)}</span
         ><button type="button" id="mass-stat-edit-btn" class="edit-pencil" aria-label="Edit ${label.toLowerCase()}">✏️</button
-        ><input type="number" id="mass-stat-input" class="mass-stat-input" value="${massToInput(displayKg).toFixed(2)}" min="0" step="1" hidden
-      /></strong>
+        ><input type="number" id="mass-stat-input" class="inline-edit-stat-input" value="${massToInput(displayKg).toFixed(2)}" min="0" step="1" hidden
+        /><button type="button" id="mass-stat-reset-btn" class="edit-pencil" aria-label="Reset to the file's dry mass" title="Reset to ${fmtMass(baseDryMassKg)} (this file's dry mass)" hidden>↺</button
+      ></strong>
       <br /><small id="mass-stat-label">${label}</small>
     </div>
   `;
+}
+
+/**
+ * Loaded CG, entered manually — never read from the file (see this project's decision to drop dry
+ * CG entirely: there's no dry-CG-only measurement a user could plausibly balance separately from
+ * the loaded rocket). Flagged with <mark> until it's actually set, since unlike CP this is the one
+ * number on the page that can't be computed and genuinely has no default. Same pencil-icon
+ * inline-edit pattern as the mass stat (see wireInlineEditStat), no reset icon since there's no
+ * "base" CG from a file to revert to.
+ */
+function renderCgStat(): string {
+  const hasCg = activeLoadedCgM > 0;
+  const valueHtml = hasCg ? fmtLength(activeLoadedCgM) : `<mark>Not set — measure &amp; enter</mark>`;
+  return `
+    <div>
+      <strong
+        ><span id="cg-stat-value">${valueHtml}</span
+        ><button type="button" id="cg-stat-edit-btn" class="edit-pencil" aria-label="Edit loaded CG">✏️</button
+        ><input type="number" id="cg-stat-input" class="inline-edit-stat-input" value="${hasCg ? lengthToInput(activeLoadedCgM).toFixed(2) : ""}" placeholder="${lengthInputUnitLabel()}" min="0" step="0.1" hidden
+      /></strong>
+      <br /><small id="cg-stat-label">Loaded CG (from nose)</small>
+    </div>
+  `;
+}
+
+/** Wires the Loaded CG stat card's pencil-icon edit — always a direct, manual entry (see renderCgStat), so committing it just re-derives dry CG and re-renders, no motor-mass back-solving involved. */
+function wireCgStatEdit(): void {
+  wireInlineEditStat("cg-stat", (rawInputValue) => {
+    activeLoadedCgM = lengthFromInput(rawInputValue);
+    rederiveDryCg();
+    renderActiveRocketDisplay();
+    if (lastMotorSelection) {
+      const detailEl = document.querySelector<HTMLDivElement>("#motor-detail");
+      if (detailEl) {
+        const { html, rocketWithMotor } = renderMotorDetailHtml(lastMotorSelection.meta, lastMotorSelection.samples);
+        detailEl.innerHTML = html;
+        void runFlightSim(rocketWithMotor);
+      }
+    }
+  });
 }
 
 function renderRocketSection(rocket: Rocket, mach: number, subtitle: string, knownCp?: { label: string; mm: number }[]): string {
@@ -394,7 +480,7 @@ function renderRocketSection(rocket: Rocket, mach: number, subtitle: string, kno
     stat("Length", fmtRocketLength(overallLength(rocket.components))),
     renderMassStat(rocket),
     stat("Computed CP", fmtLength(cpX), "cp-method-info"),
-    hasCg ? stat("Loaded CG", fmtLength(activeLoadedCgM)) : "",
+    renderCgStat(),
     stat("Ref. diameter", fmtLength(refDiameter)),
     margin !== null
       ? stat(
@@ -568,7 +654,9 @@ function syncMotorMountUi(): void {
     return;
   }
   const nearest = nearestStandardDiameterMm(activeMotorMountDiameterMm);
-  noteEl.textContent = `Motor mount: ${fmtLength(activeMotorMountDiameterMm / 1000)} — diameter filter set to the closest standard size${nearest !== null ? ` (${nearest}mm)` : ""}. Check "use motor adapter" to also allow smaller motors.`;
+  // Motor mount diameter is always mm, not run through fmtLength's cm/in toggle -- same reasoning
+  // as the motor search results' Diameter column.
+  noteEl.textContent = `Motor mount: ${activeMotorMountDiameterMm.toFixed(1)}mm — diameter filter set to the closest standard size${nearest !== null ? ` (${nearest}mm)` : ""}. Check "use motor adapter" to also allow smaller motors.`;
   if (diaEl && nearest !== null && [...diaEl.options].some((o) => o.value === String(nearest))) {
     diaEl.value = String(nearest);
   }
@@ -681,7 +769,9 @@ const MOTOR_COLUMNS: MotorColumn[] = [
   {
     key: "diameter",
     label: "Diameter",
-    format: (m) => (m.diameter === undefined || m.diameter === null || Number.isNaN(m.diameter) ? "—" : fmtLength(m.diameter / 1000, 0)),
+    // Motor diameter is always mm, not run through fmtLength's cm/in toggle -- "38mm"/"54mm" are
+    // how these are named and talked about in the hobby regardless of the page's unit setting.
+    format: (m) => (m.diameter === undefined || m.diameter === null || Number.isNaN(m.diameter) ? "—" : `${m.diameter.toFixed(0)}mm`),
     value: (m) => m.diameter,
   },
   { key: "type", label: "Type", format: (m) => m.type, value: (m) => m.type },
@@ -941,6 +1031,15 @@ async function selectMotor(meta: MotorSearchResult): Promise<void> {
 
   try {
     const samples = await downloadThrustSamples(meta.motorId);
+    // If the LOADED mass field was what got edited (a motor was already selected at edit time),
+    // the dry mass currently stored is back-solved against that OLD motor's own mass and isn't
+    // meaningful for a different one -- revert to the file's base dry mass before applying this
+    // motor, so its "Loaded mass" is base dry + this motor, not a stale carried-over figure. A
+    // direct dry-mass edit (dryMassOverriddenViaLoadedEdit false) is motor-independent and stays.
+    if (dryMassOverriddenViaLoadedEdit) {
+      activeDryMassKg = baseDryMassKg;
+      dryMassOverriddenViaLoadedEdit = false;
+    }
     lastMotorSelection = { meta, samples };
     const { html, rocketWithMotor } = renderMotorDetailHtml(meta, samples);
     detailEl.innerHTML = html;
@@ -1229,9 +1328,6 @@ const orkSectionHtml = `
       </label>
     </div>
     <div id="ork-warnings"></div>
-    <div class="grid" id="ork-mass-cg-controls" style="margin-top:1em;">
-      <label>Loaded CG (<span id="length-unit-label">cm</span> from nose) <input type="number" id="ork-loaded-cg" value="0" min="0" step="0.1" /></label>
-    </div>
     <div id="active-rocket-display"></div>
   </article>
 `;
@@ -1242,36 +1338,10 @@ function renderActiveRocketDisplay(): void {
   el.innerHTML = renderRocketSection(activeRocket, 0.3, activeRocketSource, activeKnownCp);
 }
 
-/** Sets the loaded-CG input field's displayed value from the user-entered loaded CG, in whatever unit system is currently selected. Mass has no separate input field to sync — it's shown/edited directly on the mass stat card, see renderMassStat/wireMassStatEdit, which already re-render on every unit toggle. */
-function syncCgInputFromActiveRocket(): void {
-  const cgEl = document.querySelector<HTMLInputElement>("#ork-loaded-cg");
-  if (cgEl) cgEl.value = activeLoadedCgM > 0 ? lengthToInput(activeLoadedCgM).toFixed(2) : "0";
-}
-
 function wireOrkImport(): void {
   const fileInput = document.querySelector<HTMLInputElement>("#ork-file-input");
   const warningsEl = document.querySelector<HTMLDivElement>("#ork-warnings");
-  const controlsEl = document.querySelector<HTMLDivElement>("#ork-mass-cg-controls");
-  const cgEl = document.querySelector<HTMLInputElement>("#ork-loaded-cg");
-  if (!fileInput || !warningsEl || !controlsEl || !cgEl) return;
-
-  const applyCg = (): void => {
-    activeLoadedCgM = lengthFromInput(Number(cgEl.value) || 0);
-    rederiveDryCg();
-    renderActiveRocketDisplay();
-    // Keep the motor detail panel (its combined mass/CG table and loadedMassWarning) and the
-    // flight sim in sync too, if a motor's already selected -- otherwise editing loaded CG after
-    // picking a motor would leave both showing stale, pre-edit numbers.
-    if (lastMotorSelection) {
-      const detailEl = document.querySelector<HTMLDivElement>("#motor-detail");
-      if (detailEl) {
-        const { html, rocketWithMotor } = renderMotorDetailHtml(lastMotorSelection.meta, lastMotorSelection.samples);
-        detailEl.innerHTML = html;
-        void runFlightSim(rocketWithMotor);
-      }
-    }
-  };
-  cgEl.addEventListener("input", applyCg);
+  if (!fileInput || !warningsEl) return;
 
   fileInput.addEventListener("change", () => {
     const file = fileInput.files?.[0];
@@ -1300,17 +1370,14 @@ function wireOrkImport(): void {
 
         applyParsedRocket(parsed, `Uploaded: ${file.name}`, undefined);
 
-        controlsEl.style.display = "";
-        const massNote =
-          parsed.estimatedDryMassKg && parsed.estimatedDryMassKg > 0
-            ? ` Dry mass prefilled at ${fmtMass(activeDryMassKg)} from the file's own (structural-only) component masses — check it (pencil icon on the Dry mass figure below), then set loaded CG below (never guessed).`
-            : " Set dry mass (pencil icon on the Dry mass figure below) and loaded CG below (never guessed).";
+        const massNote = parsed.estimatedDryMassKg && parsed.estimatedDryMassKg > 0
+          ? ` Dry mass prefilled at ${fmtMass(activeDryMassKg)} from the file's own (structural-only) component masses — check it, then set loaded CG below (pencil icons on each figure — CG is never guessed).`
+          : " Set dry mass and loaded CG below (pencil icons on each figure — CG is never guessed).";
         const parseNote = parsed.warnings.length
           ? parsed.warnings.map((w) => `<mark>${w}</mark>`).join(" ")
           : `<small>Parsed ${parsed.components.length} components successfully.</small>`;
         warningsEl.innerHTML = `<p>${parseNote}${massNote}</p>`;
 
-        syncCgInputFromActiveRocket();
         renderActiveRocketDisplay();
         renderAndWireResults(); // this rocket's dry mass changed -- keep the motor table's T:W column in sync
 
@@ -1327,7 +1394,6 @@ function wireOrkImport(): void {
         }
       } catch (err) {
         warningsEl.innerHTML = `<p><mark>Failed to import: ${err instanceof Error ? err.message : String(err)}</mark></p>`;
-        controlsEl.style.display = "none";
       }
     })();
   });
@@ -1451,7 +1517,6 @@ function renderLibraryResults(): void {
 /** Fetches and parses the selected library entry's real .rkt file (only now, not for all 260+ entries up front) and makes it the active rocket. */
 async function selectLibraryEntry(entry: LibraryManifestEntry): Promise<void> {
   const warningsEl = document.querySelector<HTMLDivElement>("#ork-warnings");
-  const controlsEl = document.querySelector<HTMLDivElement>("#ork-mass-cg-controls");
   const pickerEl = document.querySelector<HTMLDetailsElement>("#library-picker");
   if (warningsEl) warningsEl.innerHTML = `<p aria-busy="true">Loading ${entry.name}…</p>`;
 
@@ -1461,7 +1526,6 @@ async function selectLibraryEntry(entry: LibraryManifestEntry): Promise<void> {
     const parsed = parseRocksimXml(await res.text());
     applyParsedRocket(parsed, `From the library: ${entry.vendor} — ${entry.name}`, LIBRARY_KNOWN_CP[entry.path], entry.name);
 
-    if (controlsEl) controlsEl.style.display = "";
     if (warningsEl) {
       const parseNote = parsed.warnings.length
         ? parsed.warnings.map((w) => `<mark>${w}</mark>`).join(" ")
@@ -1469,7 +1533,6 @@ async function selectLibraryEntry(entry: LibraryManifestEntry): Promise<void> {
       warningsEl.innerHTML = `<p>${parseNote}</p>`;
     }
     if (pickerEl) pickerEl.open = false;
-    syncCgInputFromActiveRocket();
     renderActiveRocketDisplay();
     renderAndWireResults(); // this rocket's dry mass changed -- keep the motor table's T:W column in sync
   } catch (err) {
@@ -1511,12 +1574,8 @@ const unitToggleHtml = `
   </div>
 `;
 
-/** Updates the loaded-CG input's unit label + value (without changing the underlying rocket) and re-renders every currently-populated section so a unit toggle takes effect everywhere at once — the mass stat card has no separate unit label to update, it re-renders its formatted value directly via renderActiveRocketDisplay below. */
+/** Re-renders every currently-populated section so a unit toggle takes effect everywhere at once — mass and CG stat cards have no separate unit-label elements to sync, they re-render their formatted values directly via renderActiveRocketDisplay below. */
 function refreshAllUnitDisplays(): void {
-  const lengthLabelEl = document.querySelector<HTMLSpanElement>("#length-unit-label");
-  if (lengthLabelEl) lengthLabelEl.textContent = lengthInputUnitLabel();
-  syncCgInputFromActiveRocket();
-
   renderActiveRocketDisplay();
   if (libraryManifest.length > 0) renderLibraryResults();
   renderAndWireResults();
@@ -1564,7 +1623,6 @@ if (app) {
       ${motorSectionHtml}
     </main>
   `;
-  syncCgInputFromActiveRocket();
   renderActiveRocketDisplay();
   wireOrkImport();
   wireMotorSearch();
@@ -1572,6 +1630,7 @@ if (app) {
   wireUnitToggle();
   wireInfoToggles();
   wireMassStatEdit();
+  wireCgStatEdit();
   void initLibrary();
   const urlParams = new URLSearchParams(location.search);
   const hadUrlFilters = (Object.keys(FILTER_DEFAULTS) as FilterKey[]).some((k) => urlParams.has(k));
