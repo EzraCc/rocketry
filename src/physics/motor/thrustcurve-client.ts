@@ -143,17 +143,53 @@ export async function downloadThrustSamples(motorId: string): Promise<ThrustSamp
 }
 
 /**
- * Batch-fetches just enough of each motor's thrust curve to read its INITIAL thrust (right after
- * ignition, not the burn-wide peak — those aren't the same motor, e.g. many BP motors have their
- * peak partway through the burn) for every motor in one request, rather than one download.json
- * round-trip per row of a search-results table. `download.json` accepts an array of motorIds
- * directly (confirmed against the live API), so this is the same endpoint as
+ * Effective initial thrust: total impulse delivered in the first INITIAL_WINDOW_S of the burn
+ * (trapezoidal-integrated, linearly interpolating the boundary sample), divided by that window's
+ * duration -- an impulse-weighted average, not a single sample.
+ *
+ * A single-sample "first thrust value above zero" was tried first and is wrong: digitized curves
+ * (RASP/RockSim) commonly carry a couple of sparse, noisy points on the rising edge right at
+ * ignition before the curve settles into its real burn profile. Confirmed directly against a real
+ * motor (AeroTech J435WS): its first non-zero sample is 11N at t=0.029s, while the curve is
+ * already at 528-694N by t=0.036-0.048s and stays roughly 550-700N through the rest of the
+ * window -- a single-sample pick reported this well-regarded, perfectly flyable J-class motor at
+ * a nonsense ~0.1:1 thrust:weight ratio. Integrating impulse over a real time window makes a
+ * handful of noisy microseconds-wide samples contribute almost nothing to the result, landing
+ * on ~560N for the same motor -- consistent with its burn profile and its ~442N reported average.
+ *
+ * If the whole burn is shorter than the window, integrates the whole thing (equivalent to
+ * avgThrustN, at that point) rather than reading past the end of the curve.
+ */
+const INITIAL_THRUST_WINDOW_S = 0.5;
+
+function computeInitialThrustN(samples: ThrustSample[]): number {
+  if (samples.length === 0) return 0;
+  const burnTime = samples[samples.length - 1]!.time;
+  const windowEnd = Math.min(INITIAL_THRUST_WINDOW_S, burnTime);
+  if (windowEnd <= 0) return samples[0]!.thrust;
+
+  let impulse = 0;
+  for (let i = 1; i < samples.length; i++) {
+    const a = samples[i - 1]!;
+    const b = samples[i]!;
+    if (a.time >= windowEnd) break;
+    const thrustAtSegEnd =
+      b.time > windowEnd ? a.thrust + (b.thrust - a.thrust) * ((windowEnd - a.time) / (b.time - a.time)) : b.thrust;
+    const segEnd = Math.min(b.time, windowEnd);
+    impulse += ((a.thrust + thrustAtSegEnd) / 2) * (segEnd - a.time);
+  }
+  return impulse / windowEnd;
+}
+
+/**
+ * Batch-fetches just enough of each motor's thrust curve to compute its effective initial thrust
+ * (see computeInitialThrustN — an impulse-weighted average over the first
+ * INITIAL_THRUST_WINDOW_S, not the burn-wide peak; those aren't the same motor, e.g. many BP
+ * motors have their peak partway through the burn) for every motor in one request, rather than
+ * one download.json round-trip per row of a search-results table. `download.json` accepts an
+ * array of motorIds directly (confirmed against the live API), so this is the same endpoint as
  * downloadThrustSamples, just requesting many motors' samples at once instead of one motor's full
  * curve.
- *
- * Digitized curves conventionally start with an explicit (t=0, F=0) origin point, so the literal
- * first sample is usually zero and not what "initial thrust" means here -- this returns the first
- * sample with thrust actually above zero, i.e. the value right as the motor lights.
  *
  * Motors ThrustCurve.org has no data file for are silently omitted from the result map (not
  * thrown) -- a partial table is more useful than failing the whole batch over one bad motor.
@@ -184,8 +220,7 @@ export async function downloadInitialThrusts(motorIds: string[]): Promise<Map<st
   }
 
   for (const [motorId, result] of bestByMotor) {
-    const ignitionSample = result.samples.find((s) => s.thrust > 0) ?? result.samples[0];
-    if (ignitionSample) out.set(motorId, ignitionSample.thrust);
+    out.set(motorId, computeInitialThrustN(result.samples));
   }
   return out;
 }

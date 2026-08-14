@@ -14,7 +14,7 @@
 
 export type UnitSystem = "metric" | "imperial";
 
-let current: UnitSystem = "metric";
+let current: UnitSystem = "imperial";
 
 export function getUnitSystem(): UnitSystem {
   return current;

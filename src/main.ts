@@ -786,9 +786,10 @@ async function loadInitialThrustsForCurrentResults(): Promise<void> {
 
 /**
  * Thrust:weight ratio using loaded weight (this rocket's current dry mass + the row's own motor
- * mass) and the motor's INITIAL thrust (see initialThrustByMotorId above) — the worst-case moment
- * right off the pad is what the safety threshold below is actually checking, not a burn-averaged
- * or peak-anywhere-in-the-burn figure. Thresholds are the standard hobby-rocketry safety guidance:
+ * mass) and the motor's effective INITIAL thrust (see initialThrustByMotorId/computeInitialThrustN
+ * above — an impulse-weighted average over the first ~0.5s of burn, not a single sample or the
+ * burn-wide peak) — the moment right off the pad is what the safety threshold below is actually
+ * checking. Thresholds are the standard hobby-rocketry safety guidance:
  * below 3:1 the rocket may not clear the launch rod with stable velocity (a real hazard, not just
  * underperformance) — nogo. 3-5:1 is flyable but marginal. 5-7:1 is a normal, unremarkable ratio.
  * Above 7:1 is comfortably brisk. Returns null when the motor's weight isn't published, or initial
@@ -1658,12 +1659,31 @@ async function initLibrary(): Promise<void> {
 }
 
 // --- Metric/imperial toggle ---
-const unitToggleHtml = `
-  <div role="group" id="unit-toggle" aria-label="Units">
-    <button type="button" data-unit="metric" aria-current="true">cm</button>
-    <button type="button" data-unit="imperial">in</button>
-  </div>
-`;
+/** "units" URL param values -- short and human-typeable (matching the button labels themselves), not the internal "metric"/"imperial" strings. */
+function unitSystemToUrlValue(system: UnitSystem): "cm" | "in" {
+  return system === "metric" ? "cm" : "in";
+}
+function urlValueToUnitSystem(value: "cm" | "in"): UnitSystem {
+  return value === "cm" ? "metric" : "imperial";
+}
+/** Matches units.ts's own default (imperial) -- kept out of the URL when selected, same "clean URL for default state" rule as the motor filter params, so only an explicit switch to metric shows up as ?units=cm. */
+const UNITS_URL_DEFAULT: "cm" | "in" = "in";
+
+/** Applies a "units" URL param (cm/in), if present, before the very first render -- so the toggle's initial aria-current and every formatted value on the page are correct from the start, not flashing from the imperial default to metric (or vice versa) right after load. */
+function applyUnitsFromUrl(): void {
+  const value = new URLSearchParams(location.search).get("units");
+  if (value === "cm" || value === "in") setUnitSystem(urlValueToUnitSystem(value));
+}
+
+function renderUnitToggleHtml(): string {
+  const system = getUnitSystem();
+  return `
+    <div role="group" id="unit-toggle" aria-label="Units">
+      <button type="button" data-unit="metric" aria-current="${system === "metric"}">cm</button>
+      <button type="button" data-unit="imperial" aria-current="${system === "imperial"}">in</button>
+    </div>
+  `;
+}
 
 /** Re-renders every currently-populated section so a unit toggle takes effect everywhere at once — mass and CG stat cards have no separate unit-label elements to sync, they re-render their formatted values directly via renderActiveRocketDisplay below. */
 function refreshAllUnitDisplays(): void {
@@ -1690,14 +1710,20 @@ function wireUnitToggle(): void {
       setUnitSystem(system);
       buttons.forEach((b) => b.setAttribute("aria-current", String(b === btn)));
       refreshAllUnitDisplays();
+      updateUrlParams((params) => {
+        const urlValue = unitSystemToUrlValue(system);
+        if (urlValue === UNITS_URL_DEFAULT) params.delete("units");
+        else params.set("units", urlValue);
+      });
     });
   });
 }
 
 const app = document.querySelector<HTMLDivElement>("#app");
 if (app) {
+  applyUnitsFromUrl(); // before building HTML below, so the toggle + every formatted value start correct
   app.innerHTML = `
-    ${unitToggleHtml}
+    ${renderUnitToggleHtml()}
     <main class="container">
       <hgroup>
         <h1>🚀 rocketry</h1>
