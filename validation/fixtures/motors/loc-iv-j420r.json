@@ -1,0 +1,134 @@
+{
+  "meta": {
+    "motorId": "5f4294d2000231000000011c",
+    "manufacturer": "AeroTech",
+    "manufacturerAbbrev": "AeroTech",
+    "designation": "J420R",
+    "commonName": "J420",
+    "impulseClass": "J",
+    "diameter": 38,
+    "length": 337,
+    "type": "reload",
+    "certOrg": "Tripoli Rocketry Association, Inc.",
+    "avgThrustN": 420,
+    "totImpulseNs": 658,
+    "burnTimeS": 1.56666666666667,
+    "dataFiles": 2,
+    "totalWeightG": 649.6,
+    "propWeightG": 345,
+    "delays": "4,6,8,10",
+    "delayAdjustable": false,
+    "caseInfo": "RMS-38/720",
+    "propInfo": "Redline",
+    "sparky": false,
+    "updatedOn": "2019-04-17",
+    "availability": "regular",
+    "source_url": "http://www.thrustcurve.org/motors/AeroTech/J420R/"
+  },
+  "samples": [
+    {
+      "time": 0.031,
+      "thrust": 61.083
+    },
+    {
+      "time": 0.095,
+      "thrust": 563.47
+    },
+    {
+      "time": 0.16,
+      "thrust": 525.283
+    },
+    {
+      "time": 0.224,
+      "thrust": 521.242
+    },
+    {
+      "time": 0.288,
+      "thrust": 527.371
+    },
+    {
+      "time": 0.352,
+      "thrust": 537.088
+    },
+    {
+      "time": 0.418,
+      "thrust": 535.138
+    },
+    {
+      "time": 0.481,
+      "thrust": 534.623
+    },
+    {
+      "time": 0.545,
+      "thrust": 530.245
+    },
+    {
+      "time": 0.61,
+      "thrust": 526.447
+    },
+    {
+      "time": 0.674,
+      "thrust": 517.203
+    },
+    {
+      "time": 0.738,
+      "thrust": 510.279
+    },
+    {
+      "time": 0.802,
+      "thrust": 500.887
+    },
+    {
+      "time": 0.868,
+      "thrust": 479.45
+    },
+    {
+      "time": 0.931,
+      "thrust": 460.675
+    },
+    {
+      "time": 0.995,
+      "thrust": 438.594
+    },
+    {
+      "time": 1.06,
+      "thrust": 409.647
+    },
+    {
+      "time": 1.124,
+      "thrust": 383.454
+    },
+    {
+      "time": 1.188,
+      "thrust": 361.024
+    },
+    {
+      "time": 1.252,
+      "thrust": 339.741
+    },
+    {
+      "time": 1.318,
+      "thrust": 319.194
+    },
+    {
+      "time": 1.381,
+      "thrust": 296.714
+    },
+    {
+      "time": 1.445,
+      "thrust": 195.191
+    },
+    {
+      "time": 1.51,
+      "thrust": 61.984
+    },
+    {
+      "time": 1.575,
+      "thrust": 7.22
+    },
+    {
+      "time": 1.64,
+      "thrust": 0
+    }
+  ]
+}

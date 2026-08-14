@@ -1,10 +1,10 @@
 [
   {
-    "label": "loc-iv-k400c",
+    "label": "loc-iv-j420r",
     "rocketPath": "public/library/loc/PK-48 LOC-IV.rkt",
     "motorManufacturer": "AeroTech",
-    "motorDesignation": "K400C",
-    "note": "The project's own gold-standard reference case (RockSim's own CP for this exact file is independently hand-verified elsewhere) — 38mm mount. No saved simulation in the file itself, K400C picked manually (same motor scripts/export-ascent-path.ts already uses)."
+    "motorDesignation": "J420R",
+    "note": "The project's own gold-standard reference case (RockSim's own CP for this exact file is independently hand-verified elsewhere) — 38.6mm mount. No saved simulation in the file itself. Previously used K400C, which turned out to be a REAL BUG: K400C is a 54mm-case motor (confirmed via ThrustCurve.org's own metadata), physically too wide for this file's 38.6mm motor mount -- caught by an explicit audit of every validation case's motor diameter against its rocket's real mount size. J420R is a real, currently-in-production 38mm AeroTech motor with a comparable average thrust to what \"K400\" implied (420N vs. 400N) -- picked as the closest real, correctly-sized substitute (confirmed present in BOTH OpenRocket's own bundled motor database and ThrustCurve.org's live API -- the first substitute tried, J340M, resolved live but wasn't in OpenRocket's bundled snapshot, so the Java harness couldn't use it). AeroTech doesn't make a 38mm K-class motor at all -- their 38mm case tops out around I/J class."
   },
   {
     "label": "big-nuke-3e-m650w",

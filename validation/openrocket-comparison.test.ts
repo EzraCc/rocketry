@@ -14,6 +14,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { computeBarrowman } from "../src/physics/aero/barrowman.js";
+import { referenceDiameter } from "../src/physics/geometry/rocket-geometry.js";
 import { parseRocksimXml } from "../src/formats/rocksim/parse.js";
 import { simulateFlight3D } from "../src/physics/sim/engine3d.js";
 import { motorAxialPosition } from "../src/physics/mass/combined-mass.js";
@@ -121,6 +122,25 @@ describe.each(fixtureFiles)("%s vs. real OpenRocket Java simulation", (file) => 
   const xml = fs.readFileSync(path.join(REPO_ROOT, fixture.rocketPath), "utf-8");
   const parsed = parseRocksimXml(xml);
   const motor = loadMotor(fixture.label);
+
+  // Guards against exactly the bug this caught for real: loc-iv-k400c originally paired LOC-IV
+  // (a 38.6mm motor mount) with AeroTech K400C, a 54mm-case motor that physically cannot fit --
+  // caught by an explicit audit of every case's motor diameter against its rocket's real mount
+  // size, not the rocket's outer body diameter (a mid/high-power rocket's outer tube is routinely
+  // much wider than its motor mount -- e.g. this same LOC-IV file: 101.6mm body, 38.6mm mount).
+  // Fixed by switching to J420R (confirmed real, present in both ThrustCurve.org's live API AND
+  // OpenRocket's own bundled motor database -- see rockets.json's own note on that case). Falls
+  // back to the reference/outer diameter only when the file has no separately-flagged motor mount
+  // tube (a real, legitimate case -- the motor sits directly in the outer body on a minimum-
+  // diameter build), same convention applyParsedRocket uses in src/main.ts.
+  it("motor diameter physically fits the rocket's own motor mount", () => {
+    const mountDiameterMm = (parsed.motorMountDiameterM ?? referenceDiameter(parsed.components)) * 1000;
+    const motorDiameterMm = motor.diameter * 1000;
+    expect(
+      motorDiameterMm,
+      `${fixture.motorManufacturer} ${fixture.motorDesignation} is ${motorDiameterMm}mm, but ${fixture.label}'s own motor mount is only ${mountDiameterMm.toFixed(1)}mm`,
+    ).toBeLessThanOrEqual(mountDiameterMm + 0.5); // +0.5mm tolerance for float noise on an exact-fit size
+  });
 
   it(`CP within ${(CP_TOLERANCE * 100).toFixed(0)}%`, () => {
     const { cpX } = computeBarrowman(parsed.components, COMPARISON_MACH);

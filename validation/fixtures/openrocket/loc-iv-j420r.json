@@ -1,0 +1,17 @@
+{
+  "cpXMm": 904.657327221626,
+  "cgAtLiftoffMm": 861.5216109338569,
+  "massAtLiftoffKg": 1.6719466058958141,
+  "refDiameterMm": 101.6,
+  "stabilityMarginCalibers": 0.4245641366906411,
+  "apogeeAltitudeM": 1395.7036798457673,
+  "apogeeTimeS": 13.76490116716822,
+  "apogeeEventTimeS": 13.76490116716822,
+  "maxVelocityMs": 325.7271867024791,
+  "maxMach": 0.9600862198220235,
+  "maxAccelerationMs2": 329.4970633256104,
+  "label": "loc-iv-j420r",
+  "rocketPath": "public/library/loc/PK-48 LOC-IV.rkt",
+  "motorManufacturer": "AeroTech",
+  "motorDesignation": "J420R"
+}
