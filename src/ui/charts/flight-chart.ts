@@ -30,6 +30,8 @@ interface Panel {
   unitLabel: string;
   values: Float64Array;
   stroke: string;
+  /** Decimal places for the y-axis tick labels — uPlot's default (up to ~6 significant figures) reads as "calculator output," not a human-scale figure (e.g. "1234.5678900001 m" for altitude). Tuned per quantity: whole meters/feet for altitude, one decimal for speed, two for Mach (where the second decimal is the whole point of showing it at all). */
+  axisDecimals: number;
 }
 
 // uPlot draws axis ticks/labels/grid on <canvas>, not DOM text, so CSS (and hence Pico's
@@ -48,11 +50,26 @@ function buildPanel(container: HTMLElement, time: Float64Array, panel: Panel): u
     scales: { x: { time: false } },
     series: [
       {},
-      { label: panel.title, stroke: panel.stroke, width: 2, points: { show: false } },
+      {
+        label: panel.title,
+        stroke: panel.stroke,
+        width: 2,
+        points: { show: false },
+        // Legend/cursor readout shows the exact sampled float otherwise (e.g. "1234.5678900001
+        // m") -- same fixed-decimals policy as the axis ticks below, just applied to the one
+        // point under the cursor instead of the whole tick range.
+        value: (_u, v) => (v === null || v === undefined ? "--" : v.toFixed(panel.axisDecimals)),
+      },
     ],
     axes: [
       { label: "time (s)", stroke: AXIS_STROKE, grid: { stroke: GRID_STROKE }, ticks: { stroke: AXIS_STROKE } },
-      { label: panel.unitLabel, stroke: AXIS_STROKE, grid: { stroke: GRID_STROKE }, ticks: { stroke: AXIS_STROKE } },
+      {
+        label: panel.unitLabel,
+        stroke: AXIS_STROKE,
+        grid: { stroke: GRID_STROKE },
+        ticks: { stroke: AXIS_STROKE },
+        values: (_u, splits) => splits.map((v) => v.toFixed(panel.axisDecimals)),
+      },
     ],
   };
   return new uPlot(opts, [time, panel.values], container);
@@ -75,6 +92,7 @@ export function renderFlightChart(containerIds: {
       unitLabel: altitudeAxisUnitLabel(),
       values: Float64Array.from(samples.map((s) => altitudeAxisValue(s.altitude))),
       stroke: "#2f6feb",
+      axisDecimals: 0, // whole meters/feet -- fractional altitude isn't meaningful at human scale
     },
     {
       containerId: containerIds.speed,
@@ -82,6 +100,7 @@ export function renderFlightChart(containerIds: {
       unitLabel: velocityAxisUnitLabel(),
       values: Float64Array.from(samples.map((s) => velocityAxisValue(s.speed))),
       stroke: "#e8590c",
+      axisDecimals: 1,
     },
     {
       containerId: containerIds.mach,
@@ -89,6 +108,7 @@ export function renderFlightChart(containerIds: {
       unitLabel: "Mach",
       values: Float64Array.from(samples.map((s) => s.mach)),
       stroke: "#2b8a3e",
+      axisDecimals: 2, // the second decimal is the point of showing Mach at all -- 0.8 vs 0.85 vs 0.9 matters near transonic
     },
     {
       containerId: containerIds.tilt,
@@ -96,6 +116,7 @@ export function renderFlightChart(containerIds: {
       unitLabel: "deg",
       values: Float64Array.from(samples.map((s) => s.tiltFromVerticalDeg)),
       stroke: "#9c36b5",
+      axisDecimals: 1,
     },
   ];
 
