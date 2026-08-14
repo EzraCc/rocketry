@@ -127,6 +127,8 @@ function applyParsedRocket(
     name: string;
     components: Component[];
     estimatedDryMassKg?: number;
+    estimatedDryCgM?: number;
+    dryMassBreakdown?: { name: string; massKg: number; cgXM: number }[];
     motorMountDiameterM?: number;
     unsupportedFeatures?: string[];
   },
@@ -135,6 +137,14 @@ function applyParsedRocket(
   displayName?: string,
 ): void {
   activeUnsupportedFeatures = parsed.unsupportedFeatures ?? [];
+  activeEstimatedDryCgM = parsed.estimatedDryCgM;
+  // dryMassBreakdown's own per-part cgXM positions inherit the same unsupported-geometry problem
+  // as estimatedDryCgM (e.g. an ExternalPod's contents get a wrong position -- see parse.ts), even
+  // though the file's total mass (estimatedDryMassKg, summed from this same breakdown) is still
+  // valid regardless of position accuracy. Withhold the per-part table for unsupported files rather
+  // than showing individually wrong positions; parseRocksimXml itself already withholds
+  // estimatedDryCgM the same way, for the same reason.
+  activeDryMassBreakdown = activeUnsupportedFeatures.length === 0 ? parsed.dryMassBreakdown : undefined;
   const motorMountComponent = parsed.components.find((c) => c.type === "bodytube" && c.isMotorMount);
   const bodyComponents = parsed.components.filter(isBodyComponent);
   const motorMountId = motorMountComponent?.id ?? bodyComponents[bodyComponents.length - 1]?.id ?? "";
@@ -169,7 +179,8 @@ function applyParsedRocket(
   }
   activeDryMassKg = baseDryMassKg;
   dryMassOverriddenViaLoadedEdit = false;
-  activeLoadedCgM = 0; // forces the user to actually enter it -- never guessed from geometry
+  activeLoadedCgM = 0; // reset -- autoDeriveLoadedCg (inside rederiveDryCg) fills this from activeEstimatedDryCgM when available
+  cgOverriddenByUser = false;
   rederiveDryCg();
 
   activeKnownCp = knownCp;
@@ -218,16 +229,44 @@ let activeUnsupportedFeatures: string[] = [];
  * (editing it just back-solves activeDryMassKg by subtracting the motor's
  * mass again — see the mass-stat-edit wiring).
  *
- * CG stays loaded-primary (activeLoadedCgM below) — unlike mass, there's no
- * "dry CG" a user could plausibly balance/measure separately from the
- * loaded rocket, so activeRocket.dryCg is always derived, never entered.
+ * CG stays loaded-primary (activeLoadedCgM below) -- activeRocket.dryCg is
+ * always derived from it (never entered directly), same shape as mass.
+ * Originally there was no per-file dry CG at all, so activeLoadedCgM always
+ * started unset (0), forcing manual entry. RockSim files now carry a real
+ * geometry-derived dry CG estimate (parseRocksimXml's estimatedDryCgM, the
+ * chicken-and-egg fix -- previously stability could only be checked AFTER
+ * measuring a real rocket with a real motor installed, which a still-
+ * shopping-for-a-motor user can't do yet) -- see activeEstimatedDryCgM and
+ * autoDeriveLoadedCg below for how that seeds activeLoadedCgM without
+ * removing the ability to enter a real measured value instead.
  */
 let activeDryMassKg = 0.05;
 /** The dry mass exactly as loaded from the current file (or the 50g placeholder if the file had none) — never changed by editing, only by loading a new rocket. What the mass stat's reset icon reverts to, and what a motor CHANGE (not just a re-edit) reverts to if the loaded-mass field was the thing last edited (see dryMassOverriddenViaLoadedEdit) — that back-solve is only valid for the motor it was solved against. */
 let baseDryMassKg = 0.05;
 /** True only when activeDryMassKg's current value came from editing LOADED mass (a motor was selected at edit time, so the entered figure got back-solved into a dry mass entangled with that specific motor's own mass). False after a fresh file load, a direct dry-mass edit (motor-independent — stays valid across motor changes), or a reset. Checked by selectMotor: switching motors while this is true means the back-solved dry mass is stale for the new motor, so it reverts to baseDryMassKg first. */
 let dryMassOverriddenViaLoadedEdit = false;
-let activeLoadedCgM = 0; // 0 = unset, forces the user to actually enter it -- never guessed from geometry
+let activeLoadedCgM = 0; // 0 = unset (no estimate AND no manual entry) -- see autoDeriveLoadedCg
+/**
+ * The active file's own geometry-derived dry CG (parseRocksimXml's estimatedDryCgM) — undefined
+ * for RASAero files (a different, non-tree-based parser with no such data) and for RockSim files
+ * with unsupportedFeatures (pods/tube fins/ring tails/cluster mounts/multi-stage, where the
+ * estimate itself is withheld — see parse.ts). Set by applyParsedRocket, read by
+ * autoDeriveLoadedCg; never written anywhere else.
+ */
+let activeEstimatedDryCgM: number | undefined;
+/**
+ * True once the user has directly typed a CG value via the pencil-icon edit — from then on,
+ * autoDeriveLoadedCg leaves activeLoadedCgM alone (a real measurement always wins over a
+ * geometry-derived estimate) until the reset icon or a fresh file load clears it again.
+ */
+let cgOverriddenByUser = false;
+/**
+ * The active file's own per-part mass/CG breakdown (parseRocksimXml's dryMassBreakdown) -- shown
+ * as a component table alongside the CG stat, matching what OpenRocket's own UI shows (component
+ * name, mass, CG contribution) since this project already has to walk the same data to compute
+ * activeEstimatedDryCgM. Undefined under the same conditions as activeEstimatedDryCgM above.
+ */
+let activeDryMassBreakdown: { name: string; massKg: number; cgXM: number }[] | undefined;
 
 /** Builds a SelectedMotor from ThrustCurve.org search/download data — shared by rederiveDryCg (below) and renderMotorDetailHtml, so both construct the exact same motor object from the same inputs. */
 function buildSelectedMotor(meta: MotorSearchResult, samples: ThrustSample[]): SelectedMotor {
@@ -263,7 +302,34 @@ function buildSelectedMotor(meta: MotorSearchResult, samples: ThrustSample[]): S
  */
 let loadedMassWarning: string | null = null;
 
+/**
+ * Refreshes activeLoadedCgM from the file's own estimatedDryCgM (activeEstimatedDryCgM) and the
+ * current motor selection, UNLESS the user has directly entered a CG value (cgOverriddenByUser) --
+ * the forward direction of rederiveDryCg's own back-solve below (dry+motor -> loaded), used to
+ * seed a real number instead of leaving the CG stat flagged "Not set" whenever the source file
+ * provides one. No motor selected yet means loaded==dry (nothing to blend in), matching how the
+ * back-solve below already treats activeLoadedCgM as the dry figure directly in that case. Called
+ * at the top of rederiveDryCg so every existing call site (file load, motor selection, dry-mass
+ * edits) picks this up automatically without each needing to know about it.
+ */
+function autoDeriveLoadedCg(): void {
+  if (cgOverriddenByUser || activeEstimatedDryCgM === undefined) return;
+  const motor = lastMotorSelection ? buildSelectedMotor(lastMotorSelection.meta, lastMotorSelection.samples) : null;
+  if (!motor) {
+    activeLoadedCgM = activeEstimatedDryCgM;
+    return;
+  }
+  const pos = motorAxialPosition({ ...activeRocket, motor });
+  if (!pos) {
+    activeLoadedCgM = activeEstimatedDryCgM;
+    return;
+  }
+  const loadedMassKg = activeDryMassKg + motor.totalMassKg;
+  activeLoadedCgM = (activeDryMassKg * activeEstimatedDryCgM + motor.totalMassKg * pos.cgX) / loadedMassKg;
+}
+
 function rederiveDryCg(): void {
+  autoDeriveLoadedCg();
   loadedMassWarning = null;
   if (activeLoadedCgM <= 0) {
     activeRocket = { ...activeRocket, dryMass: activeDryMassKg, dryCg: 0 };
@@ -463,32 +529,55 @@ function renderMassStat(rocket: Rocket): string {
 }
 
 /**
- * Loaded CG, entered manually — never read from the file (see this project's decision to drop dry
- * CG entirely: there's no dry-CG-only measurement a user could plausibly balance separately from
- * the loaded rocket). Flagged with <mark> until it's actually set, since unlike CP this is the one
- * number on the page that can't be computed and genuinely has no default. Same pencil-icon
- * inline-edit pattern as the mass stat (see wireInlineEditStat), no reset icon since there's no
- * "base" CG from a file to revert to.
+ * Dry CG (no motor selected) or loaded CG (dry + selected motor's own mass/position, same
+ * moment-conservation blend rederiveDryCg uses in reverse) — mirrors renderMassStat's dry/loaded
+ * duality exactly. Auto-filled from the file's own geometry-derived estimate
+ * (activeEstimatedDryCgM, via autoDeriveLoadedCg) when available and not yet overridden --
+ * RockSim files with supported geometry only; RASAero files and unsupported-geometry RockSim files
+ * have no such estimate and keep the original manual-entry-required behavior (flagged with <mark>,
+ * this project's one number that genuinely has no computed fallback in that case). An estimate is
+ * still just that -- shown as "(from file)" rather than presented as a real measurement, and
+ * always overridable via the pencil icon; the reset icon (shown once overridden) goes back to it.
  */
 function renderCgStat(): string {
+  const motor = lastMotorSelection ? buildSelectedMotor(lastMotorSelection.meta, lastMotorSelection.samples) : null;
+  const label = motor ? "Loaded CG" : "Dry CG";
   const hasCg = activeLoadedCgM > 0;
-  const valueHtml = hasCg ? fmtLength(activeLoadedCgM) : `<mark>Not set — measure &amp; enter</mark>`;
+  const isEstimate = hasCg && !cgOverriddenByUser && activeEstimatedDryCgM !== undefined;
+  const valueHtml = hasCg
+    ? `${fmtLength(activeLoadedCgM)}${isEstimate ? ` <small>(from file)</small>` : ""}`
+    : `<mark>Not set — measure &amp; enter</mark>`;
   return `
     <div>
       <strong
         ><span id="cg-stat-value">${valueHtml}</span
-        ><button type="button" id="cg-stat-edit-btn" class="edit-pencil" aria-label="Edit loaded CG">✏️</button
+        ><button type="button" id="cg-stat-edit-btn" class="edit-pencil" aria-label="Edit ${label.toLowerCase()}">✏️</button
         ><input type="number" inputmode="decimal" id="cg-stat-input" class="inline-edit-stat-input" value="${hasCg ? lengthToInput(activeLoadedCgM).toFixed(2) : ""}" placeholder="${lengthInputUnitLabel()}" min="0" step="0.1" hidden
-      /></strong>
-      <br /><small id="cg-stat-label">Loaded CG (from nose)</small>
+        /><button type="button" id="cg-stat-reset-btn" class="edit-pencil" aria-label="Reset to the file's estimated CG" title="${activeEstimatedDryCgM !== undefined ? "Reset to this file's geometry-derived estimate" : "Clear"}" hidden>↺</button
+      ></strong>
+      <br /><small id="cg-stat-label">${label} (from nose)</small>
     </div>
   `;
 }
 
-/** Wires the Loaded CG stat card's pencil-icon edit — always a direct, manual entry (see renderCgStat), so committing it just re-derives dry CG and re-renders, no motor-mass back-solving involved. */
+/** Wires the CG stat card's pencil-icon edit — a direct, manual entry (dry CG if no motor's selected, loaded CG if one is, same convention as the mass stat's own edit) that always wins over any file-derived estimate (see cgOverriddenByUser). The reset icon discards the override and goes back to autoDeriveLoadedCg's own estimate (or to "Not set" if the file has none). */
 function wireCgStatEdit(): void {
   wireInlineEditStat("cg-stat", (rawInputValue) => {
     activeLoadedCgM = lengthFromInput(rawInputValue);
+    cgOverriddenByUser = true;
+    rederiveDryCg();
+    renderActiveRocketDisplay();
+    if (lastMotorSelection) {
+      const rocketWithMotor = renderMotorDetailAndMountChart(lastMotorSelection.meta, lastMotorSelection.samples);
+      if (rocketWithMotor) void runFlightSim(rocketWithMotor);
+    }
+  });
+
+  document.querySelector("#app")?.addEventListener("click", (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLElement>("#cg-stat-reset-btn");
+    if (!btn) return;
+    cgOverriddenByUser = false;
+    activeLoadedCgM = activeEstimatedDryCgM ?? 0;
     rederiveDryCg();
     renderActiveRocketDisplay();
     if (lastMotorSelection) {
@@ -567,7 +656,42 @@ function renderRocketSection(rocket: Rocket, mach: number, subtitle: string, kno
       <figure class="schematic">
         ${renderSchematicSvg(rocket.components, cpX, hasCg ? activeLoadedCgM : undefined)}
       </figure>
+      ${renderComponentBreakdownTable()}
     </article>
+  `;
+}
+
+/**
+ * Component-by-component mass/CG breakdown (name, mass, % of dry mass, CG from nose) — the same
+ * data this project already has to walk to compute activeEstimatedDryCgM (parseRocksimXml's
+ * dryMassBreakdown), shown so the UI surfaces what it's already tracking rather than only the
+ * final derived number, matching OpenRocket's own component-analysis display. Undefined/empty for
+ * RASAero files and unsupported-geometry RockSim files (same conditions as activeEstimatedDryCgM),
+ * in which case this renders nothing rather than an empty table. Sorted nose-to-tail (ascending
+ * CG position) since that's how a builder would actually walk the physical rocket, not by mass.
+ */
+function renderComponentBreakdownTable(): string {
+  const breakdown = activeDryMassBreakdown;
+  if (!breakdown || breakdown.length === 0) return "";
+  const totalMassKg = breakdown.reduce((sum, p) => sum + p.massKg, 0);
+  if (totalMassKg <= 0) return "";
+  const rows = [...breakdown]
+    .sort((a, b) => a.cgXM - b.cgXM)
+    .map((p) => {
+      const pct = (p.massKg / totalMassKg) * 100;
+      return `<tr><td>${p.name}</td><td>${fmtMass(p.massKg)}</td><td>${pct.toFixed(1)}%</td><td>${fmtLength(p.cgXM)}</td></tr>`;
+    })
+    .join("");
+  return `
+    <details>
+      <summary>Component breakdown (${breakdown.length} parts, from the file's own per-part mass/CG data)</summary>
+      <figure>
+        <table>
+          <thead><tr><th>Component</th><th>Mass</th><th>% of dry mass</th><th>CG (from nose)</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </figure>
+    </details>
   `;
 }
 
