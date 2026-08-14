@@ -42,6 +42,9 @@ import {
   lengthInputUnitLabel,
   lengthToInput,
   lengthFromInput,
+  altitudeInputUnitLabel,
+  altitudeToInput,
+  altitudeFromInput,
 } from "./ui/units.js";
 
 /**
@@ -872,9 +875,9 @@ const motorSectionHtml = `
         browser — no backend, CORS is open on their API — and attach a real motor to your rocket above
         (the library selection by default, or whatever you imported).
         Shows its thrust curve and its mass curve -- the real per-sample propellant mass when the motor's own
-        source file has one (RockSim/.rse files do; noted below when it applies), otherwise derived from total/
-        propellant weight assuming mass loss is proportional to cumulative thrust impulse -- and the
-        combined rocket mass/CG at ignition, mid-burn, and burnout.
+        source file has one (RockSim/.rse files do), otherwise derived from total/propellant weight
+        assuming mass loss is proportional to cumulative thrust impulse -- and the combined rocket
+        mass/CG at ignition, mid-burn, and burnout.
       </p>
     </header>
     <div id="motor-section-unsupported-notice" hidden></div>
@@ -1282,7 +1285,7 @@ function renderMotorDetailHtml(meta: MotorSearchResult, samples: ThrustSample[])
   // motor swap correctly changes how much of the loaded CG gets attributed to the airframe.
   rederiveDryCg();
 
-  const rocketWithMotor: Rocket = { ...activeRocket, motor, windProfile: activeWindProfile };
+  const rocketWithMotor: Rocket = { ...activeRocket, motor, windProfile: activeWindProfile, launchRodLength: activeLaunchRodLengthM };
   const massCurve = deriveMotorMassCurve(motor);
   const bt = burnTime(motor);
   const midT = bt / 2;
@@ -1597,12 +1600,13 @@ function wireMotorSearch(): void {
 const windSectionHtml = `
   <article>
     <header>
-      <h2>Wind data</h2>
+      <h2>Launch settings</h2>
       <p>
-        Sets the wind used by the flight simulation above (re-select a motor after changing wind
-        to re-run with the new setting) — a plain constant wind for now. Real altitude-varying wind
-        will come from splashcast (the launch-day wind/drift predictor) once it's wired in directly
-        through this tool's library API, replacing manual entry rather than adding a file to upload.
+        Sets the wind and launch rod length used by the flight simulation above (re-select a motor
+        after changing either to re-run with the new setting) — a plain constant wind for now. Real
+        altitude-varying wind will come from splashcast (the launch-day wind/drift predictor) once
+        it's wired in directly through this tool's library API, replacing manual entry rather than
+        adding a file to upload.
       </p>
     </header>
     <div class="grid">
@@ -1613,10 +1617,22 @@ const windSectionHtml = `
       </div>
     </div>
     <p id="wind-active-label"><small>Currently: calm (no wind).</small></p>
+    <div class="grid">
+      <label>Launch rod length (<span id="launch-rod-unit-label">m</span>) <input type="number" inputmode="decimal" id="launch-rod-length-input" min="0" step="0.5" /></label>
+    </div>
   </article>
 `;
 
 let activeWindProfile: WindProfile | null = null;
+/**
+ * Launch rod length (m), a launch-site condition like wind -- persists across rocket switches
+ * (never reset in applyParsedRocket, same as activeWindProfile), user-adjustable (see
+ * wireLaunchRodInput). Defaults to 7ft (2.1336m): a common mid/high-power rail length, and
+ * meaningfully longer than defaultRocket()'s own generic 1m default -- rod length affects rail-exit
+ * velocity and hence how much of the rocket's own weathercocking/off-rail tip-off shows up in a
+ * flight result, so leaving it at a short default silently understated it.
+ */
+let activeLaunchRodLengthM = 7 * 0.3048;
 
 function updateActiveWindLabel(): void {
   const labelEl = document.querySelector<HTMLParagraphElement>("#wind-active-label");
@@ -1663,7 +1679,37 @@ function wireWindImport(): void {
     // action). Re-run directly here instead, if there's a motor to run it against.
     if (lastMotorSelection) {
       const motor = buildSelectedMotor(lastMotorSelection.meta, lastMotorSelection.samples);
-      void runFlightSim({ ...activeRocket, motor, windProfile: activeWindProfile });
+      void runFlightSim({ ...activeRocket, motor, windProfile: activeWindProfile, launchRodLength: activeLaunchRodLengthM });
+    }
+  });
+}
+
+/** Updates the launch-rod-length input's unit label and displayed value from activeLaunchRodLengthM -- called both at startup and on every unit toggle (same pattern as updateWindManualUnitDisplay), so the field always shows the actual active value converted to the current unit system, not a stale one left over from a previous unit. */
+function updateLaunchRodLengthUnitDisplay(): void {
+  const labelEl = document.querySelector<HTMLSpanElement>("#launch-rod-unit-label");
+  const inputEl = document.querySelector<HTMLInputElement>("#launch-rod-length-input");
+  if (!labelEl || !inputEl) return;
+  labelEl.textContent = altitudeInputUnitLabel();
+  inputEl.value = altitudeToInput(activeLaunchRodLengthM).toFixed(1);
+}
+
+/** Wires the launch-rod-length input -- unlike wind (speed+direction bundled behind an explicit "apply" button, since both need to be set together), this is a single independent value, so it commits live on change/blur rather than needing its own button. */
+function wireLaunchRodInput(): void {
+  const inputEl = document.querySelector<HTMLInputElement>("#launch-rod-length-input");
+  if (!inputEl) return;
+
+  inputEl.addEventListener("change", () => {
+    const raw = Number(inputEl.value);
+    if (!Number.isFinite(raw) || raw <= 0) {
+      updateLaunchRodLengthUnitDisplay(); // revert the field to the last valid value
+      return;
+    }
+    activeLaunchRodLengthM = altitudeFromInput(raw);
+    // Same "re-run if a motor's already selected" pattern as wind's own apply handler -- a flight
+    // sim already run reflects whatever rod length was active AT THE TIME.
+    if (lastMotorSelection) {
+      const motor = buildSelectedMotor(lastMotorSelection.meta, lastMotorSelection.samples);
+      void runFlightSim({ ...activeRocket, motor, windProfile: activeWindProfile, launchRodLength: activeLaunchRodLengthM });
     }
   });
 }
@@ -2005,6 +2051,7 @@ function refreshAllUnitDisplays(): void {
   }
   updateWindManualUnitDisplay();
   updateActiveWindLabel();
+  updateLaunchRodLengthUnitDisplay();
 }
 
 function wireUnitToggle(): void {
@@ -2058,6 +2105,8 @@ if (app) {
   wireOrkImport();
   wireMotorSearch();
   wireWindImport();
+  wireLaunchRodInput();
+  updateLaunchRodLengthUnitDisplay();
   wireUnitToggle();
   wireInfoToggles();
   wireMassStatEdit();

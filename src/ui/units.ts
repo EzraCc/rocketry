@@ -125,6 +125,24 @@ export function lengthFromInput(raw: number): number {
   return current === "metric" ? raw / 100 : raw / M_TO_IN;
 }
 
+// --- Large-scale editable inputs: m (metric) or ft (imperial) -- same altitude-scale convention as
+// fmtAltitude, for things measured in whole meters/feet (launch rod length, site elevation) rather
+// than component-scale cm/in.
+
+export function altitudeInputUnitLabel(): string {
+  return current === "metric" ? "m" : "ft";
+}
+
+/** m -> the number to show in an altitude-scale input field. */
+export function altitudeToInput(m: number): number {
+  return current === "metric" ? m : m * M_TO_FT;
+}
+
+/** The number typed into an altitude-scale input field -> m. */
+export function altitudeFromInput(raw: number): number {
+  return current === "metric" ? raw : raw / M_TO_FT;
+}
+
 // --- Chart-axis helpers: bare numeric value (no suffix, uPlot draws its own axis labels) plus
 // the unit label text for the axis title — same large-scale altitude/velocity conventions as
 // fmtAltitude/fmtVelocity above, split apart because a chart axis needs a plain number series.
