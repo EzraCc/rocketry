@@ -44,15 +44,26 @@
   color: var(--pico-muted-color);
 }
 
-/* Below Pico's own grid breakpoint, .grid already stacks each stat into its own full-width block
-   (confirmed real: 7 stats stacked to 642px of scrolling on a 390px-wide screen) -- each was still
-   laid out as a standalone "card" (value centered above label), which is the right look at desktop
-   grid width but reads as excessive, hard-to-scan vertical space once there's only one per row.
-   Restyle each row as a compact label-left/value-right table row instead, keeping the desktop
-   card grid completely untouched above the breakpoint. row-reverse (not a markup change) puts the
-   DOM's first child (the value, <strong>) on the right and the second (the label, <small>) on the
-   left, matching how a label:value row normally reads. */
-@media (max-width: 767px) {
+/* Pico's own .grid breakpoint (768px) is where IT switches from a single column to
+   repeat(auto-fit, minmax(...)) -- too narrow a cutoff for what should still count as "compact
+   phone" width: confirmed real on a Pixel 9 in landscape (924px CSS width, well past 768px) still
+   showing multi-column stat cards, cramped and no more readable than the desktop grid it's copying
+   at a much smaller size. 1024px is the standard "this is a tablet/laptop, not a phone" cutoff
+   (covers every common phone in EITHER orientation -- iPhone 14 Pro Max landscape is 932px, this
+   Pixel 9 is 924px -- while leaving iPad-landscape-and-up on the real desktop grid). Below it: (1)
+   force .stats-grid back to Pico's own single-column layout (overriding Pico's 768px multi-column
+   switch, needed since this project's own stylesheet loads after Pico's and wins the cascade at
+   equal specificity), then (2) restyle each row as a compact label-left/value-right table row
+   instead of a standalone centered "card" (confirmed real: 7 stats stacked to 642px of scrolling on
+   a 390px-wide screen at the old card styling). row-reverse (not a markup change) puts the DOM's
+   first child (the value, <strong>) on the right and the second (the label, <small>) on the left,
+   matching how a label:value row normally reads. Desktop grid stays completely untouched above
+   1024px. */
+@media (max-width: 1023px) {
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
   .stats-grid > div {
     display: flex;
     flex-direction: row-reverse;
