@@ -1,0 +1,17 @@
+{
+  "cpXMm": 362.39460609757464,
+  "cgAtLiftoffMm": 323.7194437921315,
+  "massAtLiftoffKg": 0.16746536489986985,
+  "refDiameterMm": 47.0002,
+  "stabilityMarginCalibers": 0.8228722921486112,
+  "apogeeAltitudeM": 506.199724368724,
+  "apogeeTimeS": 9.175881507093923,
+  "apogeeEventTimeS": 9.225881507093924,
+  "maxVelocityMs": 126.25648745441347,
+  "maxMach": 0.37194374325263485,
+  "maxAccelerationMs2": 105.47573932141611,
+  "label": "loc-blaster-e11j",
+  "rocketPath": "public/library/loc/Blaster.rkt",
+  "motorManufacturer": "AeroTech",
+  "motorDesignation": "E11J"
+}

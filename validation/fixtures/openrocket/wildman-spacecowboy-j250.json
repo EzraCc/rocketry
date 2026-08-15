@@ -1,0 +1,17 @@
+{
+  "cpXMm": 1146.330036097543,
+  "cgAtLiftoffMm": 978.2861481650823,
+  "massAtLiftoffKg": 2.324172829459417,
+  "refDiameterMm": 57.8409,
+  "stabilityMarginCalibers": 2.9052778904280623,
+  "apogeeAltitudeM": 2161.356757172168,
+  "apogeeTimeS": 19.915000000000152,
+  "apogeeEventTimeS": 19.965000000000153,
+  "maxVelocityMs": 269.4014590357798,
+  "maxMach": 0.7950169692565363,
+  "maxAccelerationMs2": 117.19971037014916,
+  "label": "wildman-spacecowboy-j250",
+  "rocketPath": "public/library/wildman/Space Cowboy.rkt",
+  "motorManufacturer": "Cesaroni",
+  "motorDesignation": "683J250-15A"
+}

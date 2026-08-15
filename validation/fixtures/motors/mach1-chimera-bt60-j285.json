@@ -1,0 +1,83 @@
+{
+  "meta": {
+    "motorId": "5f4294d20002310000000101",
+    "manufacturer": "Cesaroni Technology",
+    "manufacturerAbbrev": "Cesaroni",
+    "designation": "648J285-15A",
+    "commonName": "J285",
+    "impulseClass": "J",
+    "diameter": 38,
+    "length": 360,
+    "type": "reload",
+    "certOrg": "Canadian Association of Rocketry",
+    "avgThrustN": 287.51,
+    "maxThrustN": 369.26,
+    "totImpulseNs": 648,
+    "burnTimeS": 2.26,
+    "dataFiles": 2,
+    "totalWeightG": 595,
+    "propWeightG": 312.5,
+    "delays": "6,8,10,12,15",
+    "delayAdjustable": true,
+    "caseInfo": "Pro38-5G",
+    "propInfo": "Classic",
+    "sparky": false,
+    "updatedOn": "2021-06-13",
+    "availability": "regular",
+    "source_url": "http://www.thrustcurve.org/motors/Cesaroni/648J285-15A/"
+  },
+  "samples": [
+    {
+      "time": 0.06,
+      "thrust": 351.01
+    },
+    {
+      "time": 0.15,
+      "thrust": 346.01
+    },
+    {
+      "time": 0.25,
+      "thrust": 357.64
+    },
+    {
+      "time": 0.5,
+      "thrust": 363.9
+    },
+    {
+      "time": 0.75,
+      "thrust": 369.26
+    },
+    {
+      "time": 1.03,
+      "thrust": 343.33
+    },
+    {
+      "time": 1.27,
+      "thrust": 337.07
+    },
+    {
+      "time": 1.51,
+      "thrust": 317.4
+    },
+    {
+      "time": 1.75,
+      "thrust": 282.53
+    },
+    {
+      "time": 1.93,
+      "thrust": 127.86
+    },
+    {
+      "time": 2.02,
+      "thrust": 84.94
+    },
+    {
+      "time": 2.25,
+      "thrust": 11.02
+    },
+    {
+      "time": 2.26,
+      "thrust": 0
+    }
+  ]
+}

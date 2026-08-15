@@ -1,0 +1,17 @@
+{
+  "cpXMm": 883.2369558977485,
+  "cgAtLiftoffMm": 764.0136085383714,
+  "massAtLiftoffKg": 19.929377234101388,
+  "refDiameterMm": 203.327,
+  "stabilityMarginCalibers": 0.586362595028585,
+  "apogeeAltitudeM": 4169.239520720593,
+  "apogeeTimeS": 25.72100000000024,
+  "apogeeEventTimeS": 25.771000000000242,
+  "maxVelocityMs": 450.337461006925,
+  "maxMach": 1.3404081101482332,
+  "maxAccelerationMs2": 144.7260297726872,
+  "label": "wildman-gizmoxl-n2220dm",
+  "rocketPath": "public/library/wildman/Wildman Gizmo XL.rkt",
+  "motorManufacturer": "AeroTech",
+  "motorDesignation": "N2220DM"
+}

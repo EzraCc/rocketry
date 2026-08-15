@@ -1,0 +1,17 @@
+{
+  "cpXMm": 398.1377083038141,
+  "cgAtLiftoffMm": 339.92886665305736,
+  "massAtLiftoffKg": 0.7751653316562295,
+  "refDiameterMm": 65.2678,
+  "stabilityMarginCalibers": 0.8918462342955751,
+  "apogeeAltitudeM": 543.1777518760088,
+  "apogeeTimeS": 10.529016829658978,
+  "apogeeEventTimeS": 10.579016829658979,
+  "maxVelocityMs": 115.7357757131264,
+  "maxMach": 0.3407955274789725,
+  "maxAccelerationMs2": 106.11252272108112,
+  "label": "wildman-wasserfall-g77r",
+  "rocketPath": "public/library/wildman/Wasserfall (2.5 in).rkt",
+  "motorManufacturer": "AeroTech",
+  "motorDesignation": "G77R"
+}

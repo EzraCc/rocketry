@@ -1,0 +1,125 @@
+{
+  "meta": {
+    "motorId": "5f4294d20002310000000065",
+    "manufacturer": "AeroTech",
+    "manufacturerAbbrev": "AeroTech",
+    "designation": "G77R",
+    "commonName": "G77",
+    "impulseClass": "G",
+    "diameter": 29,
+    "length": 150,
+    "type": "reload",
+    "certOrg": "Tripoli Rocketry Association, Inc.",
+    "avgThrustN": 77,
+    "totImpulseNs": 105,
+    "burnTimeS": 1.36363636363636,
+    "dataFiles": 2,
+    "totalWeightG": 165,
+    "propWeightG": 58,
+    "delays": "4,6,8,10",
+    "delayAdjustable": false,
+    "caseInfo": "RMS-29/120",
+    "propInfo": "Redline",
+    "sparky": false,
+    "updatedOn": "2021-06-13",
+    "availability": "regular",
+    "source_url": "http://www.thrustcurve.org/motors/AeroTech/G77R/"
+  },
+  "samples": [
+    {
+      "time": 0,
+      "thrust": 0,
+      "propellantMassRemainingKg": 0.0554
+    },
+    {
+      "time": 0.04,
+      "thrust": 45.143,
+      "propellantMassRemainingKg": 0.0549197
+    },
+    {
+      "time": 0.071,
+      "thrust": 53.951,
+      "propellantMassRemainingKg": 0.0541026
+    },
+    {
+      "time": 0.096,
+      "thrust": 60.558,
+      "propellantMassRemainingKg": 0.053341099999999995
+    },
+    {
+      "time": 0.139,
+      "thrust": 68.265,
+      "propellantMassRemainingKg": 0.0518677
+    },
+    {
+      "time": 0.198,
+      "thrust": 75.972,
+      "propellantMassRemainingKg": 0.049604100000000005
+    },
+    {
+      "time": 0.294,
+      "thrust": 83.679,
+      "propellantMassRemainingKg": 0.0455274
+    },
+    {
+      "time": 0.396,
+      "thrust": 89.185,
+      "propellantMassRemainingKg": 0.0408375
+    },
+    {
+      "time": 0.51,
+      "thrust": 91.387,
+      "propellantMassRemainingKg": 0.035362000000000005
+    },
+    {
+      "time": 0.6,
+      "thrust": 93.589,
+      "propellantMassRemainingKg": 0.0309338
+    },
+    {
+      "time": 0.801,
+      "thrust": 96.892,
+      "propellantMassRemainingKg": 0.02075
+    },
+    {
+      "time": 1.002,
+      "thrust": 93.589,
+      "propellantMassRemainingKg": 0.0105661
+    },
+    {
+      "time": 1.1,
+      "thrust": 89.185,
+      "propellantMassRemainingKg": 0.00580169
+    },
+    {
+      "time": 1.134,
+      "thrust": 83.679,
+      "propellantMassRemainingKg": 0.00423837
+    },
+    {
+      "time": 1.168,
+      "thrust": 77.073,
+      "propellantMassRemainingKg": 0.00278458
+    },
+    {
+      "time": 1.199,
+      "thrust": 59.456,
+      "propellantMassRemainingKg": 0.0016588
+    },
+    {
+      "time": 1.236,
+      "thrust": 34.132,
+      "propellantMassRemainingKg": 0.000737741
+    },
+    {
+      "time": 1.277,
+      "thrust": 13.213,
+      "propellantMassRemainingKg": 0.000221415
+    },
+    {
+      "time": 1.34,
+      "thrust": 0,
+      "propellantMassRemainingKg": 0
+    }
+  ]
+}

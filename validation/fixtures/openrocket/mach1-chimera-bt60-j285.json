@@ -1,0 +1,17 @@
+{
+  "cpXMm": 898.3119669695618,
+  "cgAtLiftoffMm": 841.6031734226005,
+  "massAtLiftoffKg": 0.9748646525213043,
+  "refDiameterMm": 41.5011,
+  "stabilityMarginCalibers": 1.366440734027805,
+  "apogeeAltitudeM": 2349.6631420800186,
+  "apogeeTimeS": 16.33938219878413,
+  "apogeeEventTimeS": 16.38938219878413,
+  "maxVelocityMs": 527.6827346656988,
+  "maxMach": 1.5605355856845735,
+  "maxAccelerationMs2": 373.6731917498271,
+  "label": "mach1-chimera-bt60-j285",
+  "rocketPath": "public/library/mach1/Chimera BT60.rkt",
+  "motorManufacturer": "Cesaroni",
+  "motorDesignation": "648J285-15A"
+}

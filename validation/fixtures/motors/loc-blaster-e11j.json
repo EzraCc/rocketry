@@ -1,0 +1,68 @@
+{
+  "meta": {
+    "motorId": "5f4294d200023100000001f9",
+    "manufacturer": "AeroTech",
+    "manufacturerAbbrev": "AeroTech",
+    "designation": "E11J",
+    "commonName": "E11",
+    "impulseClass": "E",
+    "diameter": 24,
+    "length": 70,
+    "type": "reload",
+    "certOrg": "National Association of Rocketry",
+    "avgThrustN": 11.57,
+    "maxThrustN": 19.85,
+    "totImpulseNs": 32.74,
+    "burnTimeS": 2.83,
+    "dataFiles": 2,
+    "infoUrl": "https://nar.org/SandT/pdf/Aerotech/E11.pdf",
+    "totalWeightG": 62.4,
+    "propWeightG": 25,
+    "delays": "3",
+    "delayAdjustable": false,
+    "caseInfo": "RMS-24/40",
+    "propInfo": "Blackjack",
+    "sparky": false,
+    "updatedOn": "2022-07-20",
+    "availability": "regular",
+    "source_url": "http://www.thrustcurve.org/motors/AeroTech/E11J/"
+  },
+  "samples": [
+    {
+      "time": 0.0725446,
+      "thrust": 14.3704
+    },
+    {
+      "time": 0.16183,
+      "thrust": 17.6296
+    },
+    {
+      "time": 0.206473,
+      "thrust": 18.3704
+    },
+    {
+      "time": 0.418527,
+      "thrust": 19.2593
+    },
+    {
+      "time": 0.731027,
+      "thrust": 18.3704
+    },
+    {
+      "time": 1.31696,
+      "thrust": 14.2222
+    },
+    {
+      "time": 1.91964,
+      "thrust": 9.03704
+    },
+    {
+      "time": 2.51116,
+      "thrust": 2.22222
+    },
+    {
+      "time": 2.83,
+      "thrust": 0
+    }
+  ]
+}

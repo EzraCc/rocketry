@@ -1,0 +1,135 @@
+{
+  "meta": {
+    "motorId": "5f4294d200023100000003fe",
+    "manufacturer": "AeroTech",
+    "manufacturerAbbrev": "AeroTech",
+    "designation": "N2220DM",
+    "commonName": "N2220",
+    "impulseClass": "N",
+    "diameter": 98,
+    "length": 1046,
+    "type": "reload",
+    "certOrg": "Tripoli Rocketry Association, Inc.",
+    "avgThrustN": 2199,
+    "maxThrustN": 4472,
+    "totImpulseNs": 10657,
+    "burnTimeS": 5.4,
+    "dataFiles": 2,
+    "totalWeightG": 11997,
+    "propWeightG": 7183,
+    "delays": "P",
+    "delayAdjustable": false,
+    "caseInfo": "RMS-98/15360",
+    "propInfo": "Dark Matter",
+    "sparky": true,
+    "updatedOn": "2019-04-17",
+    "availability": "regular",
+    "source_url": "http://www.thrustcurve.org/motors/AeroTech/N2220DM/"
+  },
+  "samples": [
+    {
+      "time": 0.045,
+      "thrust": 2638.366
+    },
+    {
+      "time": 0.067,
+      "thrust": 2528.97
+    },
+    {
+      "time": 0.084,
+      "thrust": 3063.078
+    },
+    {
+      "time": 0.124,
+      "thrust": 2426.009
+    },
+    {
+      "time": 0.186,
+      "thrust": 2548.275
+    },
+    {
+      "time": 0.231,
+      "thrust": 2599.755
+    },
+    {
+      "time": 0.298,
+      "thrust": 2554.71
+    },
+    {
+      "time": 0.371,
+      "thrust": 2644.801
+    },
+    {
+      "time": 0.534,
+      "thrust": 2638.366
+    },
+    {
+      "time": 0.979,
+      "thrust": 2561.145
+    },
+    {
+      "time": 1.142,
+      "thrust": 2606.19
+    },
+    {
+      "time": 2.002,
+      "thrust": 2638.366
+    },
+    {
+      "time": 2.289,
+      "thrust": 2638.366
+    },
+    {
+      "time": 2.761,
+      "thrust": 2580.45
+    },
+    {
+      "time": 3.121,
+      "thrust": 2496.795
+    },
+    {
+      "time": 3.436,
+      "thrust": 2335.919
+    },
+    {
+      "time": 3.678,
+      "thrust": 2213.653
+    },
+    {
+      "time": 3.79,
+      "thrust": 2129.998
+    },
+    {
+      "time": 4.004,
+      "thrust": 1653.805
+    },
+    {
+      "time": 4.415,
+      "thrust": 888.035
+    },
+    {
+      "time": 4.538,
+      "thrust": 630.634
+    },
+    {
+      "time": 4.656,
+      "thrust": 450.453
+    },
+    {
+      "time": 4.82,
+      "thrust": 289.577
+    },
+    {
+      "time": 5.005,
+      "thrust": 135.136
+    },
+    {
+      "time": 5.219,
+      "thrust": 25.74
+    },
+    {
+      "time": 5.371,
+      "thrust": 0
+    }
+  ]
+}

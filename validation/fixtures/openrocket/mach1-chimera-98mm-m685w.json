@@ -1,0 +1,17 @@
+{
+  "cpXMm": 1989.3012444633887,
+  "cgAtLiftoffMm": 1749.750271249069,
+  "massAtLiftoffKg": 9.750054855999505,
+  "refDiameterMm": 102.311,
+  "stabilityMarginCalibers": 2.341399978636896,
+  "apogeeAltitudeM": 5449.247729010178,
+  "apogeeTimeS": 28.79400000000024,
+  "apogeeEventTimeS": 28.79400000000024,
+  "maxVelocityMs": 410.2930753551326,
+  "maxMach": 1.2343325381859778,
+  "maxAccelerationMs2": 134.38713263600908,
+  "label": "mach1-chimera-98mm-m685w",
+  "rocketPath": "public/library/mach1/Chimera 98mm.rkt",
+  "motorManufacturer": "AeroTech",
+  "motorDesignation": "M685W"
+}

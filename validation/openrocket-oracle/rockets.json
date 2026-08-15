@@ -4,7 +4,7 @@
     "rocketPath": "public/library/loc/PK-48 LOC-IV.rkt",
     "motorManufacturer": "AeroTech",
     "motorDesignation": "J420R",
-    "note": "The project's own gold-standard reference case (RockSim's own CP for this exact file is independently hand-verified elsewhere) — 38.6mm mount. No saved simulation in the file itself. Previously used K400C, which turned out to be a REAL BUG: K400C is a 54mm-case motor (confirmed via ThrustCurve.org's own metadata), physically too wide for this file's 38.6mm motor mount -- caught by an explicit audit of every validation case's motor diameter against its rocket's real mount size. J420R is a real, currently-in-production 38mm AeroTech motor with a comparable average thrust to what \"K400\" implied (420N vs. 400N) -- picked as the closest real, correctly-sized substitute (confirmed present in BOTH OpenRocket's own bundled motor database and ThrustCurve.org's live API -- the first substitute tried, J340M, resolved live but wasn't in OpenRocket's bundled snapshot, so the Java harness couldn't use it). AeroTech doesn't make a 38mm K-class motor at all -- their 38mm case tops out around I/J class."
+    "note": "The project's own gold-standard reference case (RockSim's own CP for this exact file is independently hand-verified elsewhere) \u2014 38.6mm mount. No saved simulation in the file itself. Previously used K400C, which turned out to be a REAL BUG: K400C is a 54mm-case motor (confirmed via ThrustCurve.org's own metadata), physically too wide for this file's 38.6mm motor mount -- caught by an explicit audit of every validation case's motor diameter against its rocket's real mount size. J420R is a real, currently-in-production 38mm AeroTech motor with a comparable average thrust to what \"K400\" implied (420N vs. 400N) -- picked as the closest real, correctly-sized substitute (confirmed present in BOTH OpenRocket's own bundled motor database and ThrustCurve.org's live API -- the first substitute tried, J340M, resolved live but wasn't in OpenRocket's bundled snapshot, so the Java harness couldn't use it). AeroTech doesn't make a 38mm K-class motor at all -- their 38mm case tops out around I/J class."
   },
   {
     "label": "big-nuke-3e-m650w",
@@ -40,5 +40,47 @@
     "motorManufacturer": "Estes",
     "motorDesignation": "C6",
     "note": "18mm mount, small/low-power end of the library. No saved simulation in the file, Estes C6 picked manually (classic, always-in-the-database motor -- same one OpenRocketCoreTest itself uses to sanity-check the motor DB, just C6 instead of B6). Manufacturer specified explicitly -- multiple vendors make a \"C6\", confirmed directly (ThrustCurve.org's own search also returns a Quest Aerospace C6) -- without pinning it, the Java harness and the TS motor-fixture fetch could each independently pick a DIFFERENT one sharing the same bare designation."
+  },
+  {
+    "label": "loc-blaster-e11j",
+    "rocketPath": "public/library/loc/Blaster.rkt",
+    "motorManufacturer": "AeroTech",
+    "motorDesignation": "E11J",
+    "note": "24.1mm mount. Real, vendor-saved simulation motor -- this file's own saved sims also include Estes C11/D12, but those are 18mm-case motors that don't physically fit this 24.1mm mount (an adapter-only pairing RockSim allows recording regardless of physical fit -- exactly the K400C failure mode, so skipped); E11J and D9W are the file's own 24mm-correctly-sized options, E11J picked as the larger of the two."
+  },
+  {
+    "label": "wildman-wasserfall-g77r",
+    "rocketPath": "public/library/wildman/Wasserfall (2.5 in).rkt",
+    "motorManufacturer": "AeroTech",
+    "motorDesignation": "G77R",
+    "note": "31.7mm mount -- fills the gap between the existing 24mm and 38mm cases. Real, vendor-saved simulation motor (one of a dozen 29mm G/H/I-class options this file's own saved sims list; G77R picked as a mid-size one not already used elsewhere in this suite)."
+  },
+  {
+    "label": "mach1-chimera-bt60-j285",
+    "rocketPath": "public/library/mach1/Chimera BT60.rkt",
+    "motorManufacturer": "Cesaroni",
+    "motorDesignation": "648J285-15A",
+    "note": "40.5mm mount, 38mm motor. Real, vendor-saved simulation motor, and this suite's first Cesaroni Technology case (every other case is AeroTech or Estes) -- exercises the same real-per-sample motor-mass-curve path (see motor-mass-curve.ts) against a different manufacturer's own RSE file conventions."
+  },
+  {
+    "label": "wildman-spacecowboy-j250",
+    "rocketPath": "public/library/wildman/Space Cowboy.rkt",
+    "motorManufacturer": "Cesaroni",
+    "motorDesignation": "683J250-15A",
+    "note": "54.7mm mount. This file's own saved sims (Cesaroni J530-IM/L935-IM) don't resolve under those exact designations on ThrustCurve.org's live API (likely renamed/discontinued since the file was saved, the same pattern already seen in a couple of the existing cases above) -- 683J250-15A picked instead as a real, correctly-sized (54mm) Cesaroni motor confirmed present in both OpenRocket's bundled DB and ThrustCurve.org's live API."
+  },
+  {
+    "label": "mach1-chimera-98mm-m685w",
+    "rocketPath": "public/library/mach1/Chimera 98mm.rkt",
+    "motorManufacturer": "AeroTech",
+    "motorDesignation": "M685W",
+    "note": "75.0mm mount, 75mm motor (the rocket's own \"98mm\" name refers to its outer body diameter, not its motor mount). Real, vendor-saved simulation motor -- the suite's largest AeroTech single-use case, extending the high end of the diameter/mass range beyond the existing 76mm Big Nuke 3E."
+  },
+  {
+    "label": "wildman-gizmoxl-n2220dm",
+    "rocketPath": "public/library/wildman/Wildman Gizmo XL.rkt",
+    "motorManufacturer": "AeroTech",
+    "motorDesignation": "N2220DM",
+    "note": "99.1mm mount -- the largest case in this suite. No saved simulation in the file; N2220DM picked manually as a real, correctly-sized (98mm) AeroTech N motor confirmed present in both OpenRocket's bundled DB and ThrustCurve.org's live API. (Real 132mm- and 161mm-mount rockets also exist in the library, but every 132mm/161mm motor found in OpenRocket's bundled DB -- all Cesaroni \"Pro\"-series designations -- has since been renamed/suffixed on ThrustCurve.org's live API, e.g. bundled \"30795O25000\" vs. live \"30795O25000-P\", the same designation-drift problem as the Zephyr/Cerberus cases above, just severe enough here that no exact match exists in the live API at all; rather than force a mismatched pick, those two sizes were left out of this suite for now.)"
   }
 ]

@@ -1,0 +1,151 @@
+{
+  "meta": {
+    "motorId": "5f4294d200023100000002db",
+    "manufacturer": "Cesaroni Technology",
+    "manufacturerAbbrev": "Cesaroni",
+    "designation": "683J250-15A",
+    "commonName": "J250",
+    "impulseClass": "J",
+    "diameter": 54,
+    "length": 237,
+    "type": "reload",
+    "certOrg": "Tripoli Rocketry Association, Inc.",
+    "avgThrustN": 249.955,
+    "maxThrustN": 337.622,
+    "totImpulseNs": 682.82,
+    "burnTimeS": 2.7322,
+    "dataFiles": 2,
+    "totalWeightG": 830,
+    "propWeightG": 406,
+    "delays": "6,7,8,9,10,11,12,13,14,15",
+    "delayAdjustable": true,
+    "caseInfo": "Pro54-2G",
+    "propInfo": "Skidmark",
+    "sparky": true,
+    "updatedOn": "2019-04-17",
+    "availability": "regular",
+    "source_url": "http://www.thrustcurve.org/motors/Cesaroni/683J250-15A/"
+  },
+  "samples": [
+    {
+      "time": 0,
+      "thrust": 0,
+      "propellantMassRemainingKg": 0.406
+    },
+    {
+      "time": 0.031,
+      "thrust": 191.478,
+      "propellantMassRemainingKg": 0.404235
+    },
+    {
+      "time": 0.051,
+      "thrust": 271.111,
+      "propellantMassRemainingKg": 0.401484
+    },
+    {
+      "time": 0.082,
+      "thrust": 161.056,
+      "propellantMassRemainingKg": 0.3975
+    },
+    {
+      "time": 0.148,
+      "thrust": 206.689,
+      "propellantMassRemainingKg": 0.390283
+    },
+    {
+      "time": 0.3,
+      "thrust": 234.426,
+      "propellantMassRemainingKg": 0.370344
+    },
+    {
+      "time": 0.413,
+      "thrust": 244.269,
+      "propellantMassRemainingKg": 0.354259
+    },
+    {
+      "time": 0.635,
+      "thrust": 264.848,
+      "propellantMassRemainingKg": 0.32065
+    },
+    {
+      "time": 0.849,
+      "thrust": 270.217,
+      "propellantMassRemainingKg": 0.2866
+    },
+    {
+      "time": 1.06,
+      "thrust": 276.48,
+      "propellantMassRemainingKg": 0.252298
+    },
+    {
+      "time": 1.449,
+      "thrust": 283.638,
+      "propellantMassRemainingKg": 0.187507
+    },
+    {
+      "time": 1.644,
+      "thrust": 277.375,
+      "propellantMassRemainingKg": 0.154976
+    },
+    {
+      "time": 1.8,
+      "thrust": 279.164,
+      "propellantMassRemainingKg": 0.129159
+    },
+    {
+      "time": 1.932,
+      "thrust": 272.901,
+      "propellantMassRemainingKg": 0.107489
+    },
+    {
+      "time": 2.135,
+      "thrust": 261.269,
+      "propellantMassRemainingKg": 0.0752438
+    },
+    {
+      "time": 2.291,
+      "thrust": 249.637,
+      "propellantMassRemainingKg": 0.051543399999999996
+    },
+    {
+      "time": 2.447,
+      "thrust": 246.953,
+      "propellantMassRemainingKg": 0.0285072
+    },
+    {
+      "time": 2.525,
+      "thrust": 251.427,
+      "propellantMassRemainingKg": 0.0169475
+    },
+    {
+      "time": 2.579,
+      "thrust": 227.268,
+      "propellantMassRemainingKg": 0.009260770000000002
+    },
+    {
+      "time": 2.614,
+      "thrust": 157.477,
+      "propellantMassRemainingKg": 0.005256439999999999
+    },
+    {
+      "time": 2.665,
+      "thrust": 51.896,
+      "propellantMassRemainingKg": 0.0020811700000000002
+    },
+    {
+      "time": 2.727,
+      "thrust": 14.316,
+      "propellantMassRemainingKg": 0.0008604429999999999
+    },
+    {
+      "time": 2.825,
+      "thrust": 6.263,
+      "propellantMassRemainingKg": 0.000260735
+    },
+    {
+      "time": 2.965,
+      "thrust": 0,
+      "propellantMassRemainingKg": 0
+    }
+  ]
+}

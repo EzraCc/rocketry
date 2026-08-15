@@ -30,87 +30,108 @@
   "samples": [
     {
       "time": 0,
-      "thrust": 0
+      "thrust": 0,
+      "propellantMassRemainingKg": 3.351
     },
     {
       "time": 0.08,
-      "thrust": 1240
+      "thrust": 1240,
+      "propellantMassRemainingKg": 3.32333
     },
     {
       "time": 0.12,
-      "thrust": 1328
+      "thrust": 1328,
+      "propellantMassRemainingKg": 3.29467
     },
     {
       "time": 0.25,
-      "thrust": 1230
+      "thrust": 1230,
+      "propellantMassRemainingKg": 3.2019
     },
     {
       "time": 0.5,
-      "thrust": 1142
+      "thrust": 1142,
+      "propellantMassRemainingKg": 3.03647
     },
     {
       "time": 1,
-      "thrust": 1071
+      "thrust": 1071,
+      "propellantMassRemainingKg": 2.72779
     },
     {
       "time": 1.5,
-      "thrust": 1048
+      "thrust": 1048,
+      "propellantMassRemainingKg": 2.4322199999999996
     },
     {
       "time": 2,
-      "thrust": 1018
+      "thrust": 1018,
+      "propellantMassRemainingKg": 2.14404
     },
     {
       "time": 2.5,
-      "thrust": 982
+      "thrust": 982,
+      "propellantMassRemainingKg": 1.86507
     },
     {
       "time": 3,
-      "thrust": 950
+      "thrust": 950,
+      "propellantMassRemainingKg": 1.59558
     },
     {
       "time": 3.5,
-      "thrust": 853
+      "thrust": 853,
+      "propellantMassRemainingKg": 1.34409
     },
     {
       "time": 4,
-      "thrust": 781
+      "thrust": 781,
+      "propellantMassRemainingKg": 1.11617
     },
     {
       "time": 5,
-      "thrust": 595
+      "thrust": 595,
+      "propellantMassRemainingKg": 0.7323010000000001
     },
     {
       "time": 6,
-      "thrust": 443
+      "thrust": 443,
+      "propellantMassRemainingKg": 0.442728
     },
     {
       "time": 7,
-      "thrust": 297
+      "thrust": 297,
+      "propellantMassRemainingKg": 0.236289
     },
     {
       "time": 8,
-      "thrust": 155
+      "thrust": 155,
+      "propellantMassRemainingKg": 0.110194
     },
     {
       "time": 9,
-      "thrust": 88
+      "thrust": 88,
+      "propellantMassRemainingKg": 0.0424037
     },
     {
       "time": 10,
-      "thrust": 32
+      "thrust": 32,
+      "propellantMassRemainingKg": 0.008927099999999999
     },
     {
       "time": 10.5,
-      "thrust": 12
+      "thrust": 12,
+      "propellantMassRemainingKg": 0.00278972
     },
     {
       "time": 11,
-      "thrust": 4
+      "thrust": 4,
+      "propellantMassRemainingKg": 0.000557944
     },
     {
       "time": 11.5,
-      "thrust": 0
+      "thrust": 0,
+      "propellantMassRemainingKg": 0
     }
   ]
 }

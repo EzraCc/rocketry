@@ -1,0 +1,119 @@
+{
+  "meta": {
+    "motorId": "5f4294d200023100000003f0",
+    "manufacturer": "AeroTech",
+    "manufacturerAbbrev": "AeroTech",
+    "designation": "M685W",
+    "commonName": "M685",
+    "impulseClass": "M",
+    "diameter": 75,
+    "length": 935.9,
+    "type": "reload",
+    "certOrg": "Tripoli Rocketry Association, Inc.",
+    "avgThrustN": 657,
+    "maxThrustN": 1517,
+    "totImpulseNs": 7561,
+    "burnTimeS": 11.5,
+    "dataFiles": 2,
+    "totalWeightG": 7008,
+    "propWeightG": 4320,
+    "delays": "P",
+    "delayAdjustable": false,
+    "caseInfo": "RMS-75/7680",
+    "propInfo": "White Lightning",
+    "sparky": false,
+    "updatedOn": "2019-04-17",
+    "availability": "regular",
+    "source_url": "http://www.thrustcurve.org/motors/AeroTech/M685W/"
+  },
+  "samples": [
+    {
+      "time": 0.083,
+      "thrust": 1333.469
+    },
+    {
+      "time": 0.13,
+      "thrust": 1368.376
+    },
+    {
+      "time": 0.249,
+      "thrust": 1361.395
+    },
+    {
+      "time": 0.308,
+      "thrust": 1380.012
+    },
+    {
+      "time": 0.403,
+      "thrust": 1359.068
+    },
+    {
+      "time": 0.675,
+      "thrust": 1184.53
+    },
+    {
+      "time": 1.018,
+      "thrust": 1072.826
+    },
+    {
+      "time": 1.456,
+      "thrust": 996.029
+    },
+    {
+      "time": 1.977,
+      "thrust": 958.794
+    },
+    {
+      "time": 2.995,
+      "thrust": 914.578
+    },
+    {
+      "time": 3.99,
+      "thrust": 856.399
+    },
+    {
+      "time": 4.985,
+      "thrust": 781.929
+    },
+    {
+      "time": 5.494,
+      "thrust": 730.732
+    },
+    {
+      "time": 5.991,
+      "thrust": 679.534
+    },
+    {
+      "time": 7.258,
+      "thrust": 542.231
+    },
+    {
+      "time": 7.862,
+      "thrust": 463.107
+    },
+    {
+      "time": 8.015,
+      "thrust": 456.125
+    },
+    {
+      "time": 8.998,
+      "thrust": 330.458
+    },
+    {
+      "time": 9.993,
+      "thrust": 207.118
+    },
+    {
+      "time": 10.514,
+      "thrust": 137.303
+    },
+    {
+      "time": 11.496,
+      "thrust": 34.908
+    },
+    {
+      "time": 11.994,
+      "thrust": 0
+    }
+  ]
+}
