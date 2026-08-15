@@ -195,6 +195,41 @@ describe("simulateFlight3D — coastPastApogeeS (unparachuted descent past apoge
   });
 });
 
+describe("simulateFlight3D — randomSeed (pitch/yaw stability-margin nudge)", () => {
+  const rocket = basicRocket();
+
+  it("defaults to fully deterministic (no seed): two runs are byte-identical", () => {
+    const a = simulateFlight3D(rocket);
+    const b = simulateFlight3D(rocket);
+    expect(a.apogeeAltitude).toBe(b.apogeeAltitude);
+    expect(a.maxTiltFromVerticalDeg).toBe(b.maxTiltFromVerticalDeg);
+  });
+
+  it("the same seed reproduces the exact same result run to run", () => {
+    const a = simulateFlight3D(rocket, { randomSeed: 42 });
+    const b = simulateFlight3D(rocket, { randomSeed: 42 });
+    expect(a.apogeeAltitude).toBe(b.apogeeAltitude);
+    expect(a.maxTiltFromVerticalDeg).toBe(b.maxTiltFromVerticalDeg);
+  });
+
+  it("different seeds produce different (but each internally reproducible) results", () => {
+    const a = simulateFlight3D(rocket, { randomSeed: 1 });
+    const b = simulateFlight3D(rocket, { randomSeed: 2 });
+    expect(a.apogeeAltitude).not.toBe(b.apogeeAltitude);
+  });
+
+  it("introduces a small nonzero tilt for an otherwise perfectly symmetric, zero-wind, stable flight", () => {
+    // Without a seed, this exact rocket/conditions stays essentially perfectly vertical (see the
+    // "regression against M3" describe block above) -- the nudge is what reveals that a real,
+    // imperfect version of this flight wouldn't track a mathematically exact straight line.
+    const result = simulateFlight3D(rocket, { randomSeed: 7 });
+    expect(result.maxTiltFromVerticalDeg).toBeGreaterThan(0);
+    // Small: this is a nudge, not a destabilizing force -- a stable rocket should still fly a
+    // recognizably straight, controlled flight, not tumble.
+    expect(result.maxTiltFromVerticalDeg).toBeLessThan(30);
+  });
+});
+
 describe("simulateFlight3D — stability comparison", () => {
   it("a stable (CG forward of CP) rocket stays bounded through boost; an unstable (CG aft of CP) rocket diverges/tumbles", () => {
     // Push dryCg far aft -- past where CP typically sits for this geometry -- to flip stability.

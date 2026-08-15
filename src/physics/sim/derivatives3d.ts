@@ -14,6 +14,16 @@ import type { Sim3DState } from "./types3d.js";
 const G = 9.80665;
 const STALL_ANGLE = (20 * Math.PI) / 180; // rad, matches the linear-theory CNa validity limit used elsewhere in this project
 
+/**
+ * OpenRocket's own RK4SimulationStepper.PITCH_YAW_RANDOM: a small random perturbation added to
+ * the pitch and yaw moment coefficients EVERY force evaluation (its own comment: "to prevent
+ * over-perfect flight"). Without it, a perfectly symmetric rocket in a perfectly noise-free,
+ * no-wind simulation flies a mathematically exact straight line even when only barely stable --
+ * the nudge is what reveals that fragility, rather than a bid at "more realistic" flight per se.
+ * See computeDerivative3D's own doc comment for how this gets applied here.
+ */
+const PITCH_YAW_RANDOM = 0.0005;
+
 export interface Sim3DContext {
   rocket: Rocket;
   massCurve: MassCurve | null;
@@ -22,6 +32,10 @@ export interface Sim3DContext {
   dryInertiaModel: DryInertiaModel;
   rodDirection: Vec3; // unit vector
   windProfile: WindProfile | null;
+  /** Seeded PRNG for the pitch/yaw stability-margin nudge (see PITCH_YAW_RANDOM) -- null (the
+   * default, via buildSim3DContext's own optional param) disables it entirely, keeping every
+   * existing caller's deterministic, reproducible output unchanged. */
+  rng: (() => number) | null;
 }
 
 export function buildSim3DContext(
@@ -29,6 +43,7 @@ export function buildSim3DContext(
   massCurve: MassCurve | null,
   atmosphere: IsaAtmosphere,
   dragGeometry: DragGeometry,
+  rng: (() => number) | null = null,
 ): Sim3DContext {
   const rodAngle = rocket.launchRodAngle;
   const azimuth = rocket.launchRodDirection;
@@ -45,7 +60,23 @@ export function buildSim3DContext(
     dryInertiaModel: computeDryInertiaModel(rocket),
     rodDirection,
     windProfile: rocket.windProfile,
+    rng,
   };
+}
+
+/**
+ * An arbitrary orthonormal basis for the plane perpendicular to `axis` -- used to turn OpenRocket's
+ * own separate body-frame pitch(Y)/yaw(X) moment-coefficient perturbations into a single
+ * perpendicular-torque equivalent, since this project (unlike OpenRocket) has no roll degree of
+ * freedom to anchor a canonical body-frame orientation. The absolute orientation of perp1/perp2
+ * doesn't matter physically: both components are independently redrawn every call anyway (see
+ * computeDerivative3D), so this is equivalent to a genuinely random 2D vector in that plane either way.
+ */
+function perpendicularBasis(axis: Vec3): [Vec3, Vec3] {
+  const helper: Vec3 = Math.abs(axis.z) < 0.9 ? { x: 0, y: 0, z: 1 } : { x: 1, y: 0, z: 0 };
+  const perp1 = V.normalize(V.cross(axis, helper));
+  const perp2 = V.cross(axis, perp1); // already unit length -- axis and perp1 are orthonormal
+  return [perp1, perp2];
 }
 
 export interface Derivative3D {
@@ -138,7 +169,19 @@ export function computeDerivative3D(ctx: Sim3DContext, t: number, state: Sim3DSt
     };
   }
 
-  const torque = V.cross(leverArm, normalForce);
+  let torque = V.cross(leverArm, normalForce);
+  // Pitch/yaw stability-margin nudge (see PITCH_YAW_RANDOM's own doc comment) -- ported as an
+  // equivalent perpendicular-torque perturbation rather than OpenRocket's own separate body-frame
+  // Cm/Cyaw coefficients (see perpendicularBasis's own doc comment for why: no roll DOF here to
+  // anchor a canonical body frame). Drawn fresh on every call, matching OpenRocket's own
+  // calculateForces being invoked once per RK4 sub-stage (k1..k4), not once per whole step.
+  if (ctx.rng) {
+    const [perp1, perp2] = perpendicularBasis(axis);
+    const momentScale = q * barrowman.refArea * barrowman.refDiameter;
+    const pitchPerturbation = PITCH_YAW_RANDOM * 2 * (ctx.rng() - 0.5) * momentScale;
+    const yawPerturbation = PITCH_YAW_RANDOM * 2 * (ctx.rng() - 0.5) * momentScale;
+    torque = V.add(torque, V.add(V.scale(perp1, pitchPerturbation), V.scale(perp2, yawPerturbation)));
+  }
   const inertia = combinedInertiaAt(rocket, dryInertiaModel, massCurve, massState.cgX, t);
   const dAngularVelocity = V.scale(torque, 1 / inertia);
   const dAxis = V.cross(angularVelocity, axis);

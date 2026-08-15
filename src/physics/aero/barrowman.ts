@@ -22,11 +22,12 @@ export interface BarrowmanResult {
  * combination rule (equivalent to OpenRocket's AerodynamicForces.merge).
  *
  * `alphaRad` (angle of attack) defaults to 0 -- only the fins' own supersonic
- * CNa1 term actually uses it (see fin-calc.ts's finCNa1), so every existing
- * caller that only cares about CP (the UI's static display, the validation
- * suite, anything checking stability margin at rest) is unaffected by
- * omitting it. derivatives3d.ts's live flight sim passes the real,
- * currently-computed AOA.
+ * CNa1 term and the body/nose Galejs body-lift term actually use it (see
+ * fin-calc.ts's finCNa1 and symmetric-component-calc.ts's bodyLiftCna --
+ * both are exactly zero at alpha=0), so every existing caller that only
+ * cares about CP (the UI's static display, the validation suite, anything
+ * checking stability margin at rest) is unaffected by omitting it.
+ * derivatives3d.ts's live flight sim passes the real, currently-computed AOA.
  */
 export function computeBarrowman(components: Component[], mach: number, alphaRad = 0): BarrowmanResult {
   const refDiameter = referenceDiameter(components);
@@ -39,7 +40,7 @@ export function computeBarrowman(components: Component[], mach: number, alphaRad
   placed.forEach((entry, i) => {
     const c = entry.component;
     if (isBodyComponent(c)) {
-      const { cna, cpX } = symmetricComponentAero(c, refArea);
+      const { cna, cpX } = symmetricComponentAero(c, refArea, alphaRad);
       cnaSum += cna;
       cnaXSum += cna * (entry.x0 + cpX);
       return;

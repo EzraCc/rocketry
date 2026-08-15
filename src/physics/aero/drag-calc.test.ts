@@ -162,8 +162,11 @@ describe("computeDrag — wetted area sanity (via analytic body shapes)", () => 
       { type: "bodytube", id: "t", name: "t", length: 0.3, radius: 0.0125, thickness: 0.001, isMotorMount: true },
     ];
     // Drag doesn't expose wettedArea directly, so cross-check indirectly: cdFriction should match
-    // what frictionCoefficient(Re) * (2*pi*r*L) / refArea predicts, since refArea = pi*r^2 for this tube alone.
-    const velocity = 50;
+    // what frictionCoefficient(Re,Mach) * (2*pi*r*L) / refArea predicts, since refArea = pi*r^2 for
+    // this tube alone. Low speed here keeps Mach and Re both below where the compressibility
+    // correction activates (Mach<0.9, and Re stays under the 1e6 floor) -- see the dedicated
+    // "compressibility correction" tests below for that piece specifically.
+    const velocity = 30;
     const result = computeDrag(tubeOnly, velocity, velocity / atm.at(0).speedOfSound, atm.at(0));
     const r = 0.0125;
     const length = 0.3;
@@ -171,8 +174,75 @@ describe("computeDrag — wetted area sanity (via analytic body shapes)", () => 
     const refArea = Math.PI * r * r;
     const kinematicViscosity = atm.at(0).dynamicViscosity / atm.at(0).density;
     const re = (velocity * length) / kinematicViscosity;
+    expect(re).toBeLessThan(1e6); // confirms this case is actually outside the correction's own activation range
     const cf = re < 1e4 ? 1.33e-2 : re < 5.39e5 ? 1.328 / Math.sqrt(re) : 1 / (1.5 * Math.log(re) - 5.6) ** 2 - 1700 / re;
     const expectedCdFriction = (cf * analyticWettedArea) / refArea;
+    expect(result.cdFriction).toBeCloseTo(expectedCdFriction, 4);
+  });
+});
+
+describe("computeDrag — Mach compressibility correction on skin friction", () => {
+  // A long, large-diameter tube at high speed to comfortably clear the correction's own Re>1e6
+  // activation floor, isolating the effect this section is about.
+  function longTube(): Component[] {
+    return [{ type: "bodytube", id: "t", name: "t", length: 2, radius: 0.05, thickness: 0.002, isMotorMount: true }];
+  }
+
+  it("subsonic (Mach<0.9, Re>1e6): friction drag is LOWER than the Mach-independent baseline would predict", () => {
+    const atm0 = atm.at(0);
+    const velocity = 150; // Mach ~0.44 at sea level
+    const mach = velocity / atm0.speedOfSound;
+    const result = computeDrag(longTube(), velocity, mach, atm0);
+
+    const r = 0.05;
+    const length = 2;
+    const wettedArea = 2 * Math.PI * r * length;
+    const refArea = Math.PI * r * r;
+    const kinematicViscosity = atm0.dynamicViscosity / atm0.density;
+    const re = (velocity * length) / kinematicViscosity;
+    expect(re).toBeGreaterThan(1e6); // confirms the correction is actually active for this case
+    const logRe = Math.log(re);
+    const baseCf = 1 / Math.pow(1.5 * logRe - 5.6, 2) - 1700 / re;
+    const baselineCdFriction = (baseCf * wettedArea) / refArea;
+
+    expect(result.cdFriction).toBeLessThan(baselineCdFriction);
+  });
+
+  it("is continuous across the M0.9-1.1 blend region (no jump at either boundary)", () => {
+    const atm0 = atm.at(0);
+    const tube = longTube();
+    const speedOfSound = atm0.speedOfSound;
+
+    const justBelow09 = computeDrag(tube, 0.9 * speedOfSound - 0.5, (0.9 * speedOfSound - 0.5) / speedOfSound, atm0).cdFriction;
+    const at09 = computeDrag(tube, 0.9 * speedOfSound, 0.9, atm0).cdFriction;
+    const justAbove09 = computeDrag(tube, 0.9 * speedOfSound + 0.5, (0.9 * speedOfSound + 0.5) / speedOfSound, atm0).cdFriction;
+    expect(justBelow09).toBeCloseTo(at09, 3);
+    expect(justAbove09).toBeCloseTo(at09, 3);
+
+    const justBelow11 = computeDrag(tube, 1.1 * speedOfSound - 0.5, (1.1 * speedOfSound - 0.5) / speedOfSound, atm0).cdFriction;
+    const at11 = computeDrag(tube, 1.1 * speedOfSound, 1.1, atm0).cdFriction;
+    const justAbove11 = computeDrag(tube, 1.1 * speedOfSound + 0.5, (1.1 * speedOfSound + 0.5) / speedOfSound, atm0).cdFriction;
+    expect(justBelow11).toBeCloseTo(at11, 3);
+    expect(justAbove11).toBeCloseTo(at11, 3);
+  });
+
+  it("below the Re>1e6 floor, the correction is a no-op regardless of Mach", () => {
+    // A short/slow case: Re stays under 1e6, so friction drag should match the Mach-independent
+    // baseline exactly, even at a Mach that WOULD trigger the correction for a longer body.
+    const atm0 = atm.at(0);
+    const shortTube: Component[] = [{ type: "bodytube", id: "t", name: "t", length: 0.02, radius: 0.01, thickness: 0.001, isMotorMount: true }];
+    const velocity = 300; // high Mach, but short length keeps Re low
+    const mach = velocity / atm0.speedOfSound;
+    const kinematicViscosity = atm0.dynamicViscosity / atm0.density;
+    const re = (velocity * 0.02) / kinematicViscosity;
+    expect(re).toBeLessThan(1e6);
+
+    const result = computeDrag(shortTube, velocity, mach, atm0);
+    const r = 0.01;
+    const wettedArea = 2 * Math.PI * r * 0.02;
+    const refArea = Math.PI * r * r;
+    const baseCf = re < 1e4 ? 1.33e-2 : re < 5.39e5 ? 1.328 / Math.sqrt(re) : 1 / (1.5 * Math.log(re) - 5.6) ** 2 - 1700 / re;
+    const expectedCdFriction = (baseCf * wettedArea) / refArea;
     expect(result.cdFriction).toBeCloseTo(expectedCdFriction, 4);
   });
 });

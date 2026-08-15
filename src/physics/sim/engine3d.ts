@@ -6,6 +6,7 @@ import { deriveMotorMassCurve } from "../mass/motor-mass-curve.js";
 import { burnTime } from "../motor/motor-model.js";
 import { buildSim3DContext, computeDerivative3D, type Sim3DContext } from "./derivatives3d.js";
 import { rk4Step3D } from "./rk4-stepper3d.js";
+import { createSeededRandom } from "./seeded-random.js";
 import type { FlightEvent3D, Sim3DState, SimResult3D, SimSample3D } from "./types3d.js";
 
 const DT = 0.01; // s, max step
@@ -47,9 +48,15 @@ function tiltFromVerticalDeg(axis: V.Vec3): number {
  * unparachuted, which is exactly what this produces. Added for delay-recommendation.ts, which
  * needs real post-apogee velocity samples to evaluate candidate ejection delays that fire after
  * apogee, rather than approximating descent speed analytically.
+ *
+ * `randomSeed` (default undefined, matching every existing caller's expectation of a fully
+ * deterministic result): once set, enables the pitch/yaw stability-margin nudge (see
+ * derivatives3d.ts's own PITCH_YAW_RANDOM), seeded so the SAME seed always reproduces the exact
+ * same perturbation sequence -- run-to-run reproducibility, not true randomness.
  */
-export function simulateFlight3D(rocket: Rocket, options?: { coastPastApogeeS?: number }): SimResult3D {
+export function simulateFlight3D(rocket: Rocket, options?: { coastPastApogeeS?: number; randomSeed?: number }): SimResult3D {
   const coastPastApogeeS = options?.coastPastApogeeS ?? 0;
+  const rng = options?.randomSeed !== undefined ? createSeededRandom(options.randomSeed) : null;
   const warnings: string[] = [];
   const massCurve = rocket.motor ? deriveMotorMassCurve(rocket.motor) : null;
   const atmosphere = new IsaAtmosphere({
@@ -58,7 +65,7 @@ export function simulateFlight3D(rocket: Rocket, options?: { coastPastApogeeS?: 
     pressure: rocket.launchPressure,
   });
   const dragGeometry = computeDragGeometry(rocket.components);
-  const ctx: Sim3DContext = buildSim3DContext(rocket, massCurve, atmosphere, dragGeometry);
+  const ctx: Sim3DContext = buildSim3DContext(rocket, massCurve, atmosphere, dragGeometry, rng);
 
   const bt = rocket.motor ? burnTime(rocket.motor) : 0;
   const boundaryTimes = (rocket.motor?.samples.map((s) => s.time) ?? []).filter((st) => st > EPS).sort((a, b) => a - b);

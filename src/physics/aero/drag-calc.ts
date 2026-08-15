@@ -144,11 +144,44 @@ export function computeDragGeometry(components: Component[]): DragGeometry {
 }
 
 /** Reynolds-number-based skin-friction coefficient (classic flat-plate correlations). */
-function frictionCoefficient(reynoldsNumber: number): number {
+function baseFrictionCoefficient(reynoldsNumber: number): number {
   if (reynoldsNumber < 1e4) return 1.33e-2; // low-Re floor, avoids the 1/sqrt(Re) singularity near Re=0
   if (reynoldsNumber < 5.39e5) return 1.328 / Math.sqrt(reynoldsNumber); // laminar flat plate
   const logRe = Math.log(reynoldsNumber);
   return 1 / Math.pow(1.5 * logRe - 5.6, 2) - 1700 / reynoldsNumber; // turbulent flat plate
+}
+
+/**
+ * Compressibility correction on skin-friction drag -- exact transcription of OpenRocket's own
+ * BarrowmanDragCalculator.calculateFrictionCoefficient, `isPerfectFinish()==true` branch
+ * specifically: baseFrictionCoefficient above already matches that SAME branch's base (Mach-
+ * independent) Cf formula exactly, which is this project's own implicit "smooth surface"
+ * assumption (no per-component "finish" data model to pick the other branch with, or to feed
+ * OpenRocket's separate roughness-floor logic -- a real, larger, and deliberately separate gap,
+ * see DEVIATIONS.md #5's own split verdict).
+ *
+ * Below M0.9 the correction only kicks in once Re>1e6 (thin, laminar-ish boundary layers at lower
+ * Re aren't meaningfully compressibility-affected); above M0.9 it uses a different empirical fit;
+ * the two are cross-blended linearly across the M0.9-1.1 gap, matching OpenRocket's own blend.
+ */
+function machCompressibilityMultiplier(mach: number, reynoldsNumber: number): number {
+  let c1 = 1;
+  if (mach < 1.1 && reynoldsNumber > 1e6) {
+    c1 = reynoldsNumber < 3e6 ? 1 - 0.1 * mach * mach * ((reynoldsNumber - 1e6) / 2e6) : 1 - 0.1 * mach * mach;
+  }
+  let c2 = 1;
+  if (mach > 0.9 && reynoldsNumber > 1e6) {
+    const c2Full = 1 / Math.pow(1 + 0.045 * mach * mach, 0.25);
+    c2 = reynoldsNumber < 3e6 ? 1 + (c2Full - 1) * ((reynoldsNumber - 1e6) / 2e6) : c2Full;
+  }
+
+  if (mach < 0.9) return c1;
+  if (mach < 1.1) return c2 * ((mach - 0.9) / 0.2) + c1 * ((1.1 - mach) / 0.2);
+  return c2;
+}
+
+function frictionCoefficient(reynoldsNumber: number, mach: number): number {
+  return baseFrictionCoefficient(reynoldsNumber) * machCompressibilityMultiplier(mach, reynoldsNumber);
 }
 
 /** Mach-dependent base drag coefficient, referenced to base area (Barrowman's commonly-used empirical fit). */
@@ -220,7 +253,7 @@ export function computeDragFromGeometry(
   const kinematicViscosity = atmosphere.dynamicViscosity / atmosphere.density;
   const reynoldsNumber = kinematicViscosity > 1e-12 ? (velocity * geometry.length) / kinematicViscosity : 0;
 
-  const cf = frictionCoefficient(reynoldsNumber);
+  const cf = frictionCoefficient(reynoldsNumber, mach);
   const cdFriction = (cf * geometry.wettedArea) / geometry.refArea;
   const baseCd = baseDragCoefficient(mach);
   let cdBase = (baseCd * geometry.baseArea) / geometry.refArea;
