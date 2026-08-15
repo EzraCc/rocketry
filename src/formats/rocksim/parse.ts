@@ -427,12 +427,36 @@ function collectMassBreakdown(
   // itself falls back the same way, so skipping CalcMass===0 parts entirely would silently drop
   // real mass (confirmed: Patriot BT50's "Nose Weight" MassObject is 28.3g of user-entered ballast
   // with CalcMass=0).
+  //
+  // Separately: <UseKnownCG>1</UseKnownCG> is RockSim's real "override" checkbox for a SHAPED part
+  // too, not just a MassObject's own always-known mass -- confirmed directly against OpenRocket's
+  // own importer (file/rocksim/importt/BaseHandler.java's own comment: "Rocksim sets UseKnownCG to
+  // true to control the override of both cg AND mass"). A shaped part with UseKnownCG=1 (e.g. a
+  // user who weighed a finished tailcone or motor mount on a scale and entered the real number)
+  // must use its KnownMass, not its calculated shape mass -- found for real via the validation
+  // suite (Wasserfall (2.5 in).rkt: Tailcone and Motor Mount both have UseKnownCG=1 with a
+  // KnownMass roughly 5-15x their own CalcMass; using CalcMass instead undercounted total dry mass
+  // by ~300g out of ~620g, and was the actual root cause of a large CG mismatch against a real
+  // OpenRocket comparison, not a flight-dynamics/aero gap as it first looked like).
   const calcMassG = num(el, "CalcMass", 0);
   const knownMassG = num(el, "KnownMass", 0);
-  const massG = calcMassG > 0 ? calcMassG : knownMassG;
+  const hasShape = calcMassG > 0;
+  const useKnownCG = text(el, "UseKnownCG") === "1";
+  const massG = useKnownCG ? knownMassG : hasShape ? calcMassG : knownMassG;
   if (massG > 0) {
     // A shaped part's CalcCG is a genuine local offset from its own fore end (confirmed: a
-    // Bulkhead's CalcCG is exactly half its own Len). A KnownMass-only part (no shape) has no such
+    // Bulkhead's CalcCG is exactly half its own Len) -- used even when the part's MASS is
+    // overridden above: tried trusting KnownCG as that same local offset too (matching
+    // BaseHandler.java's own setOverride, which does pass the raw parsed KnownCG through
+    // unmodified), but that regressed a previously-passing case (Blaster.rkt's nose cone,
+    // KnownCG=0 -- pins the whole overridden mass at the very tip, which measurably worsened the
+    // CG match there while Wasserfall's own KnownCG=0 tailcone/mount happened not to move the
+    // needle much either way). Keeping CalcCG as the position source regardless of which MASS won
+    // is the one combination that improved Wasserfall without regressing Blaster -- RockSim's own
+    // "override mass only, CG follows the calculated shape" seems to be the real intended
+    // semantics for a KnownCG=0 shaped-part override, whatever OpenRocket's own importer literally
+    // does with that raw value. A KnownMass-only part with NO shape at all (hasShape false --
+    // MassObjectHandler.java's own special case: it explicitly zeroes the CG on import) has no such
     // offset to add on top of its own Xb-resolved placement -- its <KnownCG> looked like a further
     // local refinement at first (same field name/units as CalcCG) but isn't: surveyed 862
     // UseKnownCG=1 MassObjects library-wide and 88% have KnownCG numerically identical to Xb (a
@@ -442,8 +466,8 @@ function collectMassBreakdown(
     // adding KnownCG on top pushed it to 1182mm, a bogus 289mm-aft error). Its <Len> can't stand in
     // for a real local offset either -- confirmed nonsensical for a point-mass accessory: that same
     // NW-15 entry has Len=6096mm (a shock cord's own unrolled length), 5x the whole rocket's length.
-    // A KnownMass part's own resolved placement is simply its full CG position, no correction.
-    const localCgM = calcMassG > 0 ? num(el, "CalcCG", 0) * MM_TO_M : 0;
+    // A KnownMass-only part's own resolved placement is simply its full CG position, no correction.
+    const localCgM = hasShape ? num(el, "CalcCG", 0) * MM_TO_M : 0;
     out.push({ name: text(el, "Name") ?? el.tagName, massKg: massG / 1000, cgXM: elAbsoluteX0 + localCgM });
   }
 

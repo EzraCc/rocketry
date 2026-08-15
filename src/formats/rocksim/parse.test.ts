@@ -34,12 +34,18 @@ describe("parseRocksimXml — real fixture (sim-files/LOC/PK-48 LOC-IV.rkt)", ()
     expect(parsed.warnings).toEqual([]); // single stage, everything supported
     expect(parsed.components.map((c) => c.type)).toEqual(["nosecone", "bodytube", "bodytube", "freeformfinset"]);
 
-    // Real, sourced number: sum of this file's own 12 <CalcMass> entries (nose, 2 body tubes, tube
-    // coupler, bulkhead, motor mount tube, fin set, 3 centering rings, parachute) plus one
-    // <KnownMass>-only entry (a "NW-15" nose weight MassObject, CalcMass=0 since RockSim can't
-    // compute mass for a shapeless point mass, KnownMass=56.699g) -- a real ~4in/1.2m rocket, not
-    // the ~50g a blank-rocket default would imply.
-    expect(parsed.estimatedDryMassKg).toBeCloseTo(1.16187126, 6);
+    // Real, sourced number: sum of this file's own per-part masses -- CalcMass for most (2 body
+    // tubes, tube coupler, bulkhead, motor mount tube, fin set, 3 centering rings), but KnownMass
+    // for the three parts this file itself flags <UseKnownCG>1</UseKnownCG> on -- RockSim's real
+    // "override checkbox" for BOTH mass and CG together, not just a MassObject's always-known mass
+    // (confirmed directly against OpenRocket's own importer, file/rocksim/importt/BaseHandler.java).
+    // Nose cone: KnownMass=141.748g (its own CalcMass, 340.106g, is what an unweighed shape
+    // estimate would say -- ignored once overridden). NW-15: a shapeless point-mass MassObject
+    // (CalcMass=0 always, KnownMass=56.699g, unaffected by the UseKnownCG distinction either way).
+    // Parachute: KnownMass=85.0004g -- a real weighed parachute mass, not the 7.45876g its own
+    // CalcMass would say (a real canopy weighing under 8g is implausible; 85g is a normal weight
+    // for a "36 In. 8 lines" chute, and is what actually gets used here).
+    expect(parsed.estimatedDryMassKg).toBeCloseTo(1.0410549, 6);
     expect(parsed.unsupportedFeatures).toEqual([]);
 
     // RockSim's own proprietary extended-method CP (<RockSimXN>0,972.645,0,0</RockSimXN>) -- powers
