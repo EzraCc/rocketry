@@ -119,9 +119,9 @@
       <thead><tr><th>What</th><th>Why it matters</th><th>Verdict</th></tr></thead>
       <tbody>
         <tr>
-          <td><a href="#1">Plain body tubes contribute <em>zero</em> lift; OpenRocket gives them a real, often large one</a></td>
-          <td>Directly shifts CP and the stability margin — the single most safety-relevant number this app shows</td>
-          <td class="verdict-cell"><span class="verdict port">Port candidate</span></td>
+          <td class="superseded"><a href="#1">Plain body tubes contribute <em>zero</em> lift; OpenRocket gives them a real, often large one</a></td>
+          <td>Dynamic-simulation-only, not the static display — see the item's own 2026-08-15 update for why "shifts CP/stability margin" here was itself wrong</td>
+          <td class="verdict-cell"><span class="verdict done">Done</span> (2026-08-15)</td>
         </tr>
         <tr>
           <td class="superseded"><a href="#2">Fin lift is frozen at its Mach-0.9 value for every faster speed</a></td>
@@ -139,9 +139,9 @@
           <td class="verdict-cell"><span class="verdict done">Done</span> (2026-08-15)</td>
         </tr>
         <tr>
-          <td><a href="#5">Drag has no compressibility correction or surface-roughness model</a></td>
+          <td><a href="#5">Drag has no compressibility correction (<strong>ported</strong>) or surface-roughness model (still open)</a></td>
           <td>Small-to-moderate systematic drag underestimate at higher speeds/Reynolds numbers</td>
-          <td class="verdict-cell"><span class="verdict port">Port candidate</span></td>
+          <td class="verdict-cell"><span class="verdict done">Done</span> (Mach term) / <span class="verdict port">Port candidate</span> (roughness)</td>
         </tr>
         <tr>
           <td><a href="#6">Drag always points opposite the oncoming air; OpenRocket locks it to the body axis</a></td>
@@ -149,9 +149,9 @@
           <td class="verdict-cell"><span class="verdict open">Open question</span></td>
         </tr>
         <tr>
-          <td><a href="#7">Nothing ever nudges a borderline-stable rocket off course</a></td>
+          <td class="superseded"><a href="#7">Nothing ever nudges a borderline-stable rocket off course</a></td>
           <td>A marginally-stable rocket may fly perfectly straight in simulation even when it's genuinely fragile</td>
-          <td class="verdict-cell"><span class="verdict port">Port candidate</span></td>
+          <td class="verdict-cell"><span class="verdict done">Done</span> (2026-08-15)</td>
         </tr>
         <tr>
           <td class="superseded"><a href="#8">The fin's own center of pressure is frozen at quarter-chord</a></td>
@@ -225,12 +225,30 @@
       contribution.
     </p>
   </div>
-  <p class="verdict-line"><span class="verdict port">Port candidate</span></p>
-  <p>
-    This looks like a real OpenRocket feature that was consciously deferred, not an artifact of
-    independent re-derivation — the formula is short and self-contained (no lookup tables needed), and
-    it directly affects the stability margin, the single most safety-relevant number this tool produces.
-  </p>
+  <div class="tech-detail">
+    <strong class="tag">Update 2026-08-15 — Ported, and this analysis's own claim above was wrong</strong>
+    <p>
+      The <code>sin(AOA)·sinc(AOA) → AOA</code> step above is correct as far as it goes, but it's the
+      WEIGHT OpenRocket assigns this term in its CP-averaging, not the term's actual contribution to
+      CN — OpenRocket's <code>forces.setCN(cp.getWeight() * AOA)</code> multiplies that weight by AOA a
+      SECOND time. Carried all the way through: <code>CN_bodylift(AOA) = K·planformArea/refArea ·
+      sin(AOA)·sinc(AOA) · AOA = K·planformArea/refArea · sin²(AOA)</code> — quadratic in AOA, not
+      linear. That means it contributes <strong>exactly zero at AOA=0</strong>, not the ~20–35/rad
+      figure claimed above (this analysis's own arithmetic error, caught only after porting it: an
+      early implementation added it as a constant small-angle-limit CNa, which measurably moved
+      rocketry's own static CP AWAY from real OpenRocket's Java output once checked against
+      <code>openrocket-comparison.test.ts</code>'s real fixtures — all generated at AOA=0, where real
+      OpenRocket's own equivalent figure is ALSO exactly zero).
+    </p>
+    <p>
+      Ported correctly in <code>symmetricComponentAero</code> (now takes an <code>alphaRad</code>
+      parameter, same pattern as the fin CNa1 port): zero at alpha=0 (every static display this
+      project shows — the CP stat, the stability margin — is completely unaffected, contrary to this
+      item's original framing above), real and second-order-significant during actual dynamic
+      simulation at nonzero AOA (<code>derivatives3d.ts</code>'s second Barrowman pass).
+    </p>
+  </div>
+  <p class="verdict-line"><span class="verdict done">Done</span> — ported 2026-08-15</p>
 
   <h2 id="2">2. Fin lift is frozen at its Mach-0.9 value for every faster speed</h2>
   <div class="plain-english">
@@ -434,13 +452,22 @@ pitchDampingMoment = min(mul·(pitchRate/velocity)², Cm)  // capped so it can't
       asymmetric input, so a no-wind flight is the specific gap.
     </p>
   </div>
-  <p class="verdict-line"><span class="verdict port">Port candidate</span></p>
-  <p>
-    This isn't really a "should we match OpenRocket" question so much as a real capability gap worth
-    closing on its own merits — it directly affects how well this tool can reveal a genuinely marginal
-    design. Needs a seeded RNG (for reproducible results), matching the spirit of OpenRocket's own
-    approach.
-  </p>
+  <div class="tech-detail">
+    <strong class="tag">Update 2026-08-15 — Ported</strong>
+    <p>
+      <code>derivatives3d.ts</code> now adds an equivalent random perpendicular-torque perturbation
+      (<code>seeded-random.ts</code> supplies the deterministic PRNG), redrawn on every force
+      evaluation — matching OpenRocket's own <code>calculateForces</code> being invoked once per RK4
+      sub-stage (k1..k4), not once per whole step. Ported as a single perpendicular-torque vector
+      rather than OpenRocket's own separate body-frame pitch(Cm)/yaw(Cyaw) coefficients, since this
+      project has no roll degree of freedom to anchor a canonical body-frame orientation the way
+      OpenRocket's own formulation assumes — physically equivalent either way, since both components
+      are independently redrawn every call regardless of orientation. Opt-in via
+      <code>simulateFlight3D</code>'s new <code>randomSeed</code> option (undefined = disabled, the
+      default, keeping every existing caller fully deterministic) rather than on by default.
+    </p>
+  </div>
+  <p class="verdict-line"><span class="verdict done">Done</span> — ported 2026-08-15</p>
 
   <h2 id="8">8. The fin's own center of pressure is frozen at "quarter chord"</h2>
   <div class="plain-english">

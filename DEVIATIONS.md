@@ -47,13 +47,13 @@ source directly. Each item ends with a verdict:
 
 | # | What | Where | Why it matters | Verdict |
 |---|---|---|---|---|
-| [1](#1-the-plain-body-tube-contributes-zero-lift---openrocket-gives-it-a-real-and-often-large-one) | Plain body tubes contribute **zero** lift in rocketry; OpenRocket gives them a real, often large one (the "Galejs" term) | aero | Directly shifts CP and the stability margin — the single most safety-relevant number this app shows | Port candidate |
+| [1](#1-the-plain-body-tube-contributes-zero-lift---openrocket-gives-it-a-real-and-often-large-one) | ~~Plain body tubes contribute **zero** lift in rocketry; OpenRocket gives them a real, often large one (the "Galejs" term)~~ **Ported 2026-08-15** | aero | Dynamic-simulation-only, not the static display — see the item's own 2026-08-15 update for why the original "shifts CP/stability margin" claim here was itself wrong | ~~Port candidate~~ **Done** |
 | [2](#2-fin-lift-is-frozen-at-its-mach-09-value-for-every-faster-speed) | ~~Fin lift coefficient is frozen at its Mach-0.9 value for every faster speed; no transonic/supersonic model at all~~ **Ported 2026-08-15** | aero | Large, systematic error above M≈0.9 | ~~Keep (deliberate, documented, warning-gated)~~ **Done** |
 | [3](#3-how-pitch-and-yaw-damping-is-modeled-is-fundamentally-different) | How pitch/yaw "wobble damping" is modeled is fundamentally different between the two tools | sim | Affects weathercocking/oscillation behavior, especially in gusty wind or at high angle of attack | Open question |
 | [4](#4-fins-contribute-no-drag-from-their-own-leading-blunt-edges-or-trailing-edges) | ~~Fins contribute no drag from their own leading/blunt edges or trailing edges~~ **Ported 2026-08-15** | aero | Underestimates total drag, especially for square-cut (unbeveled) fins — a common beginner-kit fin style | ~~Port candidate~~ **Done** |
-| [5](#5-drag-has-no-speed-of-sound-compressibility-correction-or-surface-roughness-model) | Drag has no speed-of-sound compressibility correction or surface-roughness model | aero | Small-to-moderate systematic drag underestimate at higher speeds/Reynolds numbers | Port candidate |
+| [5](#5-drag-has-no-speed-of-sound-compressibility-correction-or-surface-roughness-model) | Drag has no speed-of-sound compressibility correction (**ported 2026-08-15**) or surface-roughness model (still open — needs a per-component "finish" input this project doesn't collect) | aero | Small-to-moderate systematic drag underestimate at higher speeds/Reynolds numbers | **Done** (Mach term) / Port candidate (roughness) |
 | [6](#6-drag-always-points-exactly-opposite-the-oncoming-air-openrocket-keeps-it-locked-to-the-rockets-own-body-axis) | Drag always points exactly opposite the oncoming air; OpenRocket keeps it locked to the rocket's own body axis | aero/sim | Only matters at real angle-of-attack (wind, weathercocking) — up to 30% drag-magnitude difference there | Open question (structural, not a quick fix) |
-| [7](#7-nothing-ever-nudges-a-borderline-stable-rocket-off-course) | Nothing ever nudges a borderline-stable rocket off course | sim | A rocket sitting right at the edge of "stable enough" may fly perfectly straight in simulation even when it's genuinely marginal | Port candidate |
+| [7](#7-nothing-ever-nudges-a-borderline-stable-rocket-off-course) | ~~Nothing ever nudges a borderline-stable rocket off course~~ **Ported 2026-08-15** | sim | A rocket sitting right at the edge of "stable enough" may fly perfectly straight in simulation even when it's genuinely marginal | ~~Port candidate~~ **Done** |
 | [8](#8-the-fins-own-center-of-pressure-is-frozen-at-quarter-chord) | ~~The fin's own center of pressure is frozen at "quarter chord" above Mach 0.5~~ **Ported 2026-08-15** | aero | A real, currently-unwarned gap between M 0.5–0.8 | ~~Keep (documented)~~ **Done** |
 | [9](#9-a-hot-or-cold-launch-day-is-handled-oppositely-by-the-two-tools-above-11-km) | A hot or cold launch day is handled *oppositely* by the two tools above 11 km altitude | atmosphere | Only matters for high-altitude (11km+) flights on an unusual-weather day | Open question |
 | [10](#10-the-fin-in-body-interference-boost-uses-a-more-precise-textbook-formula) | The fin-in-body "interference boost" uses a more precise textbook formula than OpenRocket's simplified one, plus an entirely new term OpenRocket admittedly omits | aero | Small-to-moderate, and cited/verified against the source textbook | Keep (deliberate, justified) |
@@ -114,6 +114,31 @@ was consciously deferred, not an artifact of independent re-derivation — the
 formula is short and self-contained (no lookup tables needed), and it
 directly affects the stability margin, the single most safety-relevant
 number this tool produces.
+
+---
+
+**Update 2026-08-15 — Ported, and this analysis's own claim above was wrong.**
+The `sin(AOA)·sinc(AOA) → AOA` step above is correct as far as it goes, but
+it's the WEIGHT OpenRocket assigns this term in its CP-averaging, not the
+term's actual contribution to CN — OpenRocket's `forces.setCN(cp.getWeight()
+* AOA)` multiplies that weight by AOA a SECOND time. Carried all the way
+through: `CN_bodylift(AOA) = K·planformArea/refArea · sin(AOA)·sinc(AOA) ·
+AOA = K·planformArea/refArea · sin²(AOA)` — quadratic in AOA, not linear.
+That means it contributes **exactly zero at AOA=0**, not the ~20–35/rad
+figure claimed above (which was this analysis's own arithmetic error, caught
+only after porting it: an early implementation added that as a constant
+small-angle-limit CNa, which measurably moved rocketry's own static CP AWAY
+from real OpenRocket's Java output once checked against
+`openrocket-comparison.test.ts`'s real fixtures — all generated at AOA=0,
+where real OpenRocket's own equivalent figure is ALSO exactly zero).
+
+Ported correctly in `symmetricComponentAero` (now takes an `alphaRad`
+parameter, same pattern as the fin CNa1 port): zero at alpha=0 (every static
+display this project shows — the CP stat, the stability margin — is
+completely unaffected, contrary to this item's original framing above), real
+and second-order-significant during actual dynamic simulation at nonzero
+AOA (`derivatives3d.ts`'s second Barrowman pass). See
+`symmetric-component-calc.ts`'s own doc comment for the full derivation.
 
 ---
 
@@ -274,6 +299,18 @@ flagging as a real gap but a bigger lift.
 
 ---
 
+**Update 2026-08-15 — Mach correction ported; roughness model still open.**
+`drag-calc.ts`'s `frictionCoefficient` now applies OpenRocket's own
+`calculateFrictionCoefficient` compressibility multiplier (the
+`isPerfectFinish()==true` branch specifically, matching rocketry's existing
+base Cf formula, which was already an exact match for that same branch —
+confirmed by direct comparison, not assumed). The roughness-floor model
+(OpenRocket's separate per-component "finish" logic) is unchanged and still
+needs that data-model addition first — genuinely out of scope for this pass,
+not overlooked.
+
+---
+
 ## 6. Drag always points exactly opposite the oncoming air; OpenRocket keeps it locked to the rocket's own body axis
 
 **Plain English:** When a rocket is flying dead straight into the wind,
@@ -329,6 +366,22 @@ question so much as a real capability gap worth closing on its own
 merits — it directly affects how well this tool can reveal a genuinely
 marginal design. Needs a seeded RNG (for reproducible results), matching the
 spirit of OpenRocket's own approach.
+
+---
+
+**Update 2026-08-15 — Ported.** `derivatives3d.ts` now adds an equivalent
+random perpendicular-torque perturbation (`seeded-random.ts` supplies the
+deterministic PRNG), redrawn on every force evaluation — matching
+OpenRocket's own `calculateForces` being invoked once per RK4 sub-stage
+(k1..k4), not once per whole step. Ported as a single perpendicular-torque
+vector rather than OpenRocket's own separate body-frame pitch(Cm)/yaw(Cyaw)
+coefficients, since this project has no roll degree of freedom to anchor a
+canonical body-frame orientation the way OpenRocket's own formulation
+assumes — physically equivalent either way, since both components are
+independently redrawn every call regardless of orientation. Opt-in via
+`simulateFlight3D`'s new `randomSeed` option (undefined = disabled, the
+default, keeping every existing caller fully deterministic) rather than
+on by default. See CHANGELOG.md (`dd57e9d`).
 
 ---
 
