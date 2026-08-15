@@ -1,5 +1,15 @@
 /* Small overrides on top of Pico.css — kept minimal on purpose. */
 
+/* Flight-sim result's "<rocket> on a <motor>" line (see renderFlightResultHtml) -- reads as a
+   subtitle under the "Flight simulation" heading, not a throwaway line of body text, since it's
+   the thing that disambiguates one result from another once several rockets/motors have been
+   compared in a row. */
+.flight-sim-subject {
+  font-weight: bold;
+  font-size: 1.05rem;
+  margin-top: -0.5rem;
+}
+
 /* Fixed in the corner, out of the page's normal flow -- a persistent settings toggle, not a nav
    item, so it shouldn't read as a row of page-level links (Pico's default button-group styling
    made it look exactly like one, full-width, when it lived inline in the header). */

@@ -32,14 +32,31 @@ const MS_TO_MPH = 1 / 0.44704;
 const N_TO_LBF = 1 / 4.4482216153;
 
 /**
+ * Thousands-grouped number formatting for every fmt* function below -- imperial gets the
+ * US-style comma ("20,250"), metric gets a plain space, the SI/ISO-31-0 recommended digit-group
+ * separator for scientific/technical writing (a comma or period there is ambiguous, since either
+ * one is also a DECIMAL separator in some locales; a space isn't). Deliberately hand-rolled rather
+ * than Number.toLocaleString(): locale grouping behavior (and even data availability) varies across
+ * JS engines/environments, where this always produces the same, predictable result -- decimal point
+ * stays "." either way, only the thousands separator and its character change.
+ */
+function groupThousands(value: number, digits: number): string {
+  const separator = current === "metric" ? " " : ",";
+  const [intPart, decPart] = Math.abs(value).toFixed(digits).split(".");
+  const grouped = intPart!.replace(/\B(?=(\d{3})+(?!\d))/g, separator);
+  const sign = value < 0 ? "-" : "";
+  return decPart ? `${sign}${grouped}.${decPart}` : `${sign}${grouped}`;
+}
+
+/**
  * Small-scale length — component dimensions, CP/CG, diameters: cm (metric,
  * 2 decimals — the same 0.1mm resolution the old mm-based version had) or
  * in (imperial). Was mm; switched to cm so length figures shown together
  * (this, fmtRocketLength) don't visually mix mm and cm side by side.
  */
 export function fmtLength(m: number, digits?: number): string {
-  if (current === "metric") return `${(m * 100).toFixed(digits ?? 2)} cm`;
-  return `${(m * M_TO_IN).toFixed(digits ?? 2)} in`;
+  if (current === "metric") return `${groupThousands(m * 100, digits ?? 2)} cm`;
+  return `${groupThousands(m * M_TO_IN, digits ?? 2)} in`;
 }
 
 /**
@@ -53,44 +70,44 @@ export function fmtLength(m: number, digits?: number): string {
  * matching how imperial builders talk in inches, not feet, at this scale.
  */
 export function fmtRocketLength(m: number, digits?: number): string {
-  if (current === "metric") return `${(m * 100).toFixed(digits ?? 1)} cm`;
-  return `${(m * M_TO_IN).toFixed(digits ?? 1)} in`;
+  if (current === "metric") return `${groupThousands(m * 100, digits ?? 1)} cm`;
+  return `${groupThousands(m * M_TO_IN, digits ?? 1)} in`;
 }
 
 /** Large-scale length — altitude, apogee: m (metric) or ft (imperial). */
 export function fmtAltitude(m: number, digits?: number): string {
-  if (current === "metric") return `${m.toFixed(digits ?? 1)} m`;
-  return `${(m * M_TO_FT).toFixed(digits ?? 0)} ft`;
+  if (current === "metric") return `${groupThousands(m, digits ?? 1)} m`;
+  return `${groupThousands(m * M_TO_FT, digits ?? 0)} ft`;
 }
 
 /** Mass — motor/component/combined mass: g (metric) or oz (imperial). */
 export function fmtMass(kg: number, digits?: number): string {
-  if (current === "metric") return `${(kg * 1000).toFixed(digits ?? 1)} g`;
-  return `${(kg * KG_TO_OZ).toFixed(digits ?? 2)} oz`;
+  if (current === "metric") return `${groupThousands(kg * 1000, digits ?? 1)} g`;
+  return `${groupThousands(kg * KG_TO_OZ, digits ?? 2)} oz`;
 }
 
 /** Larger-scale mass — liftoff weight if ever needed at kg/lb scale: kg (metric) or lb (imperial). */
 export function fmtMassLarge(kg: number, digits?: number): string {
-  if (current === "metric") return `${kg.toFixed(digits ?? 2)} kg`;
-  return `${(kg * KG_TO_LB).toFixed(digits ?? 2)} lb`;
+  if (current === "metric") return `${groupThousands(kg, digits ?? 2)} kg`;
+  return `${groupThousands(kg * KG_TO_LB, digits ?? 2)} lb`;
 }
 
 /** Velocity — flight/wind speed: m/s (metric) or mph (imperial). */
 export function fmtVelocity(ms: number, digits?: number): string {
-  if (current === "metric") return `${ms.toFixed(digits ?? 1)} m/s`;
-  return `${(ms * MS_TO_MPH).toFixed(digits ?? 1)} mph`;
+  if (current === "metric") return `${groupThousands(ms, digits ?? 1)} m/s`;
+  return `${groupThousands(ms * MS_TO_MPH, digits ?? 1)} mph`;
 }
 
 /** Force — thrust: N (metric) or lbf (imperial). */
 export function fmtForce(n: number, digits?: number): string {
-  if (current === "metric") return `${n.toFixed(digits ?? 1)} N`;
-  return `${(n * N_TO_LBF).toFixed(digits ?? 2)} lbf`;
+  if (current === "metric") return `${groupThousands(n, digits ?? 1)} N`;
+  return `${groupThousands(n * N_TO_LBF, digits ?? 2)} lbf`;
 }
 
 /** Impulse — total/motor impulse: N·s (metric) or lbf·s (imperial). */
 export function fmtImpulse(ns: number, digits?: number): string {
-  if (current === "metric") return `${ns.toFixed(digits ?? 2)} N·s`;
-  return `${(ns * N_TO_LBF).toFixed(digits ?? 2)} lbf·s`;
+  if (current === "metric") return `${groupThousands(ns, digits ?? 2)} N·s`;
+  return `${groupThousands(ns * N_TO_LBF, digits ?? 2)} lbf·s`;
 }
 
 // --- Editable-input helpers: the number an <input> should show/parse, and the unit-label text next to it. ---

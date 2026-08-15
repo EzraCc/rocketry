@@ -24,7 +24,7 @@ import { burnTime, getThrustAt, totalImpulse } from "./physics/motor/motor-model
 import { deriveMotorMassCurve, getMotorMassAt } from "./physics/mass/motor-mass-curve.js";
 import { combinedMassAt, motorAxialPosition } from "./physics/mass/combined-mass.js";
 import type { SimResult3D } from "./physics/sim/types3d.js";
-import { renderFlightChart, renderThrustCurveChart, clearAllChartCursors } from "./ui/charts/flight-chart.js";
+import { renderFlightChart, renderThrustCurveChart, clearAllChartCursors, isScrubLocked, setScrubLockListener } from "./ui/charts/flight-chart.js";
 import { simulateFlight3DInWorker } from "./worker/sim-worker-client.js";
 import { windAt, constantWindProfile, type WindProfile } from "./model/wind.js";
 import {
@@ -451,16 +451,22 @@ function wireInfoToggles(): void {
 }
 
 /**
- * Delegated (same #app pattern as wireInfoToggles) click handler for the "Clear chart scrub"
- * button rendered alongside the flight charts — needed because touch scrubbing (see
- * wireTouchScrub in flight-chart.ts) deliberately leaves the crosshair/legend readout in place
- * after lifting a finger, rather than auto-clearing like a mouse moving away would; this is the
- * only way to dismiss it on a touch device.
+ * Delegated (same #app pattern as wireInfoToggles) click handler for the chart-scrub reset button
+ * — needed because touch scrubbing (see wireTouchScrub in flight-chart.ts) deliberately leaves the
+ * crosshair/legend readout in place after lifting a finger, rather than auto-clearing like a mouse
+ * moving away would; this is the only way to dismiss it on a touch device. Also registers with
+ * flight-chart.ts's own scrub-lock tracking (setScrubLockListener) so the button only shows up once
+ * there's actually a pinned reading to clear, rather than sitting there unconditionally -- same
+ * reset-icon convention as the mass/CG/CP stat cards, not a permanent full-width button.
  */
 function wireChartCursorReset(): void {
   document.querySelector("#app")?.addEventListener("click", (e) => {
     if (!(e.target as HTMLElement).closest("#chart-cursor-reset")) return;
     clearAllChartCursors();
+  });
+  setScrubLockListener((locked) => {
+    const btn = document.getElementById("chart-cursor-reset");
+    if (btn) btn.hidden = !locked;
   });
 }
 
@@ -1576,7 +1582,7 @@ let lastFlightElapsedMs = 0;
 /** Guards against a stale response overwriting a newer request's result if two runFlightSim calls overlap (e.g. rapid motor reselection). */
 let flightSimRequestSeq = 0;
 
-const FLIGHT_CHART_IDS = { altitude: "chart-altitude", speed: "chart-speed", mach: "chart-mach", tilt: "chart-tilt" };
+const FLIGHT_CHART_IDS = { altitude: "chart-altitude", speedMach: "chart-speed-mach", tilt: "chart-tilt" };
 
 function mountFlightCharts(): void {
   if (lastFlightResult) renderFlightChart(FLIGHT_CHART_IDS, lastFlightResult.samples);
@@ -1655,9 +1661,17 @@ function renderFlightResultHtml(rocket: Rocket, result: SimResult3D, elapsedMs: 
     .map((e) => `<tr><td>${e.type}</td><td>${e.time.toFixed(2)} s</td><td>${fmtAltitude(e.altitude)}</td><td>${fmtVelocity(e.speed)}</td></tr>`)
     .join("");
 
+  // A motor's guaranteed here (runFlightSim is never called without one -- see flightSimBlocked's
+  // own call sites), so this is just "which rocket+motor pairing is this result for," not a null
+  // check -- helpful once a user's compared a few different motors/rockets in a row and the numbers
+  // alone don't say which combination they're looking at anymore.
+  const motorLabel = rocket.motor ? `${rocket.motor.manufacturer} ${rocket.motor.designation}` : "an unknown motor";
+  const article = /^[aeiou]/i.test(motorLabel) ? "an" : "a";
+
   return `
     <div class="section-divider"></div>
     <h3>Flight simulation <small>(ascent to apogee, ${windLabel})</small></h3>
+    <p class="flight-sim-subject">${rocket.name} on ${article} ${motorLabel}</p>
     ${notFlyableHtml}
     ${stabilityWarningsHtml}
     <p><small>
@@ -1669,15 +1683,12 @@ function renderFlightResultHtml(rocket: Rocket, result: SimResult3D, elapsedMs: 
     ${warningsHtml}
     <div class="grid stats-grid">${stats}</div>
     <p>
-      <button type="button" id="chart-cursor-reset" class="outline secondary" style="width: auto;">
-        Clear chart scrub
-      </button>
-      <small>Press and drag on a chart to scrub through the flight; tap the button above to clear it.</small>
+      <small>Press and drag (or tap and hold) on a chart to scrub through the flight.</small>
+      <button type="button" id="chart-cursor-reset" class="edit-pencil" aria-label="Clear chart scrub" title="Clear the pinned scrub reading" ${isScrubLocked() ? "" : "hidden"}>↺</button>
     </p>
     <div class="grid flight-charts-grid">
       <div id="chart-altitude" class="flight-chart"></div>
-      <div id="chart-speed" class="flight-chart"></div>
-      <div id="chart-mach" class="flight-chart"></div>
+      <div id="chart-speed-mach" class="flight-chart"></div>
       <div id="chart-tilt" class="flight-chart"></div>
     </div>
     <figure>
