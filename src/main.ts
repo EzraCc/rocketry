@@ -2447,11 +2447,13 @@ if (app) {
       <hgroup>
         <h1>🚀 rocketry — flight simulator</h1>
         <p>
-          A web flight simulator for basic rockets. Physics is independently re-derived from
-          <a href="https://github.com/openrocket/openrocket" target="_blank" rel="noopener">OpenRocket</a>'s
-          published algorithms, with some deliberate changes (e.g. a corrected fin-body interference
-          factor). Licensed GPLv3, matching OpenRocket, to keep the door open for future
-          collaboration rather than diverging on licensing terms.
+          A web flight simulator for basic rockets. Licensed GPLv3, matching
+          <a href="https://github.com/openrocket/openrocket" target="_blank" rel="noopener">OpenRocket</a>,
+          so physics can directly follow OpenRocket's own published algorithms (many ported
+          straight from its source, e.g. fin normal-force and center-of-pressure through transonic
+          and supersonic flight) rather than maintaining an independently re-derived model, with a
+          handful of deliberate, documented deviations where this project does something different
+          on purpose.
           Report issues and/or share real flight data with Ezra. Real data improves simulators.
           <a href="validation-report.html" target="_blank" rel="noopener">Validation report</a> ·
           <a href="deviations.html" target="_blank" rel="noopener">Deviations from OpenRocket</a>.
