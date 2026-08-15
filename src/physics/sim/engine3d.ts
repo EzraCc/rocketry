@@ -38,8 +38,18 @@ function tiltFromVerticalDeg(axis: V.Vec3): number {
  * integrator. See engine.ts (M3) for the simpler 1D reference this reduces
  * to when there's no wind and the rocket launches perfectly vertical
  * (verified as a regression test in engine3d.test.ts).
+ *
+ * `coastPastApogeeS` (default 0, matching every existing caller's expectation that the sim ends
+ * at apogee): once set, the sim keeps integrating past the apogee event instead of stopping there,
+ * for up to that many seconds past the apogee time (or until ground impact, whichever comes
+ * first). Still the same drag+gravity equations of motion as the ascent — there's no recovery
+ * deployment modeled anywhere in this engine, so a coasting rocket really would just keep falling
+ * unparachuted, which is exactly what this produces. Added for delay-recommendation.ts, which
+ * needs real post-apogee velocity samples to evaluate candidate ejection delays that fire after
+ * apogee, rather than approximating descent speed analytically.
  */
-export function simulateFlight3D(rocket: Rocket): SimResult3D {
+export function simulateFlight3D(rocket: Rocket, options?: { coastPastApogeeS?: number }): SimResult3D {
+  const coastPastApogeeS = options?.coastPastApogeeS ?? 0;
   const warnings: string[] = [];
   const massCurve = rocket.motor ? deriveMotorMassCurve(rocket.motor) : null;
   const atmosphere = new IsaAtmosphere({
@@ -149,7 +159,7 @@ export function simulateFlight3D(rocket: Rocket): SimResult3D {
       }
     }
 
-    if (liftoffFired && prevVelocityZ > 0 && next.velocity.z <= 0) {
+    if (liftoffFired && !apogeeReached && prevVelocityZ > 0 && next.velocity.z <= 0) {
       const frac = prevVelocityZ / (prevVelocityZ - next.velocity.z);
       apogeeTime = t + frac * dt;
       apogeeAltitude = prevPositionZ + frac * (next.position.z - prevPositionZ);
@@ -161,6 +171,18 @@ export function simulateFlight3D(rocket: Rocket): SimResult3D {
       const apogeeVelocity = V.add(state.velocity, V.scale(V.sub(next.velocity, state.velocity), frac));
       events.push({ type: "APOGEE", time: apogeeTime, altitude: apogeeAltitude, speed: V.length(apogeeVelocity) });
       pushSample(nextT, next);
+      t = nextT;
+      state = next;
+      if (coastPastApogeeS <= 0) break;
+      continue;
+    }
+
+    // Only reachable while coasting past apogee (coastPastApogeeS > 0, see this function's own
+    // doc comment): stop at ground impact, or once the requested coast window has elapsed.
+    if (apogeeReached && (next.position.z <= 0 || nextT >= apogeeTime + coastPastApogeeS)) {
+      t = nextT;
+      state = next;
+      pushSample(t, state);
       break;
     }
 

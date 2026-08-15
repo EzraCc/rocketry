@@ -154,6 +154,47 @@ describe("simulateFlight3D — weathercocking direction", () => {
   });
 });
 
+describe("simulateFlight3D — coastPastApogeeS (unparachuted descent past apogee)", () => {
+  const rocket = basicRocket();
+
+  it("defaults to stopping at apogee (within one integration step), unchanged from every other caller's expectation", () => {
+    const result = simulateFlight3D(rocket);
+    const lastSample = result.samples[result.samples.length - 1]!;
+    // The final sample is pushed at the step's END time, not the interpolated apogeeTime itself
+    // (see the APOGEE-detection block's own comment) -- so it lands within one DT (0.01s) of it,
+    // not exactly on it.
+    expect(Math.abs(lastSample.time - result.apogeeTime)).toBeLessThan(0.02);
+  });
+
+  it("continues integrating past apogee when coastPastApogeeS is set, samples extending past apogeeTime", () => {
+    const result = simulateFlight3D(rocket, { coastPastApogeeS: 2 });
+    const lastSample = result.samples[result.samples.length - 1]!;
+    expect(lastSample.time).toBeGreaterThan(result.apogeeTime + 1.9);
+    // apogeeTime/apogeeAltitude themselves are unaffected by coasting -- still the first crossing.
+    expect(result.apogeeTime).toBeGreaterThan(0);
+  });
+
+  it("falls back toward the ground under gravity+drag after apogee, no parachute to arrest it", () => {
+    const result = simulateFlight3D(rocket, { coastPastApogeeS: 2 });
+    const atApogee = result.samples.find((s) => Math.abs(s.time - result.apogeeTime) < 0.02)!;
+    const later = result.samples[result.samples.length - 1]!;
+    expect(later.altitude).toBeLessThan(atApogee.altitude);
+    expect(later.velocity.z).toBeLessThan(0); // falling
+  });
+
+  it("stops at ground impact rather than continuing to integrate the descent", () => {
+    // A generous coast window, long enough for this small/light rocket to actually hit the ground.
+    const result = simulateFlight3D(rocket, { coastPastApogeeS: 60 });
+    const lastSample = result.samples[result.samples.length - 1]!;
+    const secondToLast = result.samples[result.samples.length - 2]!;
+    // Stopped at (or immediately past, within one step's worth of overshoot) impact -- the
+    // previous sample was still airborne, and it didn't keep falling well below ground.
+    expect(secondToLast.altitude).toBeGreaterThanOrEqual(0);
+    expect(lastSample.altitude).toBeGreaterThan(-1); // one RK4 step's worth of overshoot, not runaway
+    expect(lastSample.time).toBeLessThan(60 + result.apogeeTime);
+  });
+});
+
 describe("simulateFlight3D — stability comparison", () => {
   it("a stable (CG forward of CP) rocket stays bounded through boost; an unstable (CG aft of CP) rocket diverges/tumbles", () => {
     // Push dryCg far aft -- past where CP typically sits for this geometry -- to flip stability.
