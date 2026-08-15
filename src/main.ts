@@ -2158,12 +2158,11 @@ function wireLibraryPicker(): void {
 }
 
 /**
- * Loads the manifest, populates the browse UI, and picks the initial active rocket — runs once at
- * startup. A "rocket" URL param (set by selectLibraryEntry whenever a user actually picks one)
- * takes priority when present and still resolves to a real manifest entry, so a shared/bookmarked
- * link opens directly on that rocket; otherwise falls back to LOC-IV (the one entry with
- * independently-verified known-good CP values to show alongside this tool's own computed CP by
- * default).
+ * Loads the manifest and populates the browse UI — runs once at startup. A "rocket" URL param (set
+ * by selectLibraryEntry whenever a user actually picks one) takes priority when present and still
+ * resolves to a real manifest entry, so a shared/bookmarked link opens directly on that rocket;
+ * otherwise nothing is auto-selected -- a fresh visit lands on the plain browse/upload UI with no
+ * rocket preloaded, rather than always defaulting to LOC-IV.
  */
 async function initLibrary(): Promise<void> {
   try {
@@ -2173,8 +2172,14 @@ async function initLibrary(): Promise<void> {
 
     const urlRocketSlug = new URLSearchParams(location.search).get("rocket");
     const urlEntry = urlRocketSlug ? findLibraryEntryBySlug(libraryManifest, urlRocketSlug) : undefined;
-    const defaultEntry = urlEntry ?? libraryManifest.find((e) => e.path === "library/loc/PK-48 LOC-IV.rkt") ?? libraryManifest[0];
-    if (defaultEntry) await selectLibraryEntry(defaultEntry);
+    if (urlEntry) {
+      await selectLibraryEntry(urlEntry);
+    } else {
+      // No rocket auto-loaded -- the initial "Loading the rocket library…" placeholder (set at
+      // module scope) would otherwise sit there forever once loading actually finishes.
+      activeRocketSource = "Browse the library below, or upload a file, to get started.";
+      renderActiveRocketDisplay();
+    }
   } catch (err) {
     activeRocketSource = `Failed to load the rocket library: ${err instanceof Error ? err.message : String(err)} — upload a file instead.`;
     renderActiveRocketDisplay();
