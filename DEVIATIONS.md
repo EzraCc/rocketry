@@ -448,6 +448,12 @@ differently, not a case where one side is right and the other wrong. Worth a
 deliberate decision now that OpenRocket's specific approach could be ported
 directly, but not an obvious "fix."
 
+**Deferred 2026-08-15** — deliberately, not overlooked. Waiting until wind's
+own splashcast integration lands (real launch-day weather-forecast data),
+since that's more directly relevant to deciding this than picking a
+convention in the abstract now. Also low urgency on its own: most hobby
+flights never reach 11km.
+
 ---
 
 ## 10. The fin-in-body interference boost uses a more precise textbook formula

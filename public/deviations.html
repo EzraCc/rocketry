@@ -532,6 +532,15 @@ pitchDampingMoment = min(mul·(pitchRate/velocity)², Cm)  // capped so it can't
     differently, not a case where one side is right and the other wrong. Worth a deliberate decision now
     that OpenRocket's specific approach could be ported directly, but not an obvious "fix."
   </p>
+  <div class="tech-detail">
+    <strong class="tag">Deferred 2026-08-15</strong>
+    <p>
+      Deliberately, not overlooked. Waiting until wind's own splashcast integration lands (real
+      launch-day weather-forecast data), since that's more directly relevant to deciding this than
+      picking a convention in the abstract now. Also low urgency on its own: most hobby flights
+      never reach 11km.
+    </p>
+  </div>
 
   <h2 id="10">10. The fin-in-body interference boost uses a more precise textbook formula</h2>
   <div class="plain-english">
