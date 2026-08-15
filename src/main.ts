@@ -654,18 +654,29 @@ function renderMassStat(rocket: Rocket): string {
  * (activeEstimatedDryCgM, via autoDeriveLoadedCg) when available and not yet overridden --
  * RockSim files with supported geometry only; RASAero files and unsupported-geometry RockSim files
  * have no such estimate and keep the original manual-entry-required behavior (flagged with <mark>,
- * this project's one number that genuinely has no computed fallback in that case). An estimate is
- * still just that -- shown as "(from file)" rather than presented as a real measurement, and
- * always overridable via the pencil icon; the reset icon (shown once overridden) goes back to it.
+ * this project's one number that genuinely has no computed fallback in that case).
+ *
+ * Exactly three states, each with its own small icon (title-attribute tooltip, not inline text --
+ * keeps the compact stat card from wrapping): 🧮 CALCULATED (activeEstimatedDryCgM, summed from
+ * this file's own per-part mass/position data by this project's OWN parser -- genuinely computed,
+ * not literally read from a stored CG tag the way CP's own "(from file)" override is, which is why
+ * this uses a different icon/word than CP's; see collectMassBreakdown in rocksim/parse.ts), 📏
+ * OVERRIDDEN (cgOverriddenByUser -- a real measured/preferred value, entered via the pencil icon),
+ * and <mark>Not set</mark> (neither -- no estimate available and nothing entered yet). There's no
+ * fourth state: activeLoadedCgM is only ever nonzero via one of the first two paths (see
+ * autoDeriveLoadedCg/rederiveDryCg).
  */
 function renderCgStat(): string {
   const motor = lastMotorSelection ? buildSelectedMotor(lastMotorSelection) : null;
   const label = motor ? "Loaded CG" : "Dry CG";
   const hasCg = activeLoadedCgM > 0;
   const isEstimate = hasCg && !cgOverriddenByUser && activeEstimatedDryCgM !== undefined;
-  const valueHtml = hasCg
-    ? `${fmtLength(activeLoadedCgM)}${isEstimate ? ` <small>(from file)</small>` : ""}`
-    : `<mark>Not set — measure &amp; enter</mark>`;
+  const stateIcon = !hasCg
+    ? ""
+    : isEstimate
+      ? ` <span title="Calculated from this file's own per-part mass/position data" aria-label="Calculated from file">🧮</span>`
+      : ` <span title="Manually entered / measured" aria-label="Manually entered">📏</span>`;
+  const valueHtml = hasCg ? `${fmtLength(activeLoadedCgM)}${stateIcon}` : `<mark>Not set — measure &amp; enter</mark>`;
   return `
     <div>
       <strong
@@ -934,6 +945,15 @@ function renderRocketSection(rocket: Rocket, mach: number, subtitle: string): st
   const hasCg = activeLoadedCgM > 0;
   const margin = hasCg ? stabilityMargin(displayCpX, activeLoadedCgM, refDiameter) : null;
 
+  // Schematic motor shading -- foreX/aftX already account for motorOverhang (an HP motor's thrust
+  // ring protruding past the mount's own aft end), so no separate handling needed here.
+  const schematicMotor = lastMotorSelection ? buildSelectedMotor(lastMotorSelection) : null;
+  const schematicMotorPos = schematicMotor ? motorAxialPosition({ ...rocket, motor: schematicMotor }) : null;
+  const schematicMotorInfo =
+    schematicMotor && schematicMotorPos
+      ? { foreX: schematicMotorPos.foreX, aftX: schematicMotorPos.aftX, radius: schematicMotor.diameter / 2 }
+      : undefined;
+
   const stats = [
     stat("Length", fmtRocketLength(overallLength(rocket.components))),
     renderMassStat(rocket),
@@ -976,10 +996,10 @@ function renderRocketSection(rocket: Rocket, mach: number, subtitle: string): st
       ${renderInfoPanel(
         "cp-method-info",
         "How Computed CP is calculated",
-        `Computed by default independently from this rocket's geometry — never read from the source file (.ork/.rkt/.CDX1), regardless of format. Method: classical Barrowman component buildup (nose/transition/tube + fin CNa/CP) with a corrected fin-body interference factor; no Galejs body-lift term and no supersonic K1/K2/K3 fin corrections, hence the Mach-validity warning above ~0.8-0.9. Overridable (pencil icon) with a real measured/preferred value, or with the source file's own last-computed CP in one click ("Use simfile CP", shown only when the file has one) -- RockSim's proprietary extended-method CP for .rkt, OpenRocket's own saved post-rod-exit CP for .ork.`,
+        `Computed by default independently from this rocket's geometry — never read from the source file (.ork/.rkt/.CDX1), regardless of format. Method: classical Barrowman component buildup (nose/transition/tube + fin CNa/CP), a corrected fin-body interference factor, the Galejs body-lift term, and OpenRocket's own transonic/supersonic fin CNa1 and CP-shift models (valid to Mach 5). Overridable (pencil icon) with a real measured/preferred value, or with the source file's own last-computed CP in one click ("Use simfile CP", shown only when the file has one) -- RockSim's proprietary extended-method CP for .rkt, OpenRocket's own saved post-rod-exit CP for .ork.`,
       )}
       <figure class="schematic">
-        ${renderSchematicSvg(rocket.components, displayCpX, hasCg ? activeLoadedCgM : undefined)}
+        ${renderSchematicSvg(rocket.components, displayCpX, hasCg ? activeLoadedCgM : undefined, schematicMotorInfo)}
       </figure>
       ${renderDescentDevicesSection()}
     </article>

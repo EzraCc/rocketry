@@ -17,16 +17,15 @@ const DT_ON_ROD = 0.001; // s, finer step while still on the rod — an RK4 step
 const MAX_TIME = 300; // s, safety cap
 const EPS = 1e-9;
 
-// Barrowman's CNa/CP formulas (the entire aero model here) are a linear,
-// subsonic slender-body/thin-airfoil theory — they have no mechanism for
-// shock formation, boundary-layer separation, or the real CP shift through
-// transonic (well documented in missile aerodynamics: CP moves substantially
-// aft from ~M0.8 to ~M1.2, then forward again into supersonic). RASAero's own
-// documentation cites transonic drag rise beginning around M0.8, reaching
-// full rise by M0.9 — this project uses the same M0.8 threshold as "outside
-// this model's validated range" rather than silently extrapolating a theory
-// past where it's derived to hold.
-const MACH_VALIDITY_LIMIT = 0.8;
+// A "peak Mach exceeds ~0.8, no transonic/supersonic CP-shift modeling" warning used to fire here
+// (Barrowman's classical formulas being purely subsonic slender-body/thin-airfoil theory, no
+// mechanism for the real CP shift through transonic). Removed 2026-08-15: fin-calc.ts now ports
+// OpenRocket's own transonic (5-constraint polynomial blend, M0.9-1.5) and supersonic (K1/K2/K3
+// linearized theory, valid to M5) fin CNa1/CP-shift models directly, closing the specific gap this
+// warned about -- fins are the dominant driver of the "CP moves aft then forward" transonic
+// behavior the old comment cited. Nose/body CNa (symmetric-component-calc.ts) still has no Mach
+// dependence at all, but that's equally true of OpenRocket's own SymmetricComponentCalc (no
+// transonic model there either in the real tool), so it was never the gap this warning was about.
 
 function tiltFromVerticalDeg(axis: V.Vec3): number {
   const cosTilt = Math.max(-1, Math.min(1, axis.z)); // dot(axis, (0,0,1))
@@ -212,12 +211,6 @@ export function simulateFlight3D(rocket: Rocket, options?: { coastPastApogeeS?: 
   // dynamic pressure) is the genuine red flag.
   if (tiltAtBurnoutDeg !== null && tiltAtBurnoutDeg > 45) {
     warnings.push(`Large tilt from vertical by burnout (${tiltAtBurnoutDeg.toFixed(0)}°) — the rocket may be unstable/tumbling rather than weathercocking normally.`);
-  }
-
-  if (maxMach > MACH_VALIDITY_LIMIT) {
-    warnings.push(
-      `Peak Mach ${maxMach.toFixed(2)} exceeds ~${MACH_VALIDITY_LIMIT} — CP/CNa here use a linear subsonic (Barrowman) aerodynamic model with no transonic/supersonic CP-shift modeling. Stability margin and weathercocking results above this Mach should be treated as unreliable, not just approximate.`,
-    );
   }
 
   return {

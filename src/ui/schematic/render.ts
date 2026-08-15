@@ -5,6 +5,12 @@ import {
   placeComponents,
 } from "../../physics/geometry/rocket-geometry.js";
 
+export interface SchematicMotor {
+  foreX: number; // m from nose tip
+  aftX: number; // m from nose tip -- past the mount's own aft end by motorOverhang, for HP motors whose thrust ring protrudes
+  radius: number; // m, the motor's own case radius (narrower than the body tube it sits in)
+}
+
 /**
  * Read-only 2D side-view schematic (top half only, since rockets are
  * axisymmetric) rendered as an SVG string, walking the SAME radius functions
@@ -15,6 +21,7 @@ export function renderSchematicSvg(
   components: Component[],
   cpX?: number,
   cgX?: number,
+  motor?: SchematicMotor,
   widthPx = 1400,
   heightPx = 350,
 ): string {
@@ -53,6 +60,14 @@ export function renderSchematicSvg(
     }
   });
 
+  // A high-power motor's thrust-ring overhang can protrude past the body's own aft end -- make
+  // sure the bounding box covers it too, or it'd get silently clipped by the SVG viewport.
+  if (motor) {
+    minX = Math.min(minX, motor.foreX);
+    maxX = Math.max(maxX, motor.aftX);
+    maxR = Math.max(maxR, motor.radius);
+  }
+
   const totalLength = Math.max(maxX - minX, 1e-6);
   maxR = Math.max(maxR, 1e-6);
 
@@ -66,6 +81,17 @@ export function renderSchematicSvg(
   const toPyBottom = (r: number): number => cy + r * scale;
 
   const parts: string[] = [];
+
+  // Drawn BEFORE the body outlines below (which have fill="none"), so the shaded rect shows
+  // through the body's own transparent silhouette wherever they overlap -- and stands on its own,
+  // unmasked, for whatever portion (the thrust-ring overhang) extends past the body's aft end.
+  if (motor) {
+    const x0 = toPx(motor.foreX);
+    const x1 = toPx(motor.aftX);
+    parts.push(
+      `<rect x="${x0}" y="${toPy(motor.radius)}" width="${x1 - x0}" height="${toPyBottom(motor.radius) - toPy(motor.radius)}" fill="#888" fill-opacity="0.45" stroke="#555" stroke-width="1" />`,
+    );
+  }
 
   for (const entry of placed) {
     const c = entry.component;
