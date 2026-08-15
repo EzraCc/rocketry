@@ -20,8 +20,15 @@ export interface BarrowmanResult {
  * Total rocket CNa and CP: sum of each component's (cna, cp) pair, with CP
  * being the CNa-weighted average axial position — the standard Barrowman
  * combination rule (equivalent to OpenRocket's AerodynamicForces.merge).
+ *
+ * `alphaRad` (angle of attack) defaults to 0 -- only the fins' own supersonic
+ * CNa1 term actually uses it (see fin-calc.ts's finCNa1), so every existing
+ * caller that only cares about CP (the UI's static display, the validation
+ * suite, anything checking stability margin at rest) is unaffected by
+ * omitting it. derivatives3d.ts's live flight sim passes the real,
+ * currently-computed AOA.
  */
-export function computeBarrowman(components: Component[], mach: number): BarrowmanResult {
+export function computeBarrowman(components: Component[], mach: number, alphaRad = 0): BarrowmanResult {
   const refDiameter = referenceDiameter(components);
   const refArea = Math.PI * (refDiameter / 2) ** 2;
   const placed = placeComponents(components);
@@ -42,8 +49,8 @@ export function computeBarrowman(components: Component[], mach: number): Barrowm
     const bodyRadius = finRootBodyRadius(placed, i);
     const { cna, cpX } =
       c.type === "finset"
-        ? trapezoidFinAero(c, bodyRadius, mach, refArea)
-        : freeformFinAero(c, bodyRadius, mach, refArea);
+        ? trapezoidFinAero(c, bodyRadius, mach, refArea, alphaRad)
+        : freeformFinAero(c, bodyRadius, mach, refArea, undefined, alphaRad);
     cnaSum += cna;
     cnaXSum += cna * (entry.x0 + cpX);
   });

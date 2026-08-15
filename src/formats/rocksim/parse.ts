@@ -1,4 +1,4 @@
-import type { Component, FreeformFinSet, TrapezoidalFinSet } from "../../model/component.js";
+import type { Component, FinCrossSection, FreeformFinSet, TrapezoidalFinSet } from "../../model/component.js";
 import type { Shape } from "../../physics/geometry/shapes.js";
 
 /**
@@ -246,12 +246,21 @@ function uniqueId(el: Element, name: string): string {
   return text(el, "SerialNo") ?? name;
 }
 
+/** RockSim's <TipShapeCode> (0=SQUARE, 1=ROUNDED, 2=AIRFOIL; absent or unrecognized defaults to SQUARE, matching RockSim's own default and this project's conservative default -- see FinCrossSection's own doc comment). */
+function parseCrossSection(el: Element): FinCrossSection {
+  const code = Math.round(num(el, "TipShapeCode", 0));
+  if (code === 1) return "rounded";
+  if (code === 2) return "airfoil";
+  return "square";
+}
+
 function parseFinSet(el: Element, parentLength: number, parentAbsoluteX0: number, warnings: string[]): TrapezoidalFinSet | FreeformFinSet | null {
   const name = text(el, "Name") ?? "Fin set";
   const shapeCode = Math.round(num(el, "ShapeCode", 0));
   const finCount = Math.round(num(el, "FinCount", 3));
   const thickness = lengthM(el, "Thickness", 0.003);
   const cantAngle = num(el, "CantAngle", 0) * DEG_TO_RAD; // unverified unit -- see module doc comment
+  const crossSection = parseCrossSection(el);
   const commonOffset = (rootChord: number) => axialOffset(el, parentLength, rootChord, parentAbsoluteX0);
 
   if (shapeCode === 0) {
@@ -267,6 +276,7 @@ function parseFinSet(el: Element, parentLength: number, parentAbsoluteX0: number
       span: lengthM(el, "SemiSpan", 0),
       thickness,
       cantAngle,
+      crossSection,
       axialOffsetFromParentBottom: commonOffset(rootChord),
     };
   }
@@ -289,6 +299,7 @@ function parseFinSet(el: Element, parentLength: number, parentAbsoluteX0: number
       points,
       thickness,
       cantAngle,
+      crossSection,
       axialOffsetFromParentBottom: commonOffset(rootChord),
     };
   }

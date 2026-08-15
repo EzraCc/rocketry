@@ -93,9 +93,12 @@ export function computeDerivative3D(ctx: Sim3DContext, t: number, state: Sim3DSt
 
   const thrustForce = V.scale(axis, thrust);
 
-  // Barrowman CNa/CP at this Mach (M1's calculator — AOA-independent slope; AOA is applied below).
-  const barrowman = computeBarrowman(rocket.components, mach);
-  const leverArm = V.scale(axis, massState.cgX - barrowman.cpX); // CG -> CP
+  // Barrowman CP at this Mach -- CP position itself never depends on AOA (matches OpenRocket's own
+  // fin CP-shift formula, Mach-only), so this first pass is enough to get the lever arm needed to
+  // compute the real local AOA below, before the fin CNa1 term that DOES need it (supersonically)
+  // is evaluated a second time, just below, with that real value.
+  const barrowmanForCp = computeBarrowman(rocket.components, mach);
+  const leverArm = V.scale(axis, massState.cgX - barrowmanForCp.cpX); // CG -> CP
 
   // Single unified local-flow-at-CP calculation: this is what produces BOTH the restoring
   // moment (from the CG's translational crossflow) AND aerodynamic damping (from the
@@ -108,6 +111,11 @@ export function computeDerivative3D(ctx: Sim3DContext, t: number, state: Sim3DSt
   const axialComponent = V.dot(relativeAirspeed, axis);
   const localAoa = Math.atan2(perpMag, axialComponent);
   const clampedAoa = Math.min(localAoa, STALL_ANGLE);
+
+  // Second pass, now that the real local AOA is known -- only changes anything supersonically (see
+  // fin-calc.ts's finCNa1): the fin normal-force-slope's K2*alpha+K3*alpha² terms are themselves
+  // AOA-dependent there, unlike the purely-Mach-dependent subsonic/CP formulas above.
+  const barrowman = computeBarrowman(rocket.components, mach, clampedAoa);
 
   const normalForceMag = barrowman.cna * clampedAoa * q * barrowman.refArea;
   const normalForceDir = perpMag > 1e-9 ? V.scale(perpAtCp, -1 / perpMag) : V.ZERO;

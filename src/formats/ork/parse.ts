@@ -1,4 +1,4 @@
-import type { Component, FreeformFinSet, TrapezoidalFinSet } from "../../model/component.js";
+import type { Component, FinCrossSection, FreeformFinSet, TrapezoidalFinSet } from "../../model/component.js";
 import type { Shape } from "../../physics/geometry/shapes.js";
 
 const DEG_TO_RAD = Math.PI / 180;
@@ -97,6 +97,13 @@ function finAxialOffset(el: Element, parentLength: number, finRootChord: number,
   }
 }
 
+/** OpenRocket's <crosssection> stores the FinSet.CrossSection enum name lowercased (e.g. "square"/"rounded"/"airfoil") -- confirmed via DocumentConfig.findEnum's own lowercasing. Absent (the common case -- most sample files never write it) defaults to "square", matching FinSet's own Java default. */
+function parseCrossSection(el: Element): FinCrossSection {
+  const raw = text(el, "crosssection");
+  if (raw === "rounded" || raw === "airfoil") return raw;
+  return "square";
+}
+
 function parseTrapezoidFinSet(el: Element, parentLength: number, warnings: string[]): TrapezoidalFinSet {
   const name = text(el, "name") ?? "Fin set";
   const rootChord = number(el, "rootchord", 0);
@@ -111,6 +118,7 @@ function parseTrapezoidFinSet(el: Element, parentLength: number, warnings: strin
     span: number(el, "height", 0), // OpenRocket calls fin span "height"
     thickness: number(el, "thickness", 0.003),
     cantAngle: number(el, "cant", 0) * DEG_TO_RAD,
+    crossSection: parseCrossSection(el),
     axialOffsetFromParentBottom: finAxialOffset(el, parentLength, rootChord, warnings, name),
   };
 }
@@ -133,6 +141,7 @@ function parseFreeformFinSet(el: Element, parentLength: number, warnings: string
     points,
     thickness: number(el, "thickness", 0.003),
     cantAngle: number(el, "cant", 0) * DEG_TO_RAD,
+    crossSection: parseCrossSection(el),
     axialOffsetFromParentBottom: finAxialOffset(el, parentLength, rootChord, warnings, name),
   };
 }

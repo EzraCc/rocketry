@@ -1,5 +1,5 @@
 import type { FreeformFinSet } from "../../model/component.js";
-import { combineFinSetCna, finCNa1 } from "./fin-calc.js";
+import { combineFinSetCna, finCNa1, finCpShiftFraction } from "./fin-calc.js";
 import type { FinAeroResult } from "./fin-calc.js";
 
 /**
@@ -27,6 +27,7 @@ export function freeformFinAero(
   mach: number,
   refArea: number,
   divisions = 400,
+  alphaRad = 0,
 ): FinAeroResult {
   const span = fin.points.reduce((max, [, y]) => Math.max(max, y), 0);
   if (span < 1e-9 || refArea < 1e-9 || fin.finCount < 1 || fin.points.length < 3) {
@@ -88,9 +89,10 @@ export function freeformFinAero(
   const macLead = areaLE / area;
   const cosGamma = sumCosGamma / cosGammaSamples;
 
-  const cna1 = finCNa1(span, finArea, cosGamma, mach, refArea);
+  const cna1 = finCNa1(span, finArea, cosGamma, mach, refArea, alphaRad);
   const cna = combineFinSetCna(cna1, fin.finCount, bodyRadius, span, mach);
-  const cpX = macLead + 0.25 * macLength;
+  const aspectRatio = (2 * span * span) / finArea;
+  const cpX = macLead + finCpShiftFraction(mach, aspectRatio) * macLength;
 
   return { cna, cpX };
 }

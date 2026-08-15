@@ -1,6 +1,13 @@
-import { aftRadius, foreRadius, isBodyComponent, type BodyComponent, type Component } from "../../model/component.js";
+import { aftRadius, foreRadius, isBodyComponent, isFinSet, type BodyComponent, type Component } from "../../model/component.js";
 import type { AtmosphericConditions } from "../atmosphere/isa-model.js";
 import { bodyComponentRadius, baseRadius, overallLength, referenceDiameter, totalWettedArea } from "../geometry/rocket-geometry.js";
+import {
+  finBaseDragCd,
+  finPressureDragCd,
+  freeformFinDragGeometry,
+  trapezoidFinDragGeometry,
+  type FinDragGeometry,
+} from "./fin-calc.js";
 
 /**
  * Drag coefficient: skin friction (Reynolds-number-based Cf on the rocket's
@@ -65,6 +72,7 @@ export interface DragGeometry {
   baseArea: number;
   length: number;
   pressureTerms: PressureDragTerm[];
+  finTerms: FinDragGeometry[];
 }
 
 const EPS = 1e-9;
@@ -111,7 +119,13 @@ export function computeDragGeometry(components: Component[]): DragGeometry {
   const length = overallLength(components);
 
   const pressureTerms: PressureDragTerm[] = [];
+  const finTerms: FinDragGeometry[] = [];
   for (const c of components) {
+    if (isFinSet(c)) {
+      const geom = c.type === "finset" ? trapezoidFinDragGeometry(c) : freeformFinDragGeometry(c);
+      if (geom) finTerms.push(geom);
+      continue;
+    }
     if (!isBodyComponent(c)) continue;
     const r0 = foreRadius(c);
     const r1 = aftRadius(c);
@@ -126,7 +140,7 @@ export function computeDragGeometry(components: Component[]): DragGeometry {
     }
   }
 
-  return { refArea, wettedArea, baseArea, length, pressureTerms };
+  return { refArea, wettedArea, baseArea, length, pressureTerms, finTerms };
 }
 
 /** Reynolds-number-based skin-friction coefficient (classic flat-plate correlations). */
@@ -208,13 +222,19 @@ export function computeDragFromGeometry(
 
   const cf = frictionCoefficient(reynoldsNumber);
   const cdFriction = (cf * geometry.wettedArea) / geometry.refArea;
-  const cdBase = (baseDragCoefficient(mach) * geometry.baseArea) / geometry.refArea;
+  const baseCd = baseDragCoefficient(mach);
+  let cdBase = (baseCd * geometry.baseArea) / geometry.refArea;
 
   let cdPressure = 0;
   for (const term of geometry.pressureTerms) {
     const areaFraction = term.frontalArea / geometry.refArea;
     const termCd = term.growing ? growingShapePressureCd(mach, term.sinphi, term.mul) : boattailPressureCd(mach, term.fineness);
     cdPressure += termCd * areaFraction;
+  }
+
+  for (const fin of geometry.finTerms) {
+    cdPressure += finPressureDragCd(fin, mach, geometry.refArea);
+    cdBase += finBaseDragCd(fin, baseCd, geometry.refArea);
   }
 
   return { cd: cdFriction + cdBase + cdPressure, cdFriction, cdBase, cdPressure, reynoldsNumber };

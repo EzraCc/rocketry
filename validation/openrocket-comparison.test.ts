@@ -124,11 +124,6 @@ const fixtureFiles = fs.readdirSync(OPENROCKET_FIXTURES_DIR).filter((f) => f.end
  * the real check) rather than silently loosening a tolerance or excluding the case outright, so
  * `npm test` stays honestly green without hiding that these are open, tracked gaps:
  *
- * - mach1-chimera-bt60-j285 / mach1-chimera-98mm-m685w apogee: both fly supersonic (Mach 1.56 and
- *   1.23 respectively, per their own OpenRocket fixture's maxMach) -- exactly the regime
- *   DEVIATIONS.md's #2 (fin CNa1 frozen at Mach 0.9, no supersonic/transonic model at all) predicts
- *   large divergence in. Expected, not a new bug; not worth a blanket looser APOGEE_TOLERANCE for
- *   every case just to cover these two.
  * - mach1-chimera-bt60-j285 dry CG: a genuinely open, NOT-yet-root-caused issue found via this
  *   suite's own expansion -- distinct from the real UseKnownCG mass-override bug found and fixed in
  *   the same pass (see parse.ts's collectMassBreakdown), which this case's own total dry mass
@@ -136,12 +131,14 @@ const fixtureFiles = fs.readdirSync(OPENROCKET_FIXTURES_DIR).filter((f) => f.end
  *   position issue instead: this file has several accessory parts (a Bulkhead, an eye bolt) placed
  *   with LocationMode=2 (BACK_OF_OWNING_PART) AND a negative <Xb>, a combination not exercised by
  *   any other case in this suite -- flagged here for follow-up, not silently patched over.
+ *
+ * (mach1-chimera-bt60-j285 / mach1-chimera-98mm-m685w apogee were here too, both flying supersonic
+ * -- Mach 1.56 and 1.23 respectively -- exactly the regime DEVIATIONS.md's #2 and #4 predicted
+ * large divergence in. Resolved by porting OpenRocket's own supersonic/transonic fin CNa1 model,
+ * fin CP-shift model, and fin pressure/base drag from FinSetCalc.java; removed from this set once
+ * both cases started passing under the real tolerance again -- see CHANGELOG.md.)
  */
-const KNOWN_ISSUES = new Set<string>([
-  "mach1-chimera-bt60-j285:apogee",
-  "mach1-chimera-98mm-m685w:apogee",
-  "mach1-chimera-bt60-j285:dryCg",
-]);
+const KNOWN_ISSUES = new Set<string>(["mach1-chimera-bt60-j285:dryCg"]);
 
 describe.each(fixtureFiles)("%s vs. real OpenRocket Java simulation", (file) => {
   const fixture = JSON.parse(fs.readFileSync(path.join(OPENROCKET_FIXTURES_DIR, file), "utf-8")) as OpenRocketFixture;

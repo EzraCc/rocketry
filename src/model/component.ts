@@ -34,6 +34,15 @@ export interface Transition {
   thickness: number; // m
 }
 
+/**
+ * Fin leading-edge/tip profile, for pressure and base drag (see drag-calc.ts's finPressureDragCd/
+ * finBaseDragCd) -- "square" (a plain cut sheet, no shaping) is the default when a source file
+ * doesn't specify one (matches RockSim's own TipShapeCode default), a reasonable assumption for a
+ * basic/beginner kit's unshaped fins, and the higher-drag of the three options rather than silently
+ * under-predicting drag for a shape that hasn't actually been confirmed.
+ */
+export type FinCrossSection = "square" | "rounded" | "airfoil";
+
 export interface TrapezoidalFinSet {
   type: "finset";
   id: string;
@@ -45,6 +54,7 @@ export interface TrapezoidalFinSet {
   span: number; // m ("height" in .ork)
   thickness: number; // m
   cantAngle: number; // rad
+  crossSection?: FinCrossSection;
   /** Axial offset of the fin root's leading edge from the parent's aft end (usually 0). */
   axialOffsetFromParentBottom: number;
 }
@@ -64,6 +74,7 @@ export interface FreeformFinSet {
   points: [number, number][]; // m
   thickness: number; // m
   cantAngle: number; // rad
+  crossSection?: FinCrossSection;
   axialOffsetFromParentBottom: number;
 }
 
