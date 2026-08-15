@@ -2,7 +2,8 @@ import "@picocss/pico/css/pico.indigo.min.css";
 import "./style.css";
 import { computeBarrowman, stabilityMargin } from "./physics/aero/barrowman.js";
 import { overallLength, referenceDiameter } from "./physics/geometry/rocket-geometry.js";
-import { checkStability } from "./physics/aero/stability-check.js";
+import { checkStability, LOW_MARGIN_THRESHOLD } from "./physics/aero/stability-check.js";
+import { previewNoseWeight, solveNoseWeight } from "./physics/mass/nose-weight.js";
 import { renderSchematicSvg } from "./ui/schematic/render.js";
 import { defaultRocket, type Rocket, type SelectedMotor } from "./model/rocket.js";
 import { isBodyComponent, type Component } from "./model/component.js";
@@ -40,6 +41,7 @@ import {
   fmtImpulse,
   massToInput,
   massFromInput,
+  massInputUnitLabel,
   lengthInputUnitLabel,
   lengthToInput,
   lengthFromInput,
@@ -166,6 +168,7 @@ function applyParsedRocket(
   dryMassOverriddenViaLoadedEdit = false;
   activeLoadedCgM = 0; // reset -- autoDeriveLoadedCg (inside rederiveDryCg) fills this from activeEstimatedDryCgM when available
   cgOverriddenByUser = false;
+  noseWeightUi = { targetMarginCal: LOW_MARGIN_THRESHOLD, addedMassKg: null, massManuallySet: false, xNoseM: null };
   rederiveDryCg();
 
   activeRocketSource = source;
@@ -273,6 +276,27 @@ let activeEstimatedDryCgM: number | undefined;
  * geometry-derived estimate) until the reset icon or a fresh file load clears it again.
  */
 let cgOverriddenByUser = false;
+
+/**
+ * State for the "Balance this rocket" nose-weight panel (see renderNoseWeightSection). Kept as one
+ * small object (not scattered `let`s) since it's reset together on every rocket load.
+ *
+ * `addedMassKg`/`massManuallySet`: while `massManuallySet` is false, the panel always shows the
+ * FRESHLY auto-solved mass for the current targetMarginCal (recomputed on every render -- moving
+ * target as other things change, e.g. editing CG elsewhere). Once the user types directly into the
+ * mass field, `massManuallySet` flips true and `addedMassKg` freezes at whatever they entered,
+ * surviving re-renders, until they touch targetMarginCal again (which explicitly asks for a fresh
+ * auto-solve) or apply/close the panel.
+ */
+interface NoseWeightUiState {
+  targetMarginCal: number;
+  addedMassKg: number | null;
+  massManuallySet: boolean;
+  /** null = use the smart default (see defaultNoseWeightXM); set once the user adjusts the position field. */
+  xNoseM: number | null;
+}
+let noseWeightUi: NoseWeightUiState = { targetMarginCal: LOW_MARGIN_THRESHOLD, addedMassKg: null, massManuallySet: false, xNoseM: null };
+
 /**
  * A motor's actual mass at ignition, per its own mass curve -- NOT motor.totalMassKg (the
  * catalog/spec weight from ThrustCurve.org's metadata). For a real-per-sample-data motor
@@ -749,6 +773,154 @@ function wireCpStatEdit(): void {
   });
 }
 
+const NOSE_WEIGHT_PANEL_ID = "nose-weight-panel";
+// Forward enough of the nose cone's own length for near-maximal leverage (minimal mass needed),
+// but not the literal zero-volume tip, which most real nose cones can't hold ballast at. Always
+// user-adjustable via the panel's own position field.
+const DEFAULT_NOSE_WEIGHT_FRACTION = 0.2;
+
+function noseConeLengthM(rocket: Rocket): number {
+  const nose = rocket.components[0];
+  return nose && nose.type === "nosecone" ? nose.length : 0;
+}
+
+function defaultNoseWeightXM(rocket: Rocket): number {
+  const length = noseConeLengthM(rocket);
+  return length > 0 ? length * DEFAULT_NOSE_WEIGHT_FRACTION : 0;
+}
+
+/**
+ * "Balance this rocket" -- lets a user add nose weight to hit a target stability margin, either by
+ * auto-solving the mass needed (editing the target margin) or by entering a specific real weight
+ * and seeing what margin it actually achieves (editing the mass field directly -- see
+ * NoseWeightUiState's own doc comment for how the two interact). Rendered right after the stats
+ * grid, not inside it (see renderRocketSection) -- it reads as a tool acting ON the numbers above,
+ * not one more number among them.
+ *
+ * When the CURRENT margin is already negative (unflyable), this renders already expanded and
+ * flagged in the same red-banner style as the flight-sim "NOT FLYABLE" warning (checkStability) --
+ * the point of surfacing it here is so a user hitting a negative margin sees the fix in the same
+ * glance, not a second click away.
+ */
+function renderNoseWeightSection(rocket: Rocket, cpX: number, refDiameter: number, currentMarginCal: number): string {
+  const motor = lastMotorSelection ? buildSelectedMotor(lastMotorSelection) : null;
+  const motorPos = motor ? motorAxialPosition({ ...rocket, motor }) : null;
+  const motorMassKg = motor ? motorLoadedMassKg(motor) : 0;
+  const motorCgXM = motorPos?.cgX ?? 0;
+
+  const xNoseM = noseWeightUi.xNoseM ?? defaultNoseWeightXM(rocket);
+  const noseLengthM = noseConeLengthM(rocket);
+
+  const solved = solveNoseWeight(cpX, refDiameter, rocket.dryMass, rocket.dryCg, motorMassKg, motorCgXM, noseWeightUi.targetMarginCal, xNoseM);
+  const effectiveAddedMassKg = noseWeightUi.massManuallySet
+    ? (noseWeightUi.addedMassKg ?? 0)
+    : Number.isFinite(solved.addedMassKg)
+      ? solved.addedMassKg
+      : 0;
+  const preview = previewNoseWeight(cpX, refDiameter, rocket.dryMass, rocket.dryCg, motorMassKg, motorCgXM, effectiveAddedMassKg, xNoseM);
+
+  const unstable = currentMarginCal < 0;
+
+  const toggleHtml = unstable
+    ? `<p style="padding: 0.75rem; border-radius: var(--pico-border-radius); background: var(--pico-del-color, #c0392b);">
+        <a href="#" data-info-toggle="${NOSE_WEIGHT_PANEL_ID}" aria-expanded="true" aria-controls="${NOSE_WEIGHT_PANEL_ID}" style="color: white; font-weight: bold;">
+          ⚠ Unstable (CG is ${Math.abs(currentMarginCal).toFixed(2)} cal aft of CP) — ⚖ Balance this rocket
+        </a>
+      </p>`
+    : `<p><a href="#" data-info-toggle="${NOSE_WEIGHT_PANEL_ID}" aria-expanded="false" aria-controls="${NOSE_WEIGHT_PANEL_ID}">⚖ Add nose weight to adjust stability margin</a></p>`;
+
+  const massUnit = massInputUnitLabel();
+  const lengthUnit = lengthInputUnitLabel();
+
+  const feasibilityWarning = !solved.feasible
+    ? `<p><mark>This position is too far aft to ever reach ${noseWeightUi.targetMarginCal.toFixed(2)} cal — move the weight further forward.</mark></p>`
+    : "";
+
+  return `
+    ${toggleHtml}
+    <div id="${NOSE_WEIGHT_PANEL_ID}" class="info-panel" ${unstable ? "" : "hidden"}>
+      <strong>Balance this rocket</strong>
+      <p>
+        Adds a point mass near the nose to move the loaded (liftoff) CG forward. Since CP doesn't
+        depend on mass, this solves directly for the mass needed — no trial and error.
+      </p>
+      <div class="grid">
+        <label>Target margin (cal)
+          <input type="number" inputmode="decimal" id="nose-weight-target-input" min="0" step="0.1" value="${noseWeightUi.targetMarginCal.toFixed(2)}" />
+        </label>
+        <label>Weight position (${lengthUnit} from nose tip)
+          <input type="number" inputmode="decimal" id="nose-weight-position-input" min="0" max="${lengthToInput(noseLengthM).toFixed(2)}" step="0.1" value="${lengthToInput(xNoseM).toFixed(2)}" />
+        </label>
+        <label>Added mass (${massUnit})
+          <input type="number" inputmode="decimal" id="nose-weight-mass-input" min="0" step="0.1" value="${massToInput(effectiveAddedMassKg).toFixed(2)}" />
+        </label>
+      </div>
+      ${feasibilityWarning}
+      <p>
+        <strong>Resulting margin: <span style="color: ${preview.newMarginCal > 0 ? "var(--pico-ins-color, #2a8f4d)" : "var(--pico-del-color, #c0392b)"};">${preview.newMarginCal.toFixed(2)} cal</span></strong>
+        ${!noseWeightUi.massManuallySet && solved.feasible ? ` <small>(auto-solved for ${noseWeightUi.targetMarginCal.toFixed(2)} cal target)</small>` : ""}
+      </p>
+      <button type="button" id="nose-weight-apply-btn" ${effectiveAddedMassKg > 0 ? "" : "disabled"}>
+        Apply — add ${fmtMass(effectiveAddedMassKg)} at ${fmtLength(xNoseM)} from the nose tip
+      </button>
+    </div>
+  `;
+}
+
+/**
+ * Delegated (same #app pattern as wireInfoToggles) input/click handling for the nose-weight
+ * panel's three fields and its Apply button. `input` (not `change`) so the "Resulting margin"
+ * readout updates live as the user types, matching every other live-computed figure in this app.
+ */
+function wireNoseWeightPanel(): void {
+  const appEl = document.querySelector("#app");
+  if (!appEl) return;
+
+  appEl.addEventListener("input", (e) => {
+    const target = e.target as HTMLElement;
+    if (target.id === "nose-weight-target-input") {
+      noseWeightUi.targetMarginCal = Number((target as HTMLInputElement).value) || 0;
+      noseWeightUi.massManuallySet = false; // an explicit ask for a fresh auto-solve
+      renderActiveRocketDisplay();
+    } else if (target.id === "nose-weight-position-input") {
+      noseWeightUi.xNoseM = Math.max(0, lengthFromInput(Number((target as HTMLInputElement).value) || 0));
+      renderActiveRocketDisplay();
+    } else if (target.id === "nose-weight-mass-input") {
+      noseWeightUi.addedMassKg = Math.max(0, massFromInput(Number((target as HTMLInputElement).value) || 0));
+      noseWeightUi.massManuallySet = true;
+      renderActiveRocketDisplay();
+    }
+  });
+
+  appEl.addEventListener("click", (e) => {
+    if (!(e.target as HTMLElement).closest("#nose-weight-apply-btn")) return;
+
+    const motor = lastMotorSelection ? buildSelectedMotor(lastMotorSelection) : null;
+    const motorPos = motor ? motorAxialPosition({ ...activeRocket, motor }) : null;
+    const motorMassKg = motor ? motorLoadedMassKg(motor) : 0;
+    const motorCgXM = motorPos?.cgX ?? 0;
+    const { cpX, refDiameter } = computeBarrowman(activeRocket.components, 0.1);
+    const displayCpX = activeCpOverrideM ?? cpX;
+
+    const xNoseM = noseWeightUi.xNoseM ?? defaultNoseWeightXM(activeRocket);
+    const solved = solveNoseWeight(displayCpX, refDiameter, activeRocket.dryMass, activeRocket.dryCg, motorMassKg, motorCgXM, noseWeightUi.targetMarginCal, xNoseM);
+    const effectiveAddedMassKg = noseWeightUi.massManuallySet
+      ? (noseWeightUi.addedMassKg ?? 0)
+      : Number.isFinite(solved.addedMassKg)
+        ? solved.addedMassKg
+        : 0;
+    if (effectiveAddedMassKg <= 0) return;
+
+    const preview = previewNoseWeight(displayCpX, refDiameter, activeRocket.dryMass, activeRocket.dryCg, motorMassKg, motorCgXM, effectiveAddedMassKg, xNoseM);
+
+    activeDryMassKg += effectiveAddedMassKg;
+    activeLoadedCgM = displayCpX - preview.newMarginCal * refDiameter;
+    cgOverriddenByUser = true;
+    noseWeightUi = { targetMarginCal: noseWeightUi.targetMarginCal, addedMassKg: null, massManuallySet: false, xNoseM: null };
+    afterDryMassChanged();
+  });
+}
+
 function renderRocketSection(rocket: Rocket, mach: number, subtitle: string): string {
   const { cpX, refDiameter } = computeBarrowman(rocket.components, mach);
   // The displayed/stability-relevant CP: a user override (manual entry or "Use simfile CP") when
@@ -800,6 +972,7 @@ function renderRocketSection(rocket: Rocket, mach: number, subtitle: string): st
           : ""
       }
       <div class="grid stats-grid">${stats}</div>
+      ${margin !== null ? renderNoseWeightSection(rocket, displayCpX, refDiameter, margin) : ""}
       ${renderInfoPanel(
         "cp-method-info",
         "How Computed CP is calculated",
@@ -2286,6 +2459,7 @@ if (app) {
   wireMassStatEdit();
   wireCgStatEdit();
   wireCpStatEdit();
+  wireNoseWeightPanel();
   wireChartCursorReset();
   void initLibrary();
   const urlParams = new URLSearchParams(location.search);

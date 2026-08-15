@@ -21,7 +21,7 @@ export interface StabilityCheck {
   warnings: string[];
 }
 
-const LOW_MARGIN_THRESHOLD = 1; // calibers
+export const LOW_MARGIN_THRESHOLD = 1; // calibers
 const OVERSTABLE_THRESHOLD = 3; // calibers
 
 export function checkStability(cpX: number, cgX: number, refDiameter: number, hasMotor: boolean): StabilityCheck {
