@@ -1,0 +1,576 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>rocketry — deviations from OpenRocket</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚀</text></svg>" />
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1a1a1a; --muted: #666666; --border: #dddddd;
+    --head-bg: #f4f4f5; --link: #2f6feb; --code-bg: #f4f4f5;
+    --keep-bg: #e6f4ea; --keep-fg: #1e7b34;
+    --port-bg: #fff4e5; --port-fg: #a15c00;
+    --open-bg: #eef1ff; --open-fg: #3948a3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161a; --fg: #e8e8e8; --muted: #9a9a9a; --border: #33363b;
+      --head-bg: #1e2126; --link: #6ea8fe; --code-bg: #1e2126;
+      --keep-bg: #163420; --keep-fg: #7ee2a0;
+      --port-bg: #3a2c10; --port-fg: #f0b24d;
+      --open-bg: #202555; --open-fg: #aab4ff;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    margin: 0; padding: 1.5rem; line-height: 1.6;
+    max-width: 52rem; margin-inline: auto;
+  }
+  h1 { font-size: 1.6rem; margin: 0 0 0.35rem; }
+  h2 { font-size: 1.3rem; margin: 2.5rem 0 0.75rem; padding-top: 0.5rem; border-top: 1px solid var(--border); }
+  h2:first-of-type { border-top: none; padding-top: 0; }
+  h3 { font-size: 1.05rem; margin: 1.75rem 0 0.5rem; }
+  p { margin: 0.75rem 0; }
+  a { color: var(--link); }
+  .subtitle { color: var(--muted); margin: 0 0 1.25rem; font-size: 0.92rem; }
+  .plain-english {
+    background: var(--head-bg); border-left: 3px solid var(--link);
+    padding: 0.85rem 1rem; margin: 0.75rem 0; border-radius: 0 6px 6px 0;
+  }
+  .plain-english strong.tag { display: block; font-size: 0.72rem; text-transform: uppercase;
+    letter-spacing: 0.04em; color: var(--muted); margin-bottom: 0.35rem; }
+  .tech-detail strong.tag { display: block; font-size: 0.72rem; text-transform: uppercase;
+    letter-spacing: 0.04em; color: var(--muted); margin: 1rem 0 0.35rem; }
+  code {
+    background: var(--code-bg); border-radius: 3px; padding: 0.1rem 0.35rem;
+    font-size: 0.88em; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  pre {
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 0.85rem 1rem; overflow-x: auto; font-size: 0.85rem; line-height: 1.5;
+  }
+  pre code { background: none; padding: 0; }
+  .verdict {
+    display: inline-block; font-size: 0.8rem; font-weight: 600; padding: 0.25rem 0.65rem;
+    border-radius: 999px;
+  }
+  p.verdict-line { margin: 1.25rem 0 0.5rem; }
+  .verdict.keep { background: var(--keep-bg); color: var(--keep-fg); }
+  .verdict.port { background: var(--port-bg); color: var(--port-fg); }
+  .verdict.open { background: var(--open-bg); color: var(--open-fg); }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 6px; margin: 1rem 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.88rem; }
+  th, td { padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+  thead th { background: var(--head-bg); }
+  tbody tr:last-child td { border-bottom: none; }
+  td.verdict-cell { white-space: nowrap; }
+  footer { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--border); color: var(--muted); font-size: 0.85rem; }
+</style>
+</head>
+<body>
+  <h1>rocketry — deviations from OpenRocket</h1>
+  <p class="subtitle">
+    Every place this project's physics computes a different number than OpenRocket's own — and why —
+    from a systematic side-by-side comparison of rocketry's source against
+    <a href="https://github.com/openrocket/openrocket" target="_blank" rel="noopener">OpenRocket</a>'s
+    current Java source, done 2026-08-15. See the <a href="/">simulator</a> itself, or the
+    <a href="validation-report.html">validation report</a> for how the two tools' actual flight results compare.
+  </p>
+
+  <h2>Why this document exists</h2>
+  <p>
+    rocketry's physics was originally built as an <strong>independent re-derivation</strong> of
+    OpenRocket's algorithms — a deliberate choice, made early in the project, to avoid depending on
+    or copying GPL-licensed code. That constraint is gone: this project is now itself licensed GPLv3,
+    specifically so it can reuse or closely follow OpenRocket's own methods instead of maintaining a
+    parallel, independently-derived physics model.
+  </p>
+  <p>
+    This page is the result of that comparison. For every place the two tools would compute a
+    <strong>different number</strong> for the same rocket, it explains what differs, why, how much it
+    matters, and whether it's worth changing. Every specific formula and code excerpt below was read
+    directly from both projects' current source, not summarized from memory or taken on faith from
+    either project's own comments — a few small corrections to rocketry's own prior comments are
+    noted inline where research turned up something more precise.
+  </p>
+  <p>
+    Each item below opens with a plain-English summary anyone can follow, then the technical detail
+    underneath for anyone who wants to verify it against the source directly, and closes with a verdict:
+  </p>
+  <p>
+    <span class="verdict keep">Keep</span> — a real improvement or a deliberate, physically-justified
+    choice; nothing to revert. &nbsp;
+    <span class="verdict port">Port candidate</span> — an undocumented gap where OpenRocket's method is
+    more complete, now unblocked by the GPLv3 relicense. &nbsp;
+    <span class="verdict open">Open question</span> — both sides made a reasonable but different call
+    on an underspecified problem; a product decision, not a bug fix.
+  </p>
+
+  <h2>Top findings, ranked by how much they'd actually change a result</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>What</th><th>Why it matters</th><th>Verdict</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><a href="#1">Plain body tubes contribute <em>zero</em> lift; OpenRocket gives them a real, often large one</a></td>
+          <td>Directly shifts CP and the stability margin — the single most safety-relevant number this app shows</td>
+          <td class="verdict-cell"><span class="verdict port">Port candidate</span></td>
+        </tr>
+        <tr>
+          <td><a href="#2">Fin lift is frozen at its Mach-0.9 value for every faster speed</a></td>
+          <td>Large, systematic error above M≈0.9</td>
+          <td class="verdict-cell"><span class="verdict keep">Keep</span> (documented, warning-gated)</td>
+        </tr>
+        <tr>
+          <td><a href="#3">How pitch/yaw damping is modeled is fundamentally different</a></td>
+          <td>Affects weathercocking/oscillation behavior, especially in gusty wind or at high angle of attack</td>
+          <td class="verdict-cell"><span class="verdict open">Open question</span></td>
+        </tr>
+        <tr>
+          <td><a href="#4">Fins contribute no drag from their own leading/blunt edges or trailing edges</a></td>
+          <td>Underestimates total drag, especially for square-cut (unbeveled) fins — a common beginner-kit style</td>
+          <td class="verdict-cell"><span class="verdict port">Port candidate</span></td>
+        </tr>
+        <tr>
+          <td><a href="#5">Drag has no compressibility correction or surface-roughness model</a></td>
+          <td>Small-to-moderate systematic drag underestimate at higher speeds/Reynolds numbers</td>
+          <td class="verdict-cell"><span class="verdict port">Port candidate</span></td>
+        </tr>
+        <tr>
+          <td><a href="#6">Drag always points opposite the oncoming air; OpenRocket locks it to the body axis</a></td>
+          <td>Only matters at real angle of attack (wind, weathercocking) — up to 30% drag-magnitude difference there</td>
+          <td class="verdict-cell"><span class="verdict open">Open question</span></td>
+        </tr>
+        <tr>
+          <td><a href="#7">Nothing ever nudges a borderline-stable rocket off course</a></td>
+          <td>A marginally-stable rocket may fly perfectly straight in simulation even when it's genuinely fragile</td>
+          <td class="verdict-cell"><span class="verdict port">Port candidate</span></td>
+        </tr>
+        <tr>
+          <td><a href="#8">The fin's own center of pressure is frozen at quarter-chord</a></td>
+          <td>A real, currently-unwarned gap between Mach 0.5–0.8</td>
+          <td class="verdict-cell"><span class="verdict keep">Keep</span> (documented; warning threshold worth tightening)</td>
+        </tr>
+        <tr>
+          <td><a href="#9">A hot or cold launch day is handled oppositely by the two tools above 11 km</a></td>
+          <td>Only matters for high-altitude (11km+) flights on an unusual-weather day</td>
+          <td class="verdict-cell"><span class="verdict open">Open question</span></td>
+        </tr>
+        <tr>
+          <td><a href="#10">The fin-in-body interference boost uses a more precise textbook formula</a></td>
+          <td>Small-to-moderate, and cited/verified against the source textbook</td>
+          <td class="verdict-cell"><span class="verdict keep">Keep</span> (deliberate, justified)</td>
+        </tr>
+        <tr>
+          <td><a href="#11">Real motor mass data is cross-checked against its own published weight</a></td>
+          <td>Catches a real data-quality bug that OpenRocket itself doesn't guard against</td>
+          <td class="verdict-cell"><span class="verdict keep">Keep</span> (rocketry improvement)</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="1">1. The plain body tube contributes zero lift — OpenRocket gives it a real, and often large, one</h2>
+  <div class="plain-english">
+    <strong class="tag">Plain English</strong>
+    Picture the rocket tipped slightly sideways into the wind — nose pointed a few degrees off the
+    direction it's actually moving. Fins obviously push back against that (that's what makes a rocket
+    "weathercock," turning back into the wind). OpenRocket says the plain cylindrical body tube
+    <em>also</em> pushes back a meaningful amount, just from air flowing along its slightly-angled
+    length — a real, textbook aerodynamic effect (credited to Galejs, a NASA-era researcher). rocketry
+    currently assumes the bare body tube contributes nothing at all. Since this "push" acts near the
+    middle of the body tube — usually well forward of the fins — leaving it out doesn't just get the
+    total force wrong, it shifts <em>where</em> the whole rocket's center of pressure sits, which is
+    exactly the number the stability margin (the "how safe is this to fly" figure) is built from.
+  </div>
+  <div class="tech-detail">
+    <strong class="tag">Technical detail</strong>
+    <p>
+      In OpenRocket, every symmetric component (nose cone, transition, <em>and</em> plain body tube)
+      gets a body-lift contribution from <code>SymmetricComponentCalc.getLiftCP</code>
+      (<code>aerodynamics/barrowman/SymmetricComponentCalc.java:180-197</code>):
+    </p>
+    <pre><code>protected CoordinateIF getLiftCP(FlightConditions conditions, WarningSet warnings) {
+    double mul = 1;
+    if ((conditions.getMach() &lt; 0.05) &amp;&amp; (conditions.getAOA() &gt; Math.PI / 4)) {
+        mul = pow2(conditions.getMach() / 0.05);
+    }
+    return new Coordinate(planformCenter, 0, 0, mul * BODY_LIFT_K * planformArea / conditions.getRefArea() *
+            conditions.getSinAOA() * conditions.getSincAOA());
+}</code></pre>
+    <p>
+      with <code>BODY_LIFT_K = 1.1</code>, called unconditionally for a plain body tube
+      (<code>isTube</code> branch, line 155: <code>cp = getLiftCP(conditions, warnings);</code>), and
+      <code>planformArea</code> for a <code>BodyTube</code> is confirmed
+      (<code>rocketcomponent/BodyTube.java:341-343</code>) to be exactly <code>length × diameter</code>.
+    </p>
+    <p>
+      rocketry's <code>symmetricComponentAero</code> (<code>aero/symmetric-component-calc.ts</code>)
+      returns <code>cna = 0, cpX = length/2</code> whenever fore radius equals aft radius — i.e., for
+      every plain body tube. The module's own doc comment already flags this as deferred ("The Galejs
+      body-lift term (planform-area based, small) is deferred for MVP") — but <strong>"small"
+      undersells it</strong>. Worked through the formula above: near zero angle of attack,
+      <code>sin(AOA)·sinc(AOA) → AOA</code>, so the effective normal-force-slope contribution from a
+      bare body tube alone comes out to roughly
+      <code>1.1 × (length × diameter) / (π·radius²) ≈ 1.4 × (length/diameter)</code>. For a typical
+      hobby-rocket body tube with a length-to-diameter ratio of 15–25, that's a CNa contribution in the
+      <strong>20–35 per radian</strong> range — comparable to, or larger than, a whole fin set's own
+      contribution.
+    </p>
+  </div>
+  <p class="verdict-line"><span class="verdict port">Port candidate</span></p>
+  <p>
+    This looks like a real OpenRocket feature that was consciously deferred, not an artifact of
+    independent re-derivation — the formula is short and self-contained (no lookup tables needed), and
+    it directly affects the stability margin, the single most safety-relevant number this tool produces.
+  </p>
+
+  <h2 id="2">2. Fin lift is frozen at its Mach-0.9 value for every faster speed</h2>
+  <div class="plain-english">
+    <strong class="tag">Plain English</strong>
+    How hard a fin "bites" the air (and how far forward or back its own center of pressure sits)
+    genuinely changes as a rocket approaches and crosses the speed of sound — this is real,
+    well-studied aerodynamics, not a minor correction. rocketry currently just freezes both numbers at
+    whatever they were at Mach 0.9 and uses that same frozen value forever, no matter how much faster
+    the rocket actually goes. rocketry already displays a warning above Mach 0.8 telling you results
+    may not be trustworthy, so this is a known, disclosed limitation — not a silent bug.
+  </div>
+  <div class="tech-detail">
+    <strong class="tag">Technical detail</strong>
+    <p>
+      rocketry's <code>finCNa1</code> (<code>aero/fin-calc.ts</code>) does
+      <code>const m = Math.min(mach, CNA_SUBSONIC)</code> (<code>CNA_SUBSONIC = 0.9</code>) — for any
+      Mach at or above 0.9 it reuses the M=0.9 closed-form value unchanged. OpenRocket's
+      <code>FinSetCalc.calculateFinCNa1</code> has three actual regimes
+      (<code>aerodynamics/barrowman/FinSetCalc.java:417-453</code>): the same closed form below M=0.9;
+      a supersonic model at M≥1.5 using precomputed K1/K2/K3 lookup tables where CNa1 itself depends on
+      angle of attack (<code>finArea*(K1(M) + K2(M)*alpha + K3(M)*alpha²)/refArea</code>); and a
+      cubic-polynomial-matched transonic blend in between. Fin center-of-pressure position has the same
+      shape of gap — see <a href="#8">item 8</a> below.
+    </p>
+  </div>
+  <p class="verdict-line"><span class="verdict keep">Keep for now (deliberate, documented, warning-gated)</span></p>
+  <p>
+    This is an honest, disclosed MVP scope cut, not an oversight. If/when higher-power, faster-flying
+    rockets become a priority, OpenRocket's K1/K2/K3 tables are compact static data and are now a
+    legitimate port target.
+  </p>
+
+  <h2 id="3">3. How pitch and yaw damping is modeled is fundamentally different</h2>
+  <div class="plain-english">
+    <strong class="tag">Plain English</strong>
+    When a rocket gets knocked off-axis (by a wind gust, or naturally overshooting as it
+    "weathercocks" back into stable flight), two things happen: a restoring force pushes it back
+    straight, and a separate <em>damping</em> effect keeps it from over-correcting and oscillating back
+    and forth like a spring. rocketry gets this damping "for free" from the same physics that computes
+    the restoring force — a mathematically clean approach. OpenRocket instead uses a separate,
+    explicitly <strong>hand-tuned</strong> formula for damping (the code literally multiplies the whole
+    thing by 3, with a comment saying this was tuned by hand to get "more realistic apogee turn"
+    behavior) that has nothing to do with its own lift/CP calculation. Neither approach is obviously
+    "more correct" — OpenRocket's is empirically tuned against real-world flight behavior but not
+    derived from first principles; rocketry's is physically elegant but has never been tuned against
+    real flights the way OpenRocket's has.
+  </div>
+  <div class="tech-detail">
+    <strong class="tag">Technical detail</strong>
+    <p>
+      OpenRocket's damping
+      (<code>aerodynamics/barrowman/BarrowmanStabilityCalculator.java:108-126,331-364</code>) computes
+      a moment purely as a function of body geometry and rotation rate, independent of the CN/CP
+      calculation:
+    </p>
+    <pre><code>mul = 0.275 * cacheDiameter / (refArea*refLength) * (cgx⁴ + (length-cgx)⁴)
+mul += Σ_fins 0.6·min(finCount,4)·finPlanformArea·|finMidchordX-cgx|³ / (refArea*refLength)
+mul *= 3   // "Higher damping yields much more realistic apogee turn"
+pitchDampingMoment = min(mul·(pitchRate/velocity)², Cm)  // capped so it can't reverse the restoring moment</code></pre>
+    <p>
+      rocketry (<code>sim/derivatives3d.ts</code>) instead folds the rotation rate directly into the
+      local angle-of-attack seen at the center of pressure
+      (<code>rotationalVelocityAtCp = angularVelocity × leverArm</code>, added into the relative
+      airspeed before computing normal force) — the same normal-force calculation used for the
+      restoring moment automatically produces damping too, as a side effect of one
+      physically-consistent local-flow picture, rather than as a second, separately-derived term.
+    </p>
+  </div>
+  <p class="verdict-line"><span class="verdict open">Open question</span></p>
+  <p>
+    This is a genuine, structural difference in how a hard, underspecified sub-problem is modeled.
+    OpenRocket's version is tuned against observed flight behavior (note the explicit ×3 fudge factor);
+    rocketry's is more physically principled but unverified against real flights. Worth a deliberate
+    product decision — do we want rocketry's approach, or port OpenRocket's tuned-but-ad-hoc one? —
+    rather than treating either as simply "the bug."
+  </p>
+
+  <h2 id="4">4. Fins contribute no drag from their own leading/blunt edges or trailing edges</h2>
+  <div class="plain-english">
+    <strong class="tag">Plain English</strong>
+    A fin's leading edge (whichever way it's shaped — sharp, rounded, or just cut flat with a saw)
+    creates drag as it pushes through the air, and a blunt trailing edge creates more drag from the
+    low-pressure "wake" behind it. rocketry currently doesn't account for either — fins only contribute
+    the (comparatively small) skin-friction drag of air rubbing along their flat surfaces. This
+    especially matters for square-cut, unbeveled fins — a common style on basic/beginner kits — where
+    OpenRocket's own formula treats that leading-edge drag as substantial.
+  </div>
+  <div class="tech-detail">
+    <strong class="tag">Technical detail</strong>
+    <p>
+      rocketry's <code>computeDragGeometry</code> (<code>aero/drag-calc.ts</code>) explicitly skips
+      fins in its pressure-drag loop (<code>if (!isBodyComponent(c)) continue;</code>). OpenRocket
+      computes real fin pressure/leading-edge drag (<code>FinSetCalc.calculatePressureCD</code>, lines
+      623-661 — Mach-dependent, and different depending on whether the fin cross-section is modeled as
+      airfoil/rounded/square) and real trailing-edge base drag
+      (<code>calculateComponentBaseCD</code>, lines 663-685 — square gets the full value, rounded gets
+      half, airfoil gets none).
+    </p>
+  </div>
+  <p class="verdict-line"><span class="verdict port">Port candidate</span></p>
+  <p>
+    Undocumented gap, not a deliberate cut. Likely means simulated flights currently reach somewhat
+    higher altitude/velocity than a real flight would, especially for basic, square-fin kits — the
+    exact same failure mode this project's own drag module was originally built to fix for nose cones.
+  </p>
+
+  <h2 id="5">5. Drag has no speed-of-sound compressibility correction or surface-roughness model</h2>
+  <div class="plain-english">
+    <strong class="tag">Plain English</strong>
+    Two more real effects OpenRocket models that rocketry doesn't yet: (a) how close a rocket is to
+    the speed of sound changes how much friction drag its skin experiences, not just how much pressure
+    drag it gets from its shape; (b) a rough, unfinished body tube surface (vs. a sanded/painted one)
+    genuinely creates more drag, and at higher speeds this roughness effect can become the dominant
+    source of friction drag entirely, overtaking the smooth-surface formula rocketry currently always
+    uses.
+  </div>
+  <div class="tech-detail">
+    <strong class="tag">Technical detail</strong>
+    <p>
+      rocketry's <code>frictionCoefficient</code> (<code>aero/drag-calc.ts</code>) takes only Reynolds
+      number as an input — no Mach term anywhere. OpenRocket's <code>calculateFrictionCoefficient</code>
+      (<code>aerodynamics/BarrowmanDragCalculator.java:185-233</code>) applies a Reynolds-and-Mach-dependent
+      multiplier on top of the same base formula (e.g., at Mach 0.9 with Re &gt; 3×10⁶, an 8% reduction
+      that grows toward supersonic). Separately, OpenRocket computes a per-component roughness-limited
+      friction floor keyed to a "finish" setting (polished, smooth, unfinished, rough) that rocketry's
+      data model has no concept of at all.
+    </p>
+  </div>
+  <p class="verdict-line"><span class="verdict port">Port candidate</span></p>
+  <p>
+    For the Mach correction (compact, self-contained formula, low risk). The roughness model is a
+    larger effort — it also needs a per-component "finish" input rocketry doesn't currently collect —
+    worth flagging as a real gap but a bigger lift.
+  </p>
+
+  <h2 id="6">6. Drag always points exactly opposite the oncoming air; OpenRocket keeps it locked to the rocket's own body axis</h2>
+  <div class="plain-english">
+    <strong class="tag">Plain English</strong>
+    When a rocket is flying dead straight into the wind, this distinction doesn't matter — the two
+    conventions agree. But once a rocket is tipped at a real angle relative to the air it's moving
+    through (gusty wind, aggressive weathercocking), the two tools disagree on both how big the drag
+    force is and which direction it points. OpenRocket also increases the drag it applies along the
+    body by up to 30% at moderate tip angles — an effect rocketry doesn't have at all.
+  </div>
+  <div class="tech-detail">
+    <strong class="tag">Technical detail</strong>
+    <p>
+      OpenRocket resolves aerodynamic force into body-fixed-axis components: normal force
+      perpendicular to the body, and a separate axial (drag) force strictly along the body's own long
+      axis, where the axial drag coefficient itself gets an angle-of-attack-dependent boost
+      (<code>aerodynamics/BarrowmanDragCalculator.calculateAxialCD</code>, matched-derivative cubics
+      reaching a 1.3× multiplier around 17° angle of attack). rocketry computes a single drag vector
+      that points directly opposite the <em>actual</em> relative-airspeed vector, with no
+      angle-of-attack multiplier, plus a separate perpendicular normal force.
+    </p>
+  </div>
+  <p class="verdict-line"><span class="verdict open">Open question, structural</span></p>
+  <p>
+    This is a foundational architectural difference (not a one-line fix — it touches how CD, CN, and
+    angle of attack interact throughout the whole force-composition step), not an oversight. Both
+    conventions are physically legitimate; reconciling them would be a real redesign of
+    <code>derivatives3d.ts</code>'s force model, only worth doing if angle-of-attack accuracy in
+    gusty/aggressive-weathercocking scenarios becomes a priority.
+  </p>
+
+  <h2 id="7">7. Nothing ever nudges a borderline-stable rocket off course</h2>
+  <div class="plain-english">
+    <strong class="tag">Plain English</strong>
+    OpenRocket deliberately adds a tiny bit of random "jitter" to every simulated flight — not to be
+    more realistic exactly, but specifically so that a rocket sitting right on the edge of "stable
+    enough" actually <em>shows</em> it during simulation. A perfectly symmetric rocket flown in a
+    perfectly noise-free simulation with no wind will fly a mathematically perfect straight line even
+    if it's genuinely only barely stable — the random nudge is what reveals that fragility. rocketry
+    has no equivalent, so a marginal rocket with no wind input might look perfectly fine in simulation
+    when a small real-world imperfection would actually cause it to diverge.
+  </div>
+  <div class="tech-detail">
+    <strong class="tag">Technical detail</strong>
+    <p>
+      OpenRocket's <code>RK4SimulationStepper.calculateForces</code> (lines 515-518) adds a small
+      seeded-random perturbation every step:
+      <code>Cm += PITCH_YAW_RANDOM·2·(random()-0.5)</code> with <code>PITCH_YAW_RANDOM = 0.0005</code>,
+      commented "to prevent over-perfect flight." rocketry has no analogous mechanism anywhere in
+      <code>engine3d.ts</code>/<code>rk4-stepper3d.ts</code>; wind is currently the only source of any
+      asymmetric input, so a no-wind flight is the specific gap.
+    </p>
+  </div>
+  <p class="verdict-line"><span class="verdict port">Port candidate</span></p>
+  <p>
+    This isn't really a "should we match OpenRocket" question so much as a real capability gap worth
+    closing on its own merits — it directly affects how well this tool can reveal a genuinely marginal
+    design. Needs a seeded RNG (for reproducible results), matching the spirit of OpenRocket's own
+    approach.
+  </p>
+
+  <h2 id="8">8. The fin's own center of pressure is frozen at "quarter chord"</h2>
+  <div class="plain-english">
+    <strong class="tag">Plain English</strong>
+    A fin's own center of pressure — where along its chord the aerodynamic force effectively acts —
+    isn't fixed; it shifts backward as speed increases, well before reaching the speed of sound.
+    rocketry keeps it pinned at a fixed "quarter of the way back" point at every speed. rocketry's own
+    Mach-related warning doesn't appear until Mach 0.8, but OpenRocket's fin-CP model actually starts
+    departing from that same "quarter chord" assumption at Mach 0.5 — meaning there's a real,
+    currently-unwarned gap in the 0.5–0.8 range.
+  </div>
+  <div class="tech-detail">
+    <strong class="tag">Technical detail</strong>
+    <p>
+      rocketry's fin CP is always <code>macLead + 0.25 × macLength</code>
+      (<code>aero/fin-calc.ts</code>), all Mach. OpenRocket's <code>calculateCPPos</code>
+      (<code>FinSetCalc.java:518-549</code>) only matches that quarter-chord value below M=0.5; between
+      M=0.5 and M=2 it uses a fifth-order polynomial (matched in value and slope at both ends), and
+      above M=2 an aspect-ratio-based empirical formula.
+    </p>
+  </div>
+  <p class="verdict-line"><span class="verdict keep">Keep (documented scope cut)</span></p>
+  <p>
+    The Mach-validity warning threshold is worth tightening from 0.8 to 0.5 to match where the real gap
+    actually starts, or the gap itself is a reasonably contained port (the polynomial's six
+    coefficients are directly computable from fin aspect ratio).
+  </p>
+
+  <h2 id="9">9. A hot or cold launch day is handled <em>oppositely</em> by the two tools above 11 km</h2>
+  <div class="plain-english">
+    <strong class="tag">Plain English</strong>
+    If you launch on an unusually hot day (or from a high-altitude launch site), how does that warm
+    bias fade — or not — as the rocket climbs into the upper atmosphere? rocketry currently assumes the
+    warm/cool offset from "standard" conditions stays constant no matter how high the rocket goes.
+    OpenRocket does the opposite: it deliberately recalculates things so the atmosphere snaps back to
+    the exact standard value by 11km altitude, regardless of how unusual the launch day was. This only
+    matters for flights that reach 11km+ on an unusually hot/cold/high-altitude launch day — most hobby
+    flights never get there.
+  </div>
+  <div class="tech-detail">
+    <strong class="tag">Technical detail</strong>
+    <p>
+      rocketry's <code>buildLayers</code> (<code>atmosphere/isa-model.ts</code>) computes a virtual
+      sea-level temperature from the launch-site conditions using the standard −0.0065 K/m lapse rate,
+      then continues that same standard rate through the standard atmosphere layers above it — so a
+      launch-day anomaly persists as a constant offset indefinitely. OpenRocket's
+      <code>ExtendedISAModel</code> constructor instead <em>solves for</em> a custom lapse rate
+      specifically chosen so a straight line from the launch point lands exactly on the standard 216.65K
+      tropopause value at 11km, by construction erasing any launch-day anomaly by that altitude.
+    </p>
+  </div>
+  <p class="verdict-line"><span class="verdict open">Open question</span></p>
+  <p>
+    There's no single obviously-correct convention for extrapolating non-standard surface conditions
+    through an idealized atmosphere model — this is a genuine judgment call both projects made
+    differently, not a case where one side is right and the other wrong. Worth a deliberate decision now
+    that OpenRocket's specific approach could be ported directly, but not an obvious "fix."
+  </p>
+
+  <h2 id="10">10. The fin-in-body interference boost uses a more precise textbook formula</h2>
+  <div class="plain-english">
+    <strong class="tag">Plain English</strong>
+    Being close to the body tube makes a fin generate more lift than it would sitting in open air by
+    itself — sometimes called "interference." OpenRocket accounts for this with a simple, approximate
+    formula. rocketry uses the exact closed-form textbook version (from a 1953 NACA report), which is
+    measurably more accurate, plus an entirely separate effect — force pushed onto the <em>body</em> by
+    the fins' presence — that OpenRocket's own technical documentation admits it doesn't model at all.
+  </div>
+  <div class="tech-detail">
+    <strong class="tag">Technical detail</strong>
+    <p>
+      OpenRocket's shipped formula (<code>FinSetCalc.java:150-156</code>) is
+      <code>cna *= 1 + tau</code> (a squared version, <code>(1+tau)²</code>, exists in the same file
+      but is commented out with a "too optimistic??" note, and is not active — this is a real, direct
+      correction to a comparison rocketry's own earlier code comments made against a different,
+      since-reverted OpenRocket pull request, not something newly found here). rocketry's
+      <code>finInBodyPresenceFactor</code> uses the full NACA Report 1307 equation (14) closed form
+      instead, and a separate, cited <code>bodyInFinPresenceFactor</code> (equation 21) captures the
+      fin→body force OpenRocket's own technical doc (§3.2.2) explicitly says it ignores. Both are
+      verified in rocketry's own test suite against the source report's stated mathematical limits.
+    </p>
+  </div>
+  <p class="verdict-line"><span class="verdict keep">Keep (deliberate, justified)</span></p>
+  <p>
+    Real, cited engineering reasoning with verified limiting behavior — this is what independent
+    re-derivation done well looks like, not an artifact to revert.
+  </p>
+
+  <h2 id="11">11. Real per-sample motor mass data is cross-checked against the motor's own published weight</h2>
+  <div class="plain-english">
+    <strong class="tag">Plain English</strong>
+    Some motor data files include a real, measured mass-vs-time curve (not just an estimate) — great
+    when it's right. During this project's own testing, a real published motor (AeroTech J435WS) turned
+    up with an internally inconsistent file: its own moment-by-moment mass data disagreed with its own
+    advertised propellant weight by nearly a quarter. OpenRocket would have silently trusted that bad
+    data. rocketry now checks a motor's own real data against its own published weight before trusting
+    it, and falls back to a safer estimate (with a visible warning) when they don't roughly agree.
+  </div>
+  <div class="tech-detail">
+    <strong class="tag">Technical detail</strong>
+    <p>
+      OpenRocket's <code>RockSimMotorLoader</code> accepts real per-sample mass/CG data whenever it's
+      simply a valid, finite number — no cross-check against the motor's own published propellant
+      weight. rocketry's <code>motor-mass-curve.ts</code> adds a 2% consistency check
+      (<code>realDataMatchesPublishedPropellantMass</code>) before trusting that data, falling back to
+      the spec-anchored derived estimate and surfacing a visible warning (naming which data source is
+      actually being used) when it fails.
+    </p>
+  </div>
+  <p class="verdict-line"><span class="verdict keep">Keep — rocketry-original improvement over OpenRocket</span></p>
+  <p>No revert applicable; there's nothing in OpenRocket to revert to.</p>
+
+  <h2>Everything else checked and found equivalent, deliberately out of scope, or too minor to prioritize</h2>
+  <p>
+    The full research pass also covered and confirmed as <strong>exact matches</strong> (no deviation
+    at all): the CNa-weighted CP-averaging formula; the <code>finCount/2</code> aggregate multi-fin CNa
+    formula; symmetric-component shoulder CNa/CP; motor total-impulse and thrust-curve interpolation;
+    base drag and ogive/conical pressure-drag formulas including their transonic blending (with the
+    specific subtlety, already correctly noted in rocketry's own comments, that OpenRocket's
+    near-Mach-1 anchor point is <em>not</em> scaled by the same multiplier the supersonic region is);
+    and the on-pad/on-launch-rod hold logic.
+  </p>
+  <p>
+    Also reviewed and found to be <strong>deliberate, reasonably-scoped, and already self-documented</strong>
+    cuts, not worth prioritizing further: no launch lugs, rail buttons, tube fins, multi-stage, or
+    parallel-pod support (a hard scope limit tied to rocketry's own data model); no roll dynamics or
+    roll damping (ties to the no-cant-angle-input scope limit); atmosphere modeling capped at 32km
+    (comfortably above this project's target rocket sizes); no Coriolis acceleration or
+    latitude-dependent gravity (both negligible for hobby-rocket flight durations/altitudes); geometric
+    vs. geopotential altitude in the atmosphere layer lookup (sub-0.5% at any altitude this project
+    targets); no post-apogee tumbling flight mode (moot — this project doesn't simulate descent yet); no
+    humidity modeling (OpenRocket's own default is also dry air); a fixed 0.01s integration step vs.
+    OpenRocket's adaptive (rotation-rate-aware) stepping (rocketry's fixed step is already finer than
+    OpenRocket's own default, though OpenRocket's adaptive refinement during fast rotational transients
+    has no rocketry equivalent); a linear speed-of-sound/viscosity fit (OpenRocket) vs. exact
+    thermodynamic formulas (rocketry) — rocketry's version is arguably more accurate here, not less; no
+    cross-fin-set interference accounting for rockets with multiple overlapping fin sets (affects a
+    data-model case rocketry doesn't support yet); the specific numerical discretization scheme used
+    for freeform (non-trapezoidal) fin outlines (should agree with OpenRocket to well under 1% for any
+    normal fin shape); and rocketry's inertia-tensor model, which is a genuinely different from-scratch
+    design with no OpenRocket equivalent to compare against at all (OpenRocket derives inertia from real
+    per-component material density; rocketry works from a single user-entered mass/CG figure by design,
+    since it has no per-component material system).
+  </p>
+
+  <footer>
+    rocketry is licensed GPLv3, matching OpenRocket, deliberately to keep the door open for this kind
+    of direct comparison and future collaboration. See the project
+    <a href="https://github.com/openrocket/openrocket" target="_blank" rel="noopener">OpenRocket</a>
+    source and this project's own <code>DEVIATIONS.md</code> in the repo for the underlying research.
+  </footer>
+</body>
+</html>

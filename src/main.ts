@@ -2255,7 +2255,8 @@ if (app) {
           factor). Licensed GPLv3, matching OpenRocket, to keep the door open for future
           collaboration rather than diverging on licensing terms.
           Report issues and/or share real flight data with Ezra. Real data improves simulators.
-          <a href="validation-report.html" target="_blank" rel="noopener">Validation report</a>.
+          <a href="validation-report.html" target="_blank" rel="noopener">Validation report</a> ·
+          <a href="deviations.html" target="_blank" rel="noopener">Deviations from OpenRocket</a>.
         </p>
       </hgroup>
       <div class="alpha-notice">
