@@ -272,6 +272,23 @@ let activeEstimatedDryCgM: number | undefined;
  * geometry-derived estimate) until the reset icon or a fresh file load clears it again.
  */
 let cgOverriddenByUser = false;
+/**
+ * A motor's actual mass at ignition, per its own mass curve -- NOT motor.totalMassKg (the
+ * catalog/spec weight from ThrustCurve.org's metadata). For a real-per-sample-data motor
+ * (RockSim/.rse source), the file's own first sample can report slightly less propellant than the
+ * spec sheet's rounded propWeightG, so the two aren't always identical. Every rocket-section mass/
+ * CG/stability figure below uses THIS (not the spec weight) specifically so it agrees with the
+ * flight sim's own combinedMassAt(rocket, massCurve, 0) -- before this existed the two panels
+ * could show different stability margins for the same rocket+motor, confirmed for a real case
+ * (LOC-IV / AeroTech J435: 1.46 cal in the rocket stats vs. 1.55 cal in the flight sim results).
+ * For a derived (non-real-data) mass curve this is exactly motor.totalMassKg anyway --
+ * deriveMotorMassCurveFromImpulse's own first point is defined as totalMassKg -- so this is a
+ * strict accuracy improvement with no behavior change for the common (RASP-sourced) case.
+ */
+function motorLoadedMassKg(motor: SelectedMotor): number {
+  return getMotorMassAt(deriveMotorMassCurve(motor), 0);
+}
+
 /** Builds a SelectedMotor from ThrustCurve.org search/download data — shared by rederiveDryCg (below) and renderMotorDetailHtml, so both construct the exact same motor object from the same inputs. */
 function buildSelectedMotor(meta: MotorSearchResult, samples: ThrustSample[]): SelectedMotor {
   return {
@@ -328,8 +345,9 @@ function autoDeriveLoadedCg(): void {
     activeLoadedCgM = activeEstimatedDryCgM;
     return;
   }
-  const loadedMassKg = activeDryMassKg + motor.totalMassKg;
-  activeLoadedCgM = (activeDryMassKg * activeEstimatedDryCgM + motor.totalMassKg * pos.cgX) / loadedMassKg;
+  const motorMassKg = motorLoadedMassKg(motor);
+  const loadedMassKg = activeDryMassKg + motorMassKg;
+  activeLoadedCgM = (activeDryMassKg * activeEstimatedDryCgM + motorMassKg * pos.cgX) / loadedMassKg;
 }
 
 function rederiveDryCg(): void {
@@ -350,12 +368,13 @@ function rederiveDryCg(): void {
   // airframe -- dryCg divides by dry mass, so either case swings it wildly (verified directly:
   // 13g "dry mass" alongside a 1487g motor produced a derived CG past the rocket's own physical
   // length, with no indication anything was wrong until this check existed).
-  const loadedMassKg = activeDryMassKg + motor.totalMassKg;
+  const motorMassKg = motorLoadedMassKg(motor);
+  const loadedMassKg = activeDryMassKg + motorMassKg;
   const minPlausibleDryMassKg = Math.max(0.02 * loadedMassKg, 0.002);
   if (activeDryMassKg < minPlausibleDryMassKg) {
-    loadedMassWarning = `Dry mass (${fmtMass(activeDryMassKg)}) is implausibly small next to the selected motor's own mass (${fmtMass(motor.totalMassKg)}) — check for a units mistake. Derived dry CG will be unreliable until it's fixed.`;
+    loadedMassWarning = `Dry mass (${fmtMass(activeDryMassKg)}) is implausibly small next to the selected motor's own mass (${fmtMass(motorMassKg)}) — check for a units mistake. Derived dry CG will be unreliable until it's fixed.`;
   }
-  const dryCg = (loadedMassKg * activeLoadedCgM - motor.totalMassKg * pos.cgX) / activeDryMassKg;
+  const dryCg = (loadedMassKg * activeLoadedCgM - motorMassKg * pos.cgX) / activeDryMassKg;
   activeRocket = { ...activeRocket, dryMass: activeDryMassKg, dryCg };
 }
 
@@ -498,7 +517,7 @@ function wireMassStatEdit(): void {
   wireInlineEditStat("mass-stat", (rawInputValue) => {
     const enteredKg = massFromInput(rawInputValue);
     const motor = lastMotorSelection ? buildSelectedMotor(lastMotorSelection.meta, lastMotorSelection.samples) : null;
-    activeDryMassKg = Math.max(motor ? enteredKg - motor.totalMassKg : enteredKg, 0);
+    activeDryMassKg = Math.max(motor ? enteredKg - motorLoadedMassKg(motor) : enteredKg, 0);
     // Only a LOADED-mass edit (motor selected at edit time) is motor-entangled -- a direct
     // dry-mass edit stays valid no matter what motor gets picked next.
     dryMassOverriddenViaLoadedEdit = motor !== null;
@@ -525,7 +544,7 @@ function wireMassStatEdit(): void {
 function renderMassStat(rocket: Rocket): string {
   const motor = lastMotorSelection ? buildSelectedMotor(lastMotorSelection.meta, lastMotorSelection.samples) : null;
   const label = motor ? "Loaded mass" : "Dry mass";
-  const displayKg = motor ? rocket.dryMass + motor.totalMassKg : rocket.dryMass;
+  const displayKg = motor ? rocket.dryMass + motorLoadedMassKg(motor) : rocket.dryMass;
   return `
     <div>
       <strong
@@ -1485,7 +1504,10 @@ function renderFlightResultHtml(rocket: Rocket, result: SimResult3D, elapsedMs: 
 
   const windLabel = rocket.windProfile ? "wind on" : "calm (no wind)";
   const stats = [
-    stat("Static margin at launch", `${stability.margin.toFixed(2)} cal`),
+    stat(
+      "Static margin at launch",
+      `<span style="color: ${stability.margin > 0 ? "var(--pico-ins-color, #2a8f4d)" : "var(--pico-del-color, #c0392b)"};">${stability.margin.toFixed(2)} cal (${stability.margin > 0 ? "stable" : "unstable"})</span>`,
+    ),
     stat("Apogee", fmtAltitude(result.apogeeAltitude)),
     stat("Time to apogee", `${result.apogeeTime.toFixed(2)} s`),
     stat("Max velocity", fmtVelocity(result.maxVelocity)),
