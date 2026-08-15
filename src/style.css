@@ -23,12 +23,26 @@
    number -- reuses Pico's own <mark> warning colors (theme-aware already, same visual language as
    every other in-page warning) rather than a bespoke color, just as a bordered callout box instead
    of inline text highlighting. */
-.alpha-notice {
+.alpha-notice,
+.callout-warning {
   margin: 1rem 0 1.5rem 0;
   padding: 0.85rem 1rem;
   border-radius: var(--pico-border-radius);
   background: var(--pico-mark-background-color);
   color: var(--pico-mark-color);
+}
+
+/* Data-integrity warnings (e.g. renderMassDataInconsistencyWarning) embed a small numbers table --
+   Pico's default table styling assumes a full-width bordered grid, which reads oddly cramped inside
+   an already-bordered callout box; strip it down to plain label/value rows instead. */
+.callout-warning table {
+  margin: 0.5rem 0 0 0;
+}
+.callout-warning table,
+.callout-warning td {
+  border: none;
+  background: transparent;
+  padding: 0.15rem 0.5rem 0.15rem 0;
 }
 
 /* The toggle is position:fixed (see above), so it never pushes sibling content out of its way --

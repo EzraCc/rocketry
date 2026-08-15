@@ -1296,6 +1296,39 @@ function wireColumnDragReorder(resultsEl: HTMLElement): void {
 /** The last motor a user actually selected, cached so a unit-toggle can re-render its detail panel without re-fetching from ThrustCurve.org. */
 let lastMotorSelection: { meta: MotorSearchResult; samples: ThrustSample[] } | null = null;
 
+/**
+ * Surfaces MassCurve.inconsistentRealData (see its own doc comment) as a visible, always-shown
+ * callout, not just a silent fallback -- a motor whose own source file disagrees with its own
+ * published propellant weight is worth knowing about on its own merits (it's a data problem with
+ * that specific ThrustCurve.org file, not something to quietly paper over), not only because of the
+ * fallback this app happens to take. Shows the actual numbers, not just "something's off", so the
+ * user can judge for themselves rather than take the mismatch on faith.
+ */
+function renderMassDataInconsistencyWarning(info: { firstSampleKg: number; publishedPropellantMassKg: number }): string {
+  const deltaKg = info.publishedPropellantMassKg - info.firstSampleKg;
+  const deltaPct = (deltaKg / info.publishedPropellantMassKg) * 100;
+  return `
+    <div class="callout-warning">
+      <strong>⚠ This motor's source file has inconsistent mass data</strong>
+      <p>
+        Its real per-sample propellant-mass curve starts at ${fmtMass(info.firstSampleKg)}, but the motor's own
+        published propellant mass is ${fmtMass(info.publishedPropellantMassKg)} — most likely a stale mass curve
+        left over from an earlier revision of this motor's file on ThrustCurve.org, not an error in this app.
+        The real per-sample data is <strong>not</strong> being used for this reason: mass/CG below are instead
+        estimated from total/propellant weight assuming mass loss proportional to thrust impulse, the same
+        method used for motors that never had real per-sample data to begin with.
+      </p>
+      <table>
+        <tbody>
+          <tr><td>Published propellant mass</td><td>${fmtMass(info.publishedPropellantMassKg)}</td></tr>
+          <tr><td>Real curve's first sample</td><td>${fmtMass(info.firstSampleKg)}</td></tr>
+          <tr><td>Difference</td><td>${fmtMass(deltaKg)} (${deltaPct.toFixed(1)}%)</td></tr>
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
 function renderMotorDetailHtml(meta: MotorSearchResult, samples: ThrustSample[]): { html: string; rocketWithMotor: Rocket } {
   const motor = buildSelectedMotor(meta, samples);
 
@@ -1317,6 +1350,7 @@ function renderMotorDetailHtml(meta: MotorSearchResult, samples: ThrustSample[])
   const html = `
     <h3>${meta.manufacturer} ${meta.designation}</h3>
     ${loadedMassWarning ? `<p><mark>${loadedMassWarning}</mark></p>` : ""}
+    ${massCurve.inconsistentRealData ? renderMassDataInconsistencyWarning(massCurve.inconsistentRealData) : ""}
     <p>Thrust curve: ${samples.length} samples, burn time ${bt.toFixed(2)}s.
       Total impulse (integrated from curve): ${fmtImpulse(totalImpulse(motor))}
       (ThrustCurve.org reports ${meta.totImpulseNs === undefined || meta.totImpulseNs === null ? "—" : fmtImpulse(meta.totImpulseNs)}).

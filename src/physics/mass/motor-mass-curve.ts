@@ -6,16 +6,33 @@ import { interpolateAt } from "../motor/interpolation.js";
  *
  * 1. Real per-sample data -- when every one of the motor's own thrust samples carries a real
  *    propellantMassRemainingKg (ThrustCurve.org's RockSim-format .rse source files carry this;
- *    see thrustcurve-client.ts's ThrustSample.propellantMassRemainingKg doc comment), total mass at
- *    each sample is just casing mass + that sample's own real propellant-remaining value -- no
- *    derivation or scaling, straight from the file.
+ *    see thrustcurve-client.ts's ThrustSample.propellantMassRemainingKg doc comment) AND the first
+ *    sample's value is within 2% of the motor's own published propellantMassKg, total mass at each
+ *    sample is just casing mass + that sample's own real propellant-remaining value -- no derivation
+ *    or scaling, straight from the file. The 2% check exists because at least one real source file
+ *    doesn't actually satisfy this (AeroTech J435WS: its own <eng-data> curve starts at 272g while
+ *    its own header and ThrustCurve.org's catalog both say propWt=352g -- an internal inconsistency
+ *    in that one file, confirmed not to be how the format normally behaves by checking two other
+ *    real motors, both exact matches). A curve failing the check is treated as unreliable and falls
+ *    back to option 2 instead of silently modeling the motor lighter than its rating.
  * 2. Derived estimate -- OpenRocket's AbstractMotorLoader.calculateMass() port (see below), used
- *    when real per-sample mass isn't available (RASP .eng source files -- the majority, including
- *    most "cert" data -- have no such field, plain time/thrust pairs only).
+ *    when real per-sample mass isn't available or didn't pass the check above (RASP .eng source
+ *    files -- the majority, including most "cert" data -- have no mass field at all, plain
+ *    time/thrust pairs only).
  */
 export interface MassCurve {
   time: number[];
   mass: number[]; // kg
+  /**
+   * Set only when the motor's source file HAD real per-sample propellant data that failed the
+   * consistency check above (never set for a motor with no real data to begin with) -- the UI
+   * surfaces this as a visible warning rather than silently falling back, since it means the
+   * source file itself is internally inconsistent, worth knowing about, not just working around.
+   */
+  inconsistentRealData?: {
+    firstSampleKg: number;
+    publishedPropellantMassKg: number;
+  };
 }
 
 /**
@@ -80,11 +97,26 @@ function deriveMotorMassCurveFromImpulse(motor: SelectedMotor): MassCurve {
   return { time, mass };
 }
 
+/** See MassCurve's own doc comment for why this check exists (a real, confirmed case of a source file's per-sample data disagreeing with its own published propellant weight). */
+function realDataMatchesPublishedPropellantMass(motor: SelectedMotor): boolean {
+  const first = motor.samples[0]!.propellantMassRemainingKg!;
+  const tolerance = Math.max(motor.propellantMassKg * 0.02, 1e-9);
+  return Math.abs(first - motor.propellantMassKg) <= tolerance;
+}
+
 export function deriveMotorMassCurve(motor: SelectedMotor): MassCurve {
-  if (motor.samples.length > 0 && motor.samples.every((s) => s.propellantMassRemainingKg !== undefined)) {
+  const hasRealData = motor.samples.length > 0 && motor.samples.every((s) => s.propellantMassRemainingKg !== undefined);
+  if (hasRealData && realDataMatchesPublishedPropellantMass(motor)) {
     return massCurveFromRealPropellantData(motor);
   }
-  return deriveMotorMassCurveFromImpulse(motor);
+  const derived = deriveMotorMassCurveFromImpulse(motor);
+  if (hasRealData) {
+    derived.inconsistentRealData = {
+      firstSampleKg: motor.samples[0]!.propellantMassRemainingKg!,
+      publishedPropellantMassKg: motor.propellantMassKg,
+    };
+  }
+  return derived;
 }
 
 export function getMotorMassAt(curve: MassCurve, t: number): number {

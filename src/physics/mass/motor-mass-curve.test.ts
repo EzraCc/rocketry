@@ -102,6 +102,69 @@ describe("deriveMotorMassCurve — real per-sample propellant data", () => {
   });
 });
 
+// Real AeroTech J435WS data (RockSim/.rse source, decoded directly from ThrustCurve.org's API) --
+// its own header AND ThrustCurve's catalog both say propWt=352g, but its own <eng-data> curve
+// starts at m=272g, an internal inconsistency in this specific source file (confirmed against two
+// other real motors -- J340M above and AeroTech M650W -- both start exactly at their own propWt,
+// so this isn't how the format normally behaves). Exercises the sanity-check fallback.
+const inconsistentRealDataMotor: SelectedMotor = {
+  motorId: "test-j435ws",
+  designation: "J435WS",
+  manufacturer: "AeroTech",
+  diameter: 0.038,
+  length: 0.3659,
+  totalMassKg: 0.6164,
+  propellantMassKg: 0.352,
+  samples: [
+    { time: 0, thrust: 0, propellantMassRemainingKg: 0.272 },
+    { time: 0.867, thrust: 481.023, propellantMassRemainingKg: 0.1345 },
+    { time: 1.781, thrust: 0, propellantMassRemainingKg: 0 },
+  ],
+  delay: 0,
+};
+
+describe("deriveMotorMassCurve — real data that disagrees with the motor's own published propellant mass", () => {
+  it("falls back to the derived estimate rather than trusting an inconsistent real curve", () => {
+    const curve = deriveMotorMassCurve(inconsistentRealDataMotor);
+    // The real (untrusted) value would be casingMass + 0.272 = 0.5364kg -- confirm we did NOT use it.
+    const untrustedRealMassAt0 = inconsistentRealDataMotor.totalMassKg - inconsistentRealDataMotor.propellantMassKg + 0.272;
+    expect(getMotorMassAt(curve, 0)).not.toBeCloseTo(untrustedRealMassAt0, 3);
+    // The derived fallback is anchored to the published total mass exactly, same guarantee as the
+    // synthetic-motor "mass(0) equals total (launch) mass" case above.
+    expect(getMotorMassAt(curve, 0)).toBeCloseTo(inconsistentRealDataMotor.totalMassKg, 9);
+  });
+
+  it("exposes the inconsistency so the UI can surface a warning with the actual numbers", () => {
+    const curve = deriveMotorMassCurve(inconsistentRealDataMotor);
+    expect(curve.inconsistentRealData).toEqual({
+      firstSampleKg: 0.272,
+      publishedPropellantMassKg: 0.352,
+    });
+  });
+
+  it("does not set inconsistentRealData for a motor with no real per-sample data at all", () => {
+    const curve = deriveMotorMassCurve(motor);
+    expect(curve.inconsistentRealData).toBeUndefined();
+  });
+
+  it("does not set inconsistentRealData for real data that passes the check", () => {
+    const curve = deriveMotorMassCurve(realDataMotor);
+    expect(curve.inconsistentRealData).toBeUndefined();
+  });
+
+  it("still trusts real data whose first sample is close enough (within 2%) to the published propellant mass", () => {
+    const closeEnough: SelectedMotor = {
+      ...inconsistentRealDataMotor,
+      samples: inconsistentRealDataMotor.samples.map((s, i) =>
+        i === 0 ? { ...s, propellantMassRemainingKg: 0.352 * 0.99 } : s,
+      ),
+    };
+    const curve = deriveMotorMassCurve(closeEnough);
+    const casingMassKg = closeEnough.totalMassKg - closeEnough.propellantMassKg;
+    expect(getMotorMassAt(curve, 0)).toBeCloseTo(casingMassKg + 0.352 * 0.99, 9);
+  });
+});
+
 describe("deriveMotorMassCurve — degenerate cases", () => {
   it("handles a motor with no samples", () => {
     const curve = deriveMotorMassCurve({ ...motor, samples: [] });
