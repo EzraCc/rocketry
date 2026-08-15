@@ -23,6 +23,7 @@
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { execSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 // jsdom ships no type declarations and this project has no @types/jsdom -- the existing test files
 // avoid this via vitest's own "@vitest-environment jsdom" pragma, not available to a plain script.
@@ -213,6 +214,19 @@ const tableRows = rows
   .join("");
 
 const generatedAt = new Date().toISOString().slice(0, 10);
+// The commit these numbers reflect -- lets a reader (or CHANGELOG.md itself) answer "has anything
+// landed since this was generated that could change these numbers" by diffing against HEAD,
+// without having to trust a hand-maintained date alone. "-dirty" if generated from an uncommitted
+// working tree, so a report built mid-edit doesn't quietly claim a clean commit it doesn't match.
+const generatedAtCommit = (() => {
+  try {
+    const hash = execSync("git rev-parse --short HEAD", { cwd: REPO_ROOT }).toString().trim();
+    const dirty = execSync("git status --porcelain", { cwd: REPO_ROOT }).toString().trim().length > 0;
+    return dirty ? `${hash}-dirty` : hash;
+  } catch {
+    return "unknown";
+  }
+})();
 
 const html = `<!doctype html>
 <html lang="en">
@@ -223,14 +237,16 @@ const html = `<!doctype html>
 <style>
   :root {
     --bg: #ffffff; --fg: #1a1a1a; --muted: #666666; --border: #dddddd;
-    --head-bg: #f4f4f5; --delta-high: #c0392b; --link: #2f6feb;
+    --head-bg: #f4f4f5; --delta-high: #c0392b; --link: #2f6feb; --stamp-bg: #fff4e5; --stamp-fg: #a15c00;
   }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #14161a; --fg: #e8e8e8; --muted: #9a9a9a; --border: #33363b; --head-bg: #1e2126; --delta-high: #ff6b6b; --link: #6ea8fe; }
+    :root { --bg: #14161a; --fg: #e8e8e8; --muted: #9a9a9a; --border: #33363b; --head-bg: #1e2126; --delta-high: #ff6b6b; --link: #6ea8fe; --stamp-bg: #3a2c10; --stamp-fg: #f0b24d; }
   }
   * { box-sizing: border-box; }
   body { background: var(--bg); color: var(--fg); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; margin: 0; padding: 1.5rem; line-height: 1.5; }
   h1 { font-size: 1.4rem; margin: 0 0 0.25rem; }
+  .stamp { background: var(--stamp-bg); color: var(--stamp-fg); padding: 0.6rem 0.85rem; border-radius: 6px; margin: 0.75rem 0; font-size: 0.85rem; }
+  .stamp code { background: rgba(0,0,0,0.08); padding: 0.05rem 0.3rem; border-radius: 3px; }
   .subtitle { color: var(--muted); margin: 0 0 1rem; font-size: 0.9rem; }
   a { color: var(--link); }
   .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 6px; max-width: 100%; }
@@ -247,12 +263,20 @@ const html = `<!doctype html>
 </head>
 <body>
   <h1>rocketry — validation report</h1>
+  <p class="stamp">
+    Generated <strong>${generatedAt}</strong> at rocketry commit <strong><code>${generatedAtCommit}</code></strong>.
+    Physics changes since this commit aren't reflected below until this report is regenerated --
+    check <a href="CHANGELOG.md">CHANGELOG.md</a> for anything landed after ${generatedAtCommit} tagged
+    as flight-number-affecting, and regenerate (<code>validation/openrocket-oracle/run.sh</code> +
+    <code>npx tsx validation/openrocket-oracle/fetch-motor-fixtures.ts</code> +
+    <code>npx tsx validation/build-report.ts</code>) if so.
+  </p>
   <p class="subtitle">
     This project's own computed values vs. real OpenRocket (Java) simulations and RockSim's own embedded CP,
     for ${rows.length} real rocket+motor cases. CP compared at Mach ${COMPARISON_MACH} (~100fps, the safety-relevant rail-exit speed).
     "Ours" is the full pipeline a real user sees (this project's own geometry-derived dry CG/mass feeding its own flight sim),
     not an isolated aero-only comparison. RockSim contributes CP only (see this report's generation script for why).
-    Deltas are Ours vs. OpenRocket. Generated ${generatedAt} from
+    Deltas are Ours vs. OpenRocket, generated from
     <a href="https://github.com/openrocket/openrocket" target="_blank" rel="noopener">OpenRocket</a>-derived fixtures — see
     <code>validation/</code> in the repo for how.
   </p>
@@ -279,3 +303,14 @@ const html = `<!doctype html>
 
 fs.writeFileSync(OUTPUT_PATH, html);
 console.log(`Wrote ${OUTPUT_PATH} (${rows.length} rows)`);
+
+// CHANGELOG.md's canonical copy lives at the repo root (GitHub convention, local-dev
+// discoverability) -- mirrored into public/ here, alongside the report that links to it, so the
+// live site has something to actually serve at that relative link without maintaining two
+// hand-edited copies.
+const CHANGELOG_SRC = path.join(REPO_ROOT, "CHANGELOG.md");
+const CHANGELOG_DEST = path.join(REPO_ROOT, "public/CHANGELOG.md");
+if (fs.existsSync(CHANGELOG_SRC)) {
+  fs.copyFileSync(CHANGELOG_SRC, CHANGELOG_DEST);
+  console.log(`Copied CHANGELOG.md -> ${CHANGELOG_DEST}`);
+}
