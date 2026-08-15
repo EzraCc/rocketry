@@ -7,14 +7,16 @@
 <style>
   :root {
     --bg: #ffffff; --fg: #1a1a1a; --muted: #666666; --border: #dddddd;
-    --head-bg: #f4f4f5; --delta-high: #c0392b; --link: #2f6feb;
+    --head-bg: #f4f4f5; --delta-high: #c0392b; --link: #2f6feb; --stamp-bg: #fff4e5; --stamp-fg: #a15c00;
   }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #14161a; --fg: #e8e8e8; --muted: #9a9a9a; --border: #33363b; --head-bg: #1e2126; --delta-high: #ff6b6b; --link: #6ea8fe; }
+    :root { --bg: #14161a; --fg: #e8e8e8; --muted: #9a9a9a; --border: #33363b; --head-bg: #1e2126; --delta-high: #ff6b6b; --link: #6ea8fe; --stamp-bg: #3a2c10; --stamp-fg: #f0b24d; }
   }
   * { box-sizing: border-box; }
   body { background: var(--bg); color: var(--fg); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; margin: 0; padding: 1.5rem; line-height: 1.5; }
   h1 { font-size: 1.4rem; margin: 0 0 0.25rem; }
+  .stamp { background: var(--stamp-bg); color: var(--stamp-fg); padding: 0.6rem 0.85rem; border-radius: 6px; margin: 0.75rem 0; font-size: 0.85rem; }
+  .stamp code { background: rgba(0,0,0,0.08); padding: 0.05rem 0.3rem; border-radius: 3px; }
   .subtitle { color: var(--muted); margin: 0 0 1rem; font-size: 0.9rem; }
   a { color: var(--link); }
   .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 6px; max-width: 100%; }
@@ -31,12 +33,20 @@
 </head>
 <body>
   <h1>rocketry — validation report</h1>
+  <p class="stamp">
+    Generated <strong>2026-08-15</strong> at rocketry commit <strong><code>5b61811-dirty</code></strong>.
+    Physics changes since this commit aren't reflected below until this report is regenerated --
+    check <a href="CHANGELOG.md">CHANGELOG.md</a> for anything landed after 5b61811-dirty tagged
+    as flight-number-affecting, and regenerate (<code>validation/openrocket-oracle/run.sh</code> +
+    <code>npx tsx validation/openrocket-oracle/fetch-motor-fixtures.ts</code> +
+    <code>npx tsx validation/build-report.ts</code>) if so.
+  </p>
   <p class="subtitle">
     This project's own computed values vs. real OpenRocket (Java) simulations and RockSim's own embedded CP,
-    for 6 real rocket+motor cases. CP compared at Mach 0.1 (~100fps, the safety-relevant rail-exit speed).
+    for 12 real rocket+motor cases. CP compared at Mach 0.1 (~100fps, the safety-relevant rail-exit speed).
     "Ours" is the full pipeline a real user sees (this project's own geometry-derived dry CG/mass feeding its own flight sim),
     not an isolated aero-only comparison. RockSim contributes CP only (see this report's generation script for why).
-    Deltas are Ours vs. OpenRocket. Generated 2026-08-14 from
+    Deltas are Ours vs. OpenRocket, generated from
     <a href="https://github.com/openrocket/openrocket" target="_blank" rel="noopener">OpenRocket</a>-derived fixtures — see
     <code>validation/</code> in the repo for how.
   </p>
@@ -56,18 +66,18 @@
       <tr>
         <th scope="row">PK-48 LOC-IV<br /><small>AeroTech J420R</small></th>
         <td><span class="src">Ours</span> 946.6 mm<br /><span class="src">OR</span> 904.7 mm<br /><span class="src">RockSim</span> 899.2 mm<br /><span class="delta">Δ +41.9 mm (+4.6%)</span></td>
-        <td><span class="src">Ours</span> 688.9 mm<br /><span class="src">OR</span> 760.7 mm<br /><span class="delta">Δ -71.8 mm (-9.4%)</span></td>
-        <td><span class="src">Ours</span> 807.7 mm<br /><span class="src">OR</span> 861.5 mm<br /><span class="delta">Δ -53.8 mm (-6.2%)</span></td>
-        <td><span class="src">Ours</span> 313.4 m/s<br /><span class="src">OR</span> 325.7 m/s<br /><span class="delta">Δ -12.4 m/s (-3.8%)</span></td>
-        <td><span class="src">Ours</span> 1503.8 m<br /><span class="src">OR</span> 1395.7 m<br /><span class="delta">Δ +108.1 m (+7.7%)</span></td>
+        <td><span class="src">Ours</span> 779.4 mm<br /><span class="src">OR</span> 760.7 mm<br /><span class="delta">Δ +18.8 mm (+2.5%)</span></td>
+        <td><span class="src">Ours</span> 872.0 mm<br /><span class="src">OR</span> 861.5 mm<br /><span class="delta">Δ +10.4 mm (+1.2%)</span></td>
+        <td><span class="src">Ours</span> 328.5 m/s<br /><span class="src">OR</span> 325.7 m/s<br /><span class="delta">Δ +2.8 m/s (+0.8%)</span></td>
+        <td><span class="src">Ours</span> 1492.0 m<br /><span class="src">OR</span> 1395.7 m<br /><span class="delta">Δ +96.4 m (+6.9%)</span></td>
       </tr>
       <tr>
         <th scope="row">Big Nuke 3E<br /><small>AeroTech M650W</small></th>
         <td><span class="src">Ours</span> 1557.2 mm<br /><span class="src">OR</span> 1497.1 mm<br /><span class="src">RockSim</span> 1525.6 mm<br /><span class="delta">Δ +60.1 mm (+4.0%)</span></td>
-        <td><span class="src">Ours</span> 1239.0 mm<br /><span class="src">OR</span> 1254.8 mm<br /><span class="delta">Δ -15.8 mm (-1.3%)</span></td>
-        <td><span class="src">Ours</span> 1389.5 mm<br /><span class="src">OR</span> 1401.8 mm<br /><span class="delta">Δ -12.3 mm (-0.9%)</span></td>
-        <td><span class="src">Ours</span> 304.1 m/s<br /><span class="src">OR</span> 296.7 m/s<br /><span class="delta">Δ +7.5 m/s (+2.5%)</span></td>
-        <td><span class="src">Ours</span> 4202.8 m<br /><span class="src">OR</span> 3904.9 m<br /><span class="delta">Δ +297.9 m (+7.6%)</span></td>
+        <td><span class="src">Ours</span> 1252.3 mm<br /><span class="src">OR</span> 1254.8 mm<br /><span class="delta">Δ -2.5 mm (-0.2%)</span></td>
+        <td><span class="src">Ours</span> 1399.4 mm<br /><span class="src">OR</span> 1401.8 mm<br /><span class="delta">Δ -2.4 mm (-0.2%)</span></td>
+        <td><span class="src">Ours</span> 306.7 m/s<br /><span class="src">OR</span> 296.7 m/s<br /><span class="delta">Δ +10.0 m/s (+3.4%)</span></td>
+        <td><span class="src">Ours</span> 4224.3 m<br /><span class="src">OR</span> 3904.5 m<br /><span class="delta">Δ +319.9 m (+8.2%)</span></td>
       </tr>
       <tr>
         <th scope="row">Katana<br /><small>AeroTech K550W</small></th>
@@ -75,7 +85,7 @@
         <td><span class="src">Ours</span> 1244.6 mm<br /><span class="src">OR</span> 1244.6 mm<br /><span class="delta">Δ +0.0 mm (+0.0%)</span></td>
         <td><span class="src">Ours</span> 1436.2 mm<br /><span class="src">OR</span> 1436.2 mm<br /><span class="delta">Δ +0.0 mm (+0.0%)</span></td>
         <td><span class="src">Ours</span> 360.2 m/s<br /><span class="src">OR</span> 331.6 m/s<br /><span class="delta">Δ +28.6 m/s (+8.6%)</span></td>
-        <td><span class="src">Ours</span> 2376.9 m<br /><span class="src">OR</span> 1874.4 m<br /><span class="delta delta-high">Δ +502.5 m (+26.8%)</span></td>
+        <td><span class="src">Ours</span> 2376.9 m<br /><span class="src">OR</span> 1874.7 m<br /><span class="delta delta-high">Δ +502.2 m (+26.8%)</span></td>
       </tr>
       <tr>
         <th scope="row">Zephyr<br /><small>AeroTech G339N</small></th>
@@ -83,7 +93,7 @@
         <td><span class="src">Ours</span> 927.1 mm<br /><span class="src">OR</span> 929.7 mm<br /><span class="delta">Δ -2.6 mm (-0.3%)</span></td>
         <td><span class="src">Ours</span> 989.7 mm<br /><span class="src">OR</span> 991.6 mm<br /><span class="delta">Δ -1.8 mm (-0.2%)</span></td>
         <td><span class="src">Ours</span> 86.0 m/s<br /><span class="src">OR</span> 83.6 m/s<br /><span class="delta">Δ +2.4 m/s (+2.9%)</span></td>
-        <td><span class="src">Ours</span> 284.0 m<br /><span class="src">OR</span> 245.4 m<br /><span class="delta">Δ +38.5 m (+15.7%)</span></td>
+        <td><span class="src">Ours</span> 284.0 m<br /><span class="src">OR</span> 245.3 m<br /><span class="delta">Δ +38.6 m (+15.7%)</span></td>
       </tr>
       <tr>
         <th scope="row">Cerberus<br /><small>AeroTech H128W</small></th>
@@ -98,8 +108,56 @@
         <td><span class="src">Ours</span> 277.8 mm<br /><span class="src">OR</span> 258.9 mm<br /><span class="src">RockSim</span> 258.8 mm<br /><span class="delta">Δ +18.9 mm (+7.3%)</span></td>
         <td><span class="src">Ours</span> 141.4 mm<br /><span class="src">OR</span> 146.2 mm<br /><span class="delta">Δ -4.7 mm (-3.2%)</span></td>
         <td><span class="src">Ours</span> 187.8 mm<br /><span class="src">OR</span> 192.0 mm<br /><span class="delta">Δ -4.2 mm (-2.2%)</span></td>
-        <td><span class="src">Ours</span> 69.7 m/s<br /><span class="src">OR</span> 67.6 m/s<br /><span class="delta">Δ +2.2 m/s (+3.2%)</span></td>
-        <td><span class="src">Ours</span> 271.2 m<br /><span class="src">OR</span> 230.9 m<br /><span class="delta">Δ +40.3 m (+17.5%)</span></td>
+        <td><span class="src">Ours</span> 69.7 m/s<br /><span class="src">OR</span> 67.7 m/s<br /><span class="delta">Δ +2.1 m/s (+3.1%)</span></td>
+        <td><span class="src">Ours</span> 271.2 m<br /><span class="src">OR</span> 232.4 m<br /><span class="delta">Δ +38.8 m (+16.7%)</span></td>
+      </tr>
+      <tr>
+        <th scope="row">Blaster<br /><small>AeroTech E11J</small></th>
+        <td><span class="src">Ours</span> 373.9 mm<br /><span class="src">OR</span> 362.4 mm<br /><span class="src">RockSim</span> 363.3 mm<br /><span class="delta">Δ +11.5 mm (+3.2%)</span></td>
+        <td><span class="src">Ours</span> 295.5 mm<br /><span class="src">OR</span> 272.8 mm<br /><span class="delta">Δ +22.7 mm (+8.3%)</span></td>
+        <td><span class="src">Ours</span> 337.8 mm<br /><span class="src">OR</span> 323.7 mm<br /><span class="delta">Δ +14.1 mm (+4.3%)</span></td>
+        <td><span class="src">Ours</span> 140.4 m/s<br /><span class="src">OR</span> 126.3 m/s<br /><span class="delta">Δ +14.1 m/s (+11.2%)</span></td>
+        <td><span class="src">Ours</span> 652.4 m<br /><span class="src">OR</span> 506.2 m<br /><span class="delta delta-high">Δ +146.2 m (+28.9%)</span></td>
+      </tr>
+      <tr>
+        <th scope="row">Wasserfall (2.5 in)<br /><small>AeroTech G77R</small></th>
+        <td><span class="src">Ours</span> 390.6 mm<br /><span class="src">OR</span> 398.1 mm<br /><span class="src">RockSim</span> 360.5 mm<br /><span class="delta">Δ -7.5 mm (-1.9%)</span></td>
+        <td><span class="src">Ours</span> 334.9 mm<br /><span class="src">OR</span> 295.9 mm<br /><span class="delta">Δ +39.1 mm (+13.2%)</span></td>
+        <td><span class="src">Ours</span> 370.2 mm<br /><span class="src">OR</span> 339.9 mm<br /><span class="delta">Δ +30.3 mm (+8.9%)</span></td>
+        <td><span class="src">Ours</span> 121.3 m/s<br /><span class="src">OR</span> 115.7 m/s<br /><span class="delta">Δ +5.5 m/s (+4.8%)</span></td>
+        <td><span class="src">Ours</span> 629.6 m<br /><span class="src">OR</span> 543.2 m<br /><span class="delta">Δ +86.4 m (+15.9%)</span></td>
+      </tr>
+      <tr>
+        <th scope="row">Chimera BT60<br /><small>Cesaroni 648J285-15A</small></th>
+        <td><span class="src">Ours</span> 915.7 mm<br /><span class="src">OR</span> 898.3 mm<br /><span class="src">RockSim</span> 903.7 mm<br /><span class="delta">Δ +17.4 mm (+1.9%)</span></td>
+        <td><span class="src">Ours</span> 527.8 mm<br /><span class="src">OR</span> 755.9 mm<br /><span class="delta delta-high">Δ -228.0 mm (-30.2%)</span></td>
+        <td><span class="src">Ours</span> 749.9 mm<br /><span class="src">OR</span> 841.6 mm<br /><span class="delta">Δ -91.7 mm (-10.9%)</span></td>
+        <td><span class="src">Ours</span> 609.9 m/s<br /><span class="src">OR</span> 527.7 m/s<br /><span class="delta">Δ +82.2 m/s (+15.6%)</span></td>
+        <td><span class="src">Ours</span> 3756.5 m<br /><span class="src">OR</span> 2349.7 m<br /><span class="delta delta-high">Δ +1406.8 m (+59.9%)</span></td>
+      </tr>
+      <tr>
+        <th scope="row">Space Cowboy<br /><small>Cesaroni 683J250-15A</small></th>
+        <td><span class="src">Ours</span> 1185.4 mm<br /><span class="src">OR</span> 1146.3 mm<br /><span class="src">RockSim</span> 1141.7 mm<br /><span class="delta">Δ +39.1 mm (+3.4%)</span></td>
+        <td><span class="src">Ours</span> 767.8 mm<br /><span class="src">OR</span> 765.7 mm<br /><span class="delta">Δ +2.1 mm (+0.3%)</span></td>
+        <td><span class="src">Ours</span> 978.6 mm<br /><span class="src">OR</span> 978.3 mm<br /><span class="delta">Δ +0.3 mm (+0.0%)</span></td>
+        <td><span class="src">Ours</span> 268.9 m/s<br /><span class="src">OR</span> 269.4 m/s<br /><span class="delta">Δ -0.5 m/s (-0.2%)</span></td>
+        <td><span class="src">Ours</span> 2193.7 m<br /><span class="src">OR</span> 2161.4 m<br /><span class="delta">Δ +32.3 m (+1.5%)</span></td>
+      </tr>
+      <tr>
+        <th scope="row">Chimera 98mm<br /><small>AeroTech M685W</small></th>
+        <td><span class="src">Ours</span> 2026.4 mm<br /><span class="src">OR</span> 1989.3 mm<br /><span class="src">RockSim</span> 2095.5 mm<br /><span class="delta">Δ +37.1 mm (+1.9%)</span></td>
+        <td><span class="src">Ours</span> 1271.3 mm<br /><span class="src">OR</span> 1307.9 mm<br /><span class="delta">Δ -36.5 mm (-2.8%)</span></td>
+        <td><span class="src">Ours</span> 1733.0 mm<br /><span class="src">OR</span> 1749.8 mm<br /><span class="delta">Δ -16.7 mm (-1.0%)</span></td>
+        <td><span class="src">Ours</span> 498.9 m/s<br /><span class="src">OR</span> 410.3 m/s<br /><span class="delta delta-high">Δ +88.6 m/s (+21.6%)</span></td>
+        <td><span class="src">Ours</span> 7639.8 m<br /><span class="src">OR</span> 5449.2 m<br /><span class="delta delta-high">Δ +2190.6 m (+40.2%)</span></td>
+      </tr>
+      <tr>
+        <th scope="row">Wildman Gizmo XL<br /><small>AeroTech N2220DM</small></th>
+        <td><span class="src">Ours</span> 921.7 mm<br /><span class="src">OR</span> 883.2 mm<br /><span class="src">RockSim</span> 883.5 mm<br /><span class="delta">Δ +38.5 mm (+4.4%)</span></td>
+        <td><span class="src">Ours</span> 841.5 mm<br /><span class="src">OR</span> 828.2 mm<br /><span class="delta">Δ +13.3 mm (+1.6%)</span></td>
+        <td><span class="src">Ours</span> 769.7 mm<br /><span class="src">OR</span> 764.0 mm<br /><span class="delta">Δ +5.7 mm (+0.7%)</span></td>
+        <td><span class="src">Ours</span> 458.9 m/s<br /><span class="src">OR</span> 450.3 m/s<br /><span class="delta">Δ +8.5 m/s (+1.9%)</span></td>
+        <td><span class="src">Ours</span> 4387.4 m<br /><span class="src">OR</span> 4169.2 m<br /><span class="delta">Δ +218.1 m (+5.2%)</span></td>
       </tr>
       </tbody>
     </table>
