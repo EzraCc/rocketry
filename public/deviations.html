@@ -61,6 +61,8 @@
   .verdict.keep { background: var(--keep-bg); color: var(--keep-fg); }
   .verdict.port { background: var(--port-bg); color: var(--port-fg); }
   .verdict.open { background: var(--open-bg); color: var(--open-fg); }
+  .verdict.done { background: var(--keep-bg); color: var(--keep-fg); }
+  .superseded { opacity: 0.55; text-decoration: line-through; }
   .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 6px; margin: 1rem 0; }
   table { border-collapse: collapse; width: 100%; font-size: 0.88rem; }
   th, td { padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
@@ -106,7 +108,9 @@
     <span class="verdict port">Port candidate</span> — an undocumented gap where OpenRocket's method is
     more complete, now unblocked by the GPLv3 relicense. &nbsp;
     <span class="verdict open">Open question</span> — both sides made a reasonable but different call
-    on an underspecified problem; a product decision, not a bug fix.
+    on an underspecified problem; a product decision, not a bug fix. &nbsp;
+    <span class="verdict done">Done</span> — a former gap or scope cut that's since been ported;
+    kept in this document (struck through, not deleted) as a record of what changed and why.
   </p>
 
   <h2>Top findings, ranked by how much they'd actually change a result</h2>
@@ -120,9 +124,9 @@
           <td class="verdict-cell"><span class="verdict port">Port candidate</span></td>
         </tr>
         <tr>
-          <td><a href="#2">Fin lift is frozen at its Mach-0.9 value for every faster speed</a></td>
+          <td class="superseded"><a href="#2">Fin lift is frozen at its Mach-0.9 value for every faster speed</a></td>
           <td>Large, systematic error above M≈0.9</td>
-          <td class="verdict-cell"><span class="verdict keep">Keep</span> (documented, warning-gated)</td>
+          <td class="verdict-cell"><span class="verdict done">Done</span> (2026-08-15)</td>
         </tr>
         <tr>
           <td><a href="#3">How pitch/yaw damping is modeled is fundamentally different</a></td>
@@ -130,9 +134,9 @@
           <td class="verdict-cell"><span class="verdict open">Open question</span></td>
         </tr>
         <tr>
-          <td><a href="#4">Fins contribute no drag from their own leading/blunt edges or trailing edges</a></td>
+          <td class="superseded"><a href="#4">Fins contribute no drag from their own leading/blunt edges or trailing edges</a></td>
           <td>Underestimates total drag, especially for square-cut (unbeveled) fins — a common beginner-kit style</td>
-          <td class="verdict-cell"><span class="verdict port">Port candidate</span></td>
+          <td class="verdict-cell"><span class="verdict done">Done</span> (2026-08-15)</td>
         </tr>
         <tr>
           <td><a href="#5">Drag has no compressibility correction or surface-roughness model</a></td>
@@ -150,9 +154,9 @@
           <td class="verdict-cell"><span class="verdict port">Port candidate</span></td>
         </tr>
         <tr>
-          <td><a href="#8">The fin's own center of pressure is frozen at quarter-chord</a></td>
+          <td class="superseded"><a href="#8">The fin's own center of pressure is frozen at quarter-chord</a></td>
           <td>A real, currently-unwarned gap between Mach 0.5–0.8</td>
-          <td class="verdict-cell"><span class="verdict keep">Keep</span> (documented; warning threshold worth tightening)</td>
+          <td class="verdict-cell"><span class="verdict done">Done</span> (2026-08-15)</td>
         </tr>
         <tr>
           <td><a href="#9">A hot or cold launch day is handled oppositely by the two tools above 11 km</a></td>
@@ -252,12 +256,20 @@
       shape of gap — see <a href="#8">item 8</a> below.
     </p>
   </div>
-  <p class="verdict-line"><span class="verdict keep">Keep for now (deliberate, documented, warning-gated)</span></p>
-  <p>
-    This is an honest, disclosed MVP scope cut, not an oversight. If/when higher-power, faster-flying
-    rockets become a priority, OpenRocket's K1/K2/K3 tables are compact static data and are now a
-    legitimate port target.
-  </p>
+  <div class="tech-detail">
+    <strong class="tag">Update 2026-08-15 — Ported</strong>
+    <p>
+      <code>finCNa1</code> now has all three regimes: the unchanged subsonic closed form below M=0.9;
+      the classical K1/K2/K3 linearized supersonic thin-wing coefficients at M≥1.5, evaluated as closed
+      forms directly (a strict accuracy improvement over OpenRocket's own 0.1-Mach-increment lookup
+      table, not just a behavior match); and an exact port of OpenRocket's 5-constraint transonic
+      polynomial blend in between (value+slope matched at both ends, plus zero second-derivative at
+      M=0.9). Since K2/K3 are themselves angle-of-attack-dependent, the flight sim now computes
+      Barrowman twice per timestep — once at alpha=0 for the (AOA-independent) CP/lever-arm, once at the
+      real computed AOA for the force magnitude. See <code>CHANGELOG.md</code> (<code>91eca90</code>).
+    </p>
+  </div>
+  <p class="verdict-line"><span class="verdict done">Done</span> — ported 2026-08-15, superseding the prior "keep for now" scope cut</p>
 
   <h2 id="3">3. How pitch and yaw damping is modeled is fundamentally different</h2>
   <div class="plain-english">
@@ -326,12 +338,20 @@ pitchDampingMoment = min(mul·(pitchRate/velocity)², Cm)  // capped so it can't
       half, airfoil gets none).
     </p>
   </div>
-  <p class="verdict-line"><span class="verdict port">Port candidate</span></p>
-  <p>
-    Undocumented gap, not a deliberate cut. Likely means simulated flights currently reach somewhat
-    higher altitude/velocity than a real flight would, especially for basic, square-fin kits — the
-    exact same failure mode this project's own drag module was originally built to fix for nose cones.
-  </p>
+  <div class="tech-detail">
+    <strong class="tag">Update 2026-08-15 — Ported</strong>
+    <p>
+      <code>finPressureDragCd</code>/<code>finBaseDragCd</code> (<code>aero/fin-calc.ts</code>) are exact
+      transcriptions of <code>calculatePressureCD</code>/<code>calculateComponentBaseCD</code>, summed
+      into <code>DragGeometry</code> alongside the existing body pressure terms. Needed each fin's
+      cross-section (square/rounded/airfoil), so a <code>FinCrossSection</code> field was added to the
+      component model, parsed from RockSim's <code>&lt;TipShapeCode&gt;</code> and OpenRocket's own
+      <code>&lt;crosssection&gt;</code> (defaulting to "square" — RockSim's own default, and the
+      highest-drag/most conservative choice — when a source file doesn't specify one). See
+      <code>CHANGELOG.md</code> (<code>91eca90</code>).
+    </p>
+  </div>
+  <p class="verdict-line"><span class="verdict done">Done</span> — ported 2026-08-15</p>
 
   <h2 id="5">5. Drag has no speed-of-sound compressibility correction or surface-roughness model</h2>
   <div class="plain-english">
@@ -442,12 +462,18 @@ pitchDampingMoment = min(mul·(pitchRate/velocity)², Cm)  // capped so it can't
       above M=2 an aspect-ratio-based empirical formula.
     </p>
   </div>
-  <p class="verdict-line"><span class="verdict keep">Keep (documented scope cut)</span></p>
-  <p>
-    The Mach-validity warning threshold is worth tightening from 0.8 to 0.5 to match where the real gap
-    actually starts, or the gap itself is a reasonably contained port (the polynomial's six
-    coefficients are directly computable from fin aspect ratio).
-  </p>
+  <div class="tech-detail">
+    <strong class="tag">Update 2026-08-15 — Ported</strong>
+    <p>
+      <code>finCpShiftFraction</code> is now an exact transcription of
+      <code>calculateCPPos</code>/<code>calculatePoly</code>: quarter-chord below M=0.5 (unchanged),
+      OpenRocket's hardcoded degree-5 Mathematica-derived polynomial (a function of fin aspect ratio)
+      between M=0.5 and M=2, and the aspect-ratio-based empirical formula above M=2. The Mach-validity
+      warning threshold question is now moot — the gap this item described no longer exists. See
+      <code>CHANGELOG.md</code> (<code>91eca90</code>).
+    </p>
+  </div>
+  <p class="verdict-line"><span class="verdict done">Done</span> — ported 2026-08-15</p>
 
   <h2 id="9">9. A hot or cold launch day is handled <em>oppositely</em> by the two tools above 11 km</h2>
   <div class="plain-english">

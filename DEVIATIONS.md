@@ -48,13 +48,13 @@ source directly. Each item ends with a verdict:
 | # | What | Where | Why it matters | Verdict |
 |---|---|---|---|---|
 | [1](#1-the-plain-body-tube-contributes-zero-lift---openrocket-gives-it-a-real-and-often-large-one) | Plain body tubes contribute **zero** lift in rocketry; OpenRocket gives them a real, often large one (the "Galejs" term) | aero | Directly shifts CP and the stability margin — the single most safety-relevant number this app shows | Port candidate |
-| [2](#2-fin-lift-is-frozen-at-its-mach-09-value-for-every-faster-speed) | Fin lift coefficient is frozen at its Mach-0.9 value for every faster speed; no transonic/supersonic model at all | aero | Large, systematic error above M≈0.9 | Keep (deliberate, documented, warning-gated) — port candidate if scope grows |
+| [2](#2-fin-lift-is-frozen-at-its-mach-09-value-for-every-faster-speed) | ~~Fin lift coefficient is frozen at its Mach-0.9 value for every faster speed; no transonic/supersonic model at all~~ **Ported 2026-08-15** | aero | Large, systematic error above M≈0.9 | ~~Keep (deliberate, documented, warning-gated)~~ **Done** |
 | [3](#3-how-pitch-and-yaw-damping-is-modeled-is-fundamentally-different) | How pitch/yaw "wobble damping" is modeled is fundamentally different between the two tools | sim | Affects weathercocking/oscillation behavior, especially in gusty wind or at high angle of attack | Open question |
-| [4](#4-fins-contribute-no-drag-from-their-own-leading-blunt-edges-or-trailing-edges) | Fins contribute no drag from their own leading/blunt edges or trailing edges | aero | Underestimates total drag, especially for square-cut (unbeveled) fins — a common beginner-kit fin style | Port candidate |
+| [4](#4-fins-contribute-no-drag-from-their-own-leading-blunt-edges-or-trailing-edges) | ~~Fins contribute no drag from their own leading/blunt edges or trailing edges~~ **Ported 2026-08-15** | aero | Underestimates total drag, especially for square-cut (unbeveled) fins — a common beginner-kit fin style | ~~Port candidate~~ **Done** |
 | [5](#5-drag-has-no-speed-of-sound-compressibility-correction-or-surface-roughness-model) | Drag has no speed-of-sound compressibility correction or surface-roughness model | aero | Small-to-moderate systematic drag underestimate at higher speeds/Reynolds numbers | Port candidate |
 | [6](#6-drag-always-points-exactly-opposite-the-oncoming-air-openrocket-keeps-it-locked-to-the-rockets-own-body-axis) | Drag always points exactly opposite the oncoming air; OpenRocket keeps it locked to the rocket's own body axis | aero/sim | Only matters at real angle-of-attack (wind, weathercocking) — up to 30% drag-magnitude difference there | Open question (structural, not a quick fix) |
 | [7](#7-nothing-ever-nudges-a-borderline-stable-rocket-off-course) | Nothing ever nudges a borderline-stable rocket off course | sim | A rocket sitting right at the edge of "stable enough" may fly perfectly straight in simulation even when it's genuinely marginal | Port candidate |
-| [8](#8-the-fins-own-center-of-pressure-is-frozen-at-quarter-chord) | The fin's own center of pressure is frozen at "quarter chord" above Mach 0.5, though the built-in warning doesn't fire until Mach 0.8 | aero | A real, currently-unwarned gap between M 0.5–0.8 | Keep (documented) — warning threshold worth tightening |
+| [8](#8-the-fins-own-center-of-pressure-is-frozen-at-quarter-chord) | ~~The fin's own center of pressure is frozen at "quarter chord" above Mach 0.5~~ **Ported 2026-08-15** | aero | A real, currently-unwarned gap between M 0.5–0.8 | ~~Keep (documented)~~ **Done** |
 | [9](#9-a-hot-or-cold-launch-day-is-handled-oppositely-by-the-two-tools-above-11-km) | A hot or cold launch day is handled *oppositely* by the two tools above 11 km altitude | atmosphere | Only matters for high-altitude (11km+) flights on an unusual-weather day | Open question |
 | [10](#10-the-fin-in-body-interference-boost-uses-a-more-precise-textbook-formula) | The fin-in-body "interference boost" uses a more precise textbook formula than OpenRocket's simplified one, plus an entirely new term OpenRocket admittedly omits | aero | Small-to-moderate, and cited/verified against the source textbook | Keep (deliberate, justified) |
 | [11](#11-real-per-sample-motor-mass-data-is-cross-checked-against-the-motors-own-published-weight) | Real per-sample motor mass data is cross-checked against the motor's own published weight before being trusted | motor | Catches a real data-quality bug (found this session) that OpenRocket itself doesn't guard against | Keep (rocketry-original — better than OR here) |
@@ -139,10 +139,25 @@ lookup tables where CNa1 itself depends on angle of attack
 cubic-polynomial-matched transonic blend in between. Fin center-of-pressure
 position has the same shape of gap — see item 8 below.
 
-**Verdict: Keep for now (deliberate, documented, warning-gated)** — this is
+~~**Verdict: Keep for now (deliberate, documented, warning-gated)** — this is
 an honest, disclosed MVP scope cut, not an oversight. If/when higher-power,
 faster-flying rockets become a priority, OpenRocket's K1/K2/K3 tables are
-compact static data and are now a legitimate port target.
+compact static data and are now a legitimate port target.~~
+
+**Update 2026-08-15 — Ported.** `finCNa1` (`aero/fin-calc.ts`) now has all
+three regimes: the unchanged subsonic closed form below M=0.9; the classical
+K1/K2/K3 linearized supersonic thin-wing coefficients at M≥1.5, evaluated as
+closed forms directly (not table-interpolated — a strict accuracy
+improvement over OpenRocket's own 0.1-Mach-increment lookup table); and an
+exact port of OpenRocket's 5-constraint transonic polynomial blend in
+between (value+slope matched at both ends, plus zero second-derivative at
+M=0.9). Since K2/K3 are themselves angle-of-attack-dependent, the flight
+sim (`derivatives3d.ts`) now computes Barrowman twice per timestep — once at
+alpha=0 to get the (AOA-independent) CP for the lever-arm calculation, once
+at the real computed AOA for the force magnitude. See CHANGELOG.md
+(`91eca90`) and `openrocket-comparison.test.ts`, which no longer needs
+`KNOWN_ISSUES` entries for the two previously-failing supersonic apogee
+cases.
 
 ---
 
@@ -213,11 +228,22 @@ cross-section is modeled as airfoil/rounded/square) and real trailing-edge
 base drag (`calculateComponentBaseCD`, lines 663-685 — square gets the full
 value, rounded gets half, airfoil gets none).
 
-**Verdict: Port candidate.** Undocumented gap, not a deliberate cut. Likely
+~~**Verdict: Port candidate.** Undocumented gap, not a deliberate cut. Likely
 means simulated flights currently reach somewhat higher altitude/velocity
 than a real flight would, especially for basic, square-fin kits — the exact
 same failure mode this project's own drag module was originally built to
-fix for nose cones.
+fix for nose cones.~~
+
+**Update 2026-08-15 — Ported.** `finPressureDragCd`/`finBaseDragCd`
+(`aero/fin-calc.ts`) are exact transcriptions of
+`calculatePressureCD`/`calculateComponentBaseCD`, summed into
+`DragGeometry` in `drag-calc.ts` alongside the existing body pressure
+terms. Needed each fin's cross-section (square/rounded/airfoil), so
+`FinCrossSection` was added to the `Component` model, parsed from RockSim's
+`<TipShapeCode>` and OpenRocket's own `<crosssection>` (defaulting to
+"square" — RockSim's own default, and the highest-drag/most conservative
+choice — when a source file doesn't specify one). See CHANGELOG.md
+(`91eca90`).
 
 ---
 
@@ -324,11 +350,19 @@ value below M=0.5; between M=0.5 and M=2 it uses a fifth-order polynomial
 (matched in value and slope at both ends), and above M=2 an aspect-ratio-based
 empirical formula.
 
-**Verdict: Keep (documented scope cut)**, but the Mach-validity warning
+~~**Verdict: Keep (documented scope cut)**, but the Mach-validity warning
 threshold is worth tightening from 0.8 to 0.5 to match where the real gap
 actually starts, or the gap itself is a reasonably contained port (the
 polynomial's six coefficients are directly computable from fin aspect
-ratio).
+ratio).~~
+
+**Update 2026-08-15 — Ported.** `finCpShiftFraction` (`aero/fin-calc.ts`)
+is an exact transcription of `calculateCPPos`/`calculatePoly`: quarter-chord
+below M=0.5 (unchanged), OpenRocket's hardcoded degree-5
+Mathematica-derived polynomial (a function of fin aspect ratio) between
+M=0.5 and M=2, and the aspect-ratio-based empirical formula above M=2. The
+Mach-validity warning threshold question is now moot — the gap this item
+described no longer exists. See CHANGELOG.md (`91eca90`).
 
 ---
 
