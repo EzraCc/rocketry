@@ -16,7 +16,8 @@ RockSim's own embedded data for a curated set of real rocket+motor cases — see
 report (`public/validation-report.html`, served at `/validation-report.html`, linked from the
 site's own footer), generated from `validation/`, regenerate with
 `validation/openrocket-oracle/run.sh` + `npx tsx validation/openrocket-oracle/fetch-motor-fixtures.ts`
-+ `npx tsx validation/build-report.ts`).
++ `npx tsx validation/build-report.ts`). Every place this project's physics computes a different
+number than OpenRocket's own — and why — is cataloged in `DEVIATIONS.md`.
 
 ## What it does
 
