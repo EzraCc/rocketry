@@ -473,8 +473,11 @@ limit tied to rocketry's own data model); no roll dynamics or roll damping
 acceleration or latitude-dependent gravity (both negligible for hobby-rocket
 flight durations/altitudes); geometric vs. geopotential altitude in the
 atmosphere layer lookup (sub-0.5% at any altitude this project targets); no
-post-apogee tumbling flight mode (moot — this project doesn't simulate
-descent yet); no humidity modeling (OpenRocket's own default is also dry
+post-apogee tumbling flight mode (still moot for the general flight sim,
+which stops at apogee by design — engine3d.ts's own `coastPastApogeeS` option,
+added 2026-08-15 for delay-recommendation.ts, is a narrow unparachuted-coast
+extension for evaluating ejection-delay choices, not a general descent/
+recovery/tumbling model); no humidity modeling (OpenRocket's own default is also dry
 air); a fixed 0.01s integration step vs. OpenRocket's adaptive
 (rotation-rate-aware) stepping (rocketry's fixed step is already finer than
 OpenRocket's own default, though OpenRocket's adaptive refinement during
