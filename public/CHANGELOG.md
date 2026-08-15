@@ -19,6 +19,23 @@ point in this list, and know immediately whether anything since then matters.
 
 ## 2026-08-15
 
+- `dd57e9d` — Ported OpenRocket's Galejs body-lift term (DEVIATIONS.md #1), pitch/yaw
+  stability-margin nudge (#7), and the Mach compressibility correction on skin friction (#5's Mach
+  half). Body lift is exactly zero at AOA=0 (verified against real OpenRocket fixtures after an
+  early implementation got this wrong — see the commit message), so it changes the DYNAMIC flight
+  sim's restoring-moment calculation but not any static CP/stability-margin display. The stability
+  nudge is opt-in (`simulateFlight3D`'s new `randomSeed`, undefined = disabled) and not yet wired
+  into the app's default flight-sim call, so it doesn't change today's shown numbers either. The
+  Mach friction correction is always-on and — matching OpenRocket's own formula, not a bug —
+  slightly REDUCES friction drag at Mach>~0.4 with Re>1e6 (compressible boundary layers really do
+  have lower Cf than the incompressible correlation predicts there), which slightly INCREASES
+  apogee/velocity for flights that reach those conditions. Measured against the 12-case validation
+  suite: average apogee error moved from 6.55% to 7.09% (worse, not better) — rocketry already
+  tended to over-predict apogee relative to real OpenRocket output before this change, and this
+  correction, though a faithful port, pushes further in that same direction rather than
+  correcting it, implying some other still-unidentified drag gap is the larger driver. CP/loaded-CG
+  error is unchanged to the reported precision (0.00pp across all 12 cases), confirming body lift's
+  zero-at-rest behavior empirically, not just by derivation.
 - `91eca90` — Ported OpenRocket's own supersonic/transonic fin CNa1 model, fin CP-shift model, and
   fin pressure/base drag (previously entirely absent for fins) from `FinSetCalc.java`, replacing
   formulas that were held flat past Mach 0.9 (see DEVIATIONS.md #2/#4). Changes CP, CNa, drag, and
