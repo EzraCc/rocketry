@@ -135,6 +135,65 @@ interface DownloadResponse {
   error?: string; // present on a 400, e.g. "No motor IDs specified to download files for."
 }
 
+export interface MotorMassBasis {
+  totalMassKg: number;
+  propellantMassKg: number;
+}
+
+export interface DownloadedThrustCurve {
+  samples: ThrustSample[];
+  /** Which source file ThrustCurve.org actually gave us -- e.g. "RockSim" / "cert" -- surfaced in
+   * the UI so the user can see which curve is driving the simulation when its own numbers disagree
+   * with ThrustCurve.org's catalog record (see MotorMassBasis's own doc comment). */
+  sourceFormat: string;
+  sourceQuality: string;
+  /**
+   * The winning RockSim (.rse) source file's own header total/propellant weight (initWt/propWt,
+   * grams in the file, converted to kg here) -- the exact numbers its <eng-data> mass curve was
+   * generated from (auto-calc-mass="1" in every real file checked -- this "real per-sample data" is
+   * RockSim's own derived curve, not measured telemetry). Present whenever the winning source is a
+   * RockSim file with a parseable header, regardless of whether the curve itself passed
+   * deriveMotorMassCurve's self-consistency check.
+   *
+   * Deliberately NOT the same as this motor's ThrustCurve.org catalog totalWeightG/propWeightG --
+   * surveyed 24 real motors (H through O impulse class) and found the file's own header always
+   * exactly matches its own <eng-data> curve start, but disagrees with the separately-maintained
+   * catalog figure by >2% in 10/24 cases (two by 39% and 78%). Using the file's own numbers here
+   * avoids treating that routine cross-source drift as a data problem -- it isn't one, it's just two
+   * different records for the same motor. See main.ts's renderMassBasisDriftWarning for where the
+   * (much rarer, and worth surfacing) gap between this and the catalog gets shown to the user.
+   */
+  realMassBasis?: MotorMassBasis;
+}
+
+/**
+ * Extracts a RockSim-format (.rse) file's own header total/propellant weight (initWt/propWt) --
+ * see DownloadedThrustCurve.realMassBasis for why this is read separately from ThrustCurve.org's
+ * catalog metadata. Returns null if undecodable or the <engine ...> tag/attributes aren't found --
+ * matches parseRseEngDataMassKg's own all-or-nothing philosophy for real data.
+ */
+export function parseRseEngineHeaderWeights(base64Data: string): MotorMassBasis | null {
+  let xml: string;
+  try {
+    xml = atob(base64Data);
+  } catch {
+    return null;
+  }
+  // [ \t] (not \b) after "engine" -- a plain word-boundary match also matches the wrapping
+  // <engine-database>/<engine-list> tags every file starts with (confirmed directly: "engine-"
+  // still crosses a \b boundary at the hyphen), which sit before the real <engine ...> tag and would
+  // otherwise "win" the match with an empty/wrong attribute string.
+  const engineMatch = xml.match(/<engine[ \t]([^>]*)>/);
+  if (!engineMatch) return null;
+  const attrs = engineMatch[1]!;
+  const initWtMatch = attrs.match(/\binitWt="([^"]*)"/);
+  const propWtMatch = attrs.match(/\bpropWt="([^"]*)"/);
+  const initWtG = initWtMatch ? Number.parseFloat(initWtMatch[1]!) : Number.NaN;
+  const propWtG = propWtMatch ? Number.parseFloat(propWtMatch[1]!) : Number.NaN;
+  if (!Number.isFinite(initWtG) || !Number.isFinite(propWtG)) return null;
+  return { totalMassKg: initWtG / 1000, propellantMassKg: propWtG / 1000 };
+}
+
 /**
  * Parses propellant-mass-remaining (kg) out of a RockSim-format (.rse) raw file's own
  * <eng-data t="..." m="..."/> entries, in document order -- the SAME entries ThrustCurve.org's own
@@ -164,8 +223,8 @@ export function parseRseEngDataMassKg(base64Data: string): number[] | null {
   return massesKg;
 }
 
-/** Downloads pre-parsed thrust-curve samples for a motor, plus each sample's own real propellant-mass-remaining when the winning source file has one (see ThrustSample.propellantMassRemainingKg). Prefers a "cert" source file if multiple exist, per ThrustCurve.org's own source-quality ordering -- unaffected by which file happens to carry real mass data, since curve quality/certification matters more than that. */
-export async function downloadThrustSamples(motorId: string): Promise<ThrustSample[]> {
+/** Downloads pre-parsed thrust-curve samples for a motor, plus each sample's own real propellant-mass-remaining and the source file's own header weights when the winning source file has them (see ThrustSample.propellantMassRemainingKg and DownloadedThrustCurve.realMassBasis). Prefers a "cert" source file if multiple exist, per ThrustCurve.org's own source-quality ordering -- unaffected by which file happens to carry real mass data, since curve quality/certification matters more than that. */
+export async function downloadThrustSamples(motorId: string): Promise<DownloadedThrustCurve> {
   const res = await fetch(`${API_BASE}/download.json`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -188,15 +247,22 @@ export async function downloadThrustSamples(motorId: string): Promise<ThrustSamp
 
   if (winner.format === "RockSim" && winner.data) {
     const massesKg = parseRseEngDataMassKg(winner.data);
+    const headerWeights = parseRseEngineHeaderWeights(winner.data) ?? undefined;
     // Only trust the zip-by-index when counts match exactly -- ThrustCurve.org's own "samples"
     // extraction and this file's raw <eng-data> tags are normally the same points, but falling
     // back to derivation (rather than guessing an alignment) if that ever isn't true is safer than
     // risking a mass value attached to the wrong time.
     if (massesKg && massesKg.length === winner.samples.length) {
-      return winner.samples.map((s, i) => ({ ...s, propellantMassRemainingKg: massesKg[i] }));
+      return {
+        samples: winner.samples.map((s, i) => ({ ...s, propellantMassRemainingKg: massesKg[i] })),
+        sourceFormat: winner.format,
+        sourceQuality: winner.source,
+        realMassBasis: headerWeights,
+      };
     }
+    return { samples: winner.samples, sourceFormat: winner.format, sourceQuality: winner.source, realMassBasis: headerWeights };
   }
-  return winner.samples;
+  return { samples: winner.samples, sourceFormat: winner.format, sourceQuality: winner.source };
 }
 
 /**

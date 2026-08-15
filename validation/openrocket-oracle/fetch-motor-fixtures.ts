@@ -53,7 +53,7 @@ async function main() {
           `no exact designation match among ${results.length} results for manufacturer "${entry.motorManufacturer}" commonName "${commonNameGuess(entry.motorDesignation)}"`,
         );
       }
-      const samples = await downloadThrustSamples(match.motorId);
+      const { samples } = await downloadThrustSamples(match.motorId);
       fs.writeFileSync(path.join(OUT_DIR, `${entry.label}.json`), JSON.stringify({ meta: match, samples }, null, 2));
       console.log(`ok (${match.manufacturer} ${match.designation}, ${samples.length} samples)`);
       okCount++;

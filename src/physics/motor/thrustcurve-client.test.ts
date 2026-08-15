@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseRseEngDataMassKg } from "./thrustcurve-client.js";
+import { parseRseEngDataMassKg, parseRseEngineHeaderWeights } from "./thrustcurve-client.js";
 
 // Real ThrustCurve.org API response for AeroTech J340M (motorId 5f4294d20002310000000388),
 // data:"both" -> results[0].data, fetched directly and hardcoded here rather than mocking network
@@ -41,5 +41,39 @@ describe("parseRseEngDataMassKg", () => {
 
   it("returns null for undecodable input", () => {
     expect(parseRseEngDataMassKg("not valid base64!!!")).toBeNull();
+  });
+});
+
+describe("parseRseEngineHeaderWeights", () => {
+  it("extracts initWt/propWt from a real .rse file's <engine> tag, g->kg", () => {
+    const result = parseRseEngineHeaderWeights(J340M_RSE_BASE64);
+    expect(result).not.toBeNull();
+    expect(result!.totalMassKg).toBeCloseTo(0.5773, 9);
+    expect(result!.propellantMassKg).toBeCloseTo(0.365, 9);
+  });
+
+  it("does not mistake the wrapping <engine-database>/<engine-list> tags for the real <engine ...> tag", () => {
+    // Regression: <engine\b matches "engine-database" too (a plain word-boundary crosses the
+    // hyphen), which sits before the real <engine ...> tag in every real file and would otherwise
+    // "win" the match with an empty attribute string.
+    const result = parseRseEngineHeaderWeights(J340M_RSE_BASE64);
+    expect(result).not.toBeNull();
+    expect(result!.totalMassKg).toBeGreaterThan(0);
+  });
+
+  it("returns null for a RASP (.eng) plain-text file with no <engine> tag at all", () => {
+    const raspText = Buffer.from(";Estes C6\nC6-0 18 70 P .0125 .0227 E\n 0.1 5.0\n 2.0 0.0\n").toString("base64");
+    expect(parseRseEngineHeaderWeights(raspText)).toBeNull();
+  });
+
+  it("returns null if the <engine> tag is missing initWt or propWt", () => {
+    const malformed = Buffer.from('<engine-database><engine code="X" dia="38."><data/></engine></engine-database>').toString(
+      "base64",
+    );
+    expect(parseRseEngineHeaderWeights(malformed)).toBeNull();
+  });
+
+  it("returns null for undecodable input", () => {
+    expect(parseRseEngineHeaderWeights("not valid base64!!!")).toBeNull();
   });
 });

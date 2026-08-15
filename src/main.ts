@@ -18,6 +18,7 @@ import {
   getMotorMetadata,
   type MotorSearchResult,
   type ThrustSample,
+  type MotorMassBasis,
 } from "./physics/motor/thrustcurve-client.js";
 import { burnTime, getThrustAt, totalImpulse } from "./physics/motor/motor-model.js";
 import { deriveMotorMassCurve, getMotorMassAt } from "./physics/mass/motor-mass-curve.js";
@@ -289,19 +290,50 @@ function motorLoadedMassKg(motor: SelectedMotor): number {
   return getMotorMassAt(deriveMotorMassCurve(motor), 0);
 }
 
+/** Everything selectMotor pulls down for one motor, cached in lastMotorSelection and threaded through buildSelectedMotor -- kept as one object (rather than separate meta/samples/realMassBasis parameters) so every call site updates together when a new field's added, and so callers can't accidentally pass a realMassBasis from a DIFFERENT motor selection than the meta/samples it goes with. */
+interface MotorSelection {
+  meta: MotorSearchResult;
+  samples: ThrustSample[];
+  /** The winning source file's own header total/propellant weight, when it's a RockSim file with a parseable header -- see downloadThrustSamples/MotorMassBasis's own doc comment. Deliberately NOT used for hybrid motors (see buildSelectedMotor) -- pending a look at whether "propellant mass" means the same thing for a hybrid's separately-tanked oxidizer as it does for a solid motor's single grain. */
+  realMassBasis?: MotorMassBasis;
+  sourceFormat: string;
+  sourceQuality: string;
+}
+
 /** Builds a SelectedMotor from ThrustCurve.org search/download data — shared by rederiveDryCg (below) and renderMotorDetailHtml, so both construct the exact same motor object from the same inputs. */
-function buildSelectedMotor(meta: MotorSearchResult, samples: ThrustSample[]): SelectedMotor {
+function buildSelectedMotor(selection: MotorSelection): SelectedMotor {
+  const { meta, samples, realMassBasis } = selection;
+  // Hybrids are out of scope for v1 (see isHybridMotor) -- don't apply the file's-own-header
+  // preference to them even when a RockSim source happens to have one, since it's not yet confirmed
+  // "propellant mass" in a hybrid's file means the same thing (solid fuel grain only? fuel + the
+  // separately-tanked oxidizer?) that it does for a single-grain solid motor. Catalog weight only.
+  const massBasis = meta.type === "hybrid" ? undefined : realMassBasis;
   return {
     motorId: meta.motorId,
     designation: meta.designation,
     manufacturer: meta.manufacturer,
     diameter: (meta.diameter ?? 0) / 1000,
     length: (meta.length ?? 0) / 1000,
-    totalMassKg: (meta.totalWeightG ?? 0) / 1000,
-    propellantMassKg: (meta.propWeightG ?? 0) / 1000,
+    totalMassKg: massBasis?.totalMassKg ?? (meta.totalWeightG ?? 0) / 1000,
+    propellantMassKg: massBasis?.propellantMassKg ?? (meta.propWeightG ?? 0) / 1000,
     samples,
     delay: 0,
   };
+}
+
+/**
+ * Whether flight simulation should be blocked for the CURRENT rocket+motor combination -- either
+ * reason is sufficient on its own (unsupported rocket geometry, see activeUnsupportedFeatures; or a
+ * hybrid motor, see isHybridMotor), and both can independently apply at once. Single source of
+ * truth for every runFlightSim call site, so a future third reason only needs adding here once.
+ */
+function flightSimBlocked(): boolean {
+  return activeUnsupportedFeatures.length > 0 || (lastMotorSelection !== null && isHybridMotor(lastMotorSelection.meta));
+}
+
+/** Hybrid motors (separately-tanked liquid/gaseous oxidizer + solid fuel grain) are out of scope for v1 -- flagged the same way an unsupported rocket geometry is (see activeUnsupportedFeatures): motor search/detail still works (a user can still want to see one), but flight simulation is blocked. Reason: this app's mass-curve and Isp-consistency logic (deriveMotorMassCurve, motorLoadedMassKg) was built and verified against solid-motor data, where "propellant mass" unambiguously means the one consumable grain -- a hybrid's oxidizer is tanked and loaded separately, drains on its own schedule, and isn't necessarily what a file's own propWt/propellant-remaining curve is even tracking. Revisit once that's actually been checked against real hybrid data, rather than guessing. */
+function isHybridMotor(meta: MotorSearchResult): boolean {
+  return meta.type === "hybrid";
 }
 
 /**
@@ -335,7 +367,7 @@ let loadedMassWarning: string | null = null;
  */
 function autoDeriveLoadedCg(): void {
   if (cgOverriddenByUser || activeEstimatedDryCgM === undefined) return;
-  const motor = lastMotorSelection ? buildSelectedMotor(lastMotorSelection.meta, lastMotorSelection.samples) : null;
+  const motor = lastMotorSelection ? buildSelectedMotor(lastMotorSelection) : null;
   if (!motor) {
     activeLoadedCgM = activeEstimatedDryCgM;
     return;
@@ -357,7 +389,7 @@ function rederiveDryCg(): void {
     activeRocket = { ...activeRocket, dryMass: activeDryMassKg, dryCg: 0 };
     return;
   }
-  const motor = lastMotorSelection ? buildSelectedMotor(lastMotorSelection.meta, lastMotorSelection.samples) : null;
+  const motor = lastMotorSelection ? buildSelectedMotor(lastMotorSelection) : null;
   const pos = motor ? motorAxialPosition({ ...activeRocket, motor }) : null;
   if (!motor || !pos) {
     activeRocket = { ...activeRocket, dryMass: activeDryMassKg, dryCg: activeLoadedCgM };
@@ -433,6 +465,29 @@ function wireChartCursorReset(): void {
 }
 
 /**
+ * idPrefixes whose next commit() should be SKIPPED -- set on mousedown for a `[data-stat-extra]`
+ * button (a reset/"use simfile value" button, whose own click handler makes the real state change
+ * instead), consumed (deleted) by the very next commit() call for that prefix.
+ *
+ * Exists because `e.preventDefault()` on that same mousedown -- the textbook fix for "clicking a
+ * button shouldn't blur the input first" -- turned out NOT to reliably stop it here: confirmed
+ * directly (console tracing a live click) that clicking "Use simfile CP" still fires a focusout on
+ * the CP input, but only AFTER that button's own click handler has already run and re-rendered
+ * (removing the still-focused old input is what triggers the browser's blur, arriving as a delayed
+ * follow-up, not synchronously with the click). The stale DISPLAYED value (the plain computed CP,
+ * not any override) would then commit as a bogus "manual" override, silently overwriting the
+ * correct one the click handler had just set. A real, reproducible bug this session (reported as
+ * "editing CG changed CP" -- misleading, since it's this race during a PRIOR "Use simfile CP" click
+ * that actually corrupts activeCpOverrideM; editing CG was simply the next re-render to expose it).
+ *
+ * Deliberately NOT also cleared inside the stat-extra button's own click handler -- that was the
+ * first fix attempted, and it broke this: the delayed stray focusout above arrives AFTER that
+ * handler returns, so clearing the flag early left nothing to catch it. Consumption happens
+ * exclusively in commit() itself, whenever that delayed focusout actually arrives.
+ */
+const suppressNextCommit = new Set<string>();
+
+/**
  * Generic delegated wiring (same #app-ancestor pattern as wireInfoToggles) for a pencil-icon
  * inline-edit stat: click `#{idPrefix}-edit-btn` to swap `#{idPrefix}-value` for
  * `#{idPrefix}-input`, commit on blur or Enter. Shared by the mass/CG/CP stat cards below, which
@@ -440,10 +495,10 @@ function wireChartCursorReset(): void {
  * possibly-selected motor; CG/CP don't) — that's supplied by the caller as onCommit.
  *
  * Any element tagged `[data-stat-extra="{idPrefix}"]` (a reset button, a "use simfile value"
- * button, etc.) is revealed alongside the input on edit-start, and has mousedown prevented on it so
- * clicking it doesn't first blur the input (which would fire a commit with whatever partial value
- * was being typed, then re-render and remove the button out from under the in-flight click) —
- * verified this race is real, not hypothetical, by testing it directly.
+ * button, etc.) is revealed alongside the input on edit-start. Its mousedown both calls
+ * preventDefault() (stops the blur when the browser DOES cooperate) AND arms suppressNextCommit
+ * (stops the resulting stray commit when it doesn't) -- belt and suspenders, since only the second
+ * one turned out to be reliable (see suppressNextCommit's own doc comment).
  */
 function wireInlineEditStat(idPrefix: string, onCommit: (rawInputValue: number) => void): void {
   const appEl = document.querySelector("#app");
@@ -466,10 +521,14 @@ function wireInlineEditStat(idPrefix: string, onCommit: (rawInputValue: number) 
   });
 
   appEl.addEventListener("mousedown", (e) => {
-    if ((e.target as HTMLElement).closest(`[data-stat-extra="${idPrefix}"]`)) e.preventDefault();
+    if ((e.target as HTMLElement).closest(`[data-stat-extra="${idPrefix}"]`)) {
+      e.preventDefault();
+      suppressNextCommit.add(idPrefix);
+    }
   });
 
   const commit = (): void => {
+    if (suppressNextCommit.delete(idPrefix)) return; // a stat-extra button's own click handler is making the real change instead
     const inputEl = document.getElementById(`${idPrefix}-input`) as HTMLInputElement | null;
     if (!inputEl || inputEl.hidden) return; // not in edit mode -- nothing to commit
     onCommit(Number(inputEl.value) || 0);
@@ -503,7 +562,7 @@ function afterDryMassChanged(): void {
     // which depends on the rocket it'd be attached to) -- only the actual flight simulation is
     // gated, since that's the part this project's aero model can't trust for that geometry (see
     // activeUnsupportedFeatures' own doc comment).
-    if (rocketWithMotor && activeUnsupportedFeatures.length === 0) void runFlightSim(rocketWithMotor);
+    if (rocketWithMotor && !flightSimBlocked()) void runFlightSim(rocketWithMotor);
   }
 }
 
@@ -516,7 +575,7 @@ function afterDryMassChanged(): void {
 function wireMassStatEdit(): void {
   wireInlineEditStat("mass-stat", (rawInputValue) => {
     const enteredKg = massFromInput(rawInputValue);
-    const motor = lastMotorSelection ? buildSelectedMotor(lastMotorSelection.meta, lastMotorSelection.samples) : null;
+    const motor = lastMotorSelection ? buildSelectedMotor(lastMotorSelection) : null;
     activeDryMassKg = Math.max(motor ? enteredKg - motorLoadedMassKg(motor) : enteredKg, 0);
     // Only a LOADED-mass edit (motor selected at edit time) is motor-entangled -- a direct
     // dry-mass edit stays valid no matter what motor gets picked next.
@@ -542,7 +601,7 @@ function wireMassStatEdit(): void {
  * reset icon (only shown while editing) discards the edit and goes back to the file's dry mass.
  */
 function renderMassStat(rocket: Rocket): string {
-  const motor = lastMotorSelection ? buildSelectedMotor(lastMotorSelection.meta, lastMotorSelection.samples) : null;
+  const motor = lastMotorSelection ? buildSelectedMotor(lastMotorSelection) : null;
   const label = motor ? "Loaded mass" : "Dry mass";
   const displayKg = motor ? rocket.dryMass + motorLoadedMassKg(motor) : rocket.dryMass;
   return `
@@ -570,7 +629,7 @@ function renderMassStat(rocket: Rocket): string {
  * always overridable via the pencil icon; the reset icon (shown once overridden) goes back to it.
  */
 function renderCgStat(): string {
-  const motor = lastMotorSelection ? buildSelectedMotor(lastMotorSelection.meta, lastMotorSelection.samples) : null;
+  const motor = lastMotorSelection ? buildSelectedMotor(lastMotorSelection) : null;
   const label = motor ? "Loaded CG" : "Dry CG";
   const hasCg = activeLoadedCgM > 0;
   const isEstimate = hasCg && !cgOverriddenByUser && activeEstimatedDryCgM !== undefined;
@@ -604,7 +663,7 @@ function wireCgStatEdit(): void {
     // which depends on the rocket it'd be attached to) -- only the actual flight simulation is
     // gated, since that's the part this project's aero model can't trust for that geometry (see
     // activeUnsupportedFeatures' own doc comment).
-    if (rocketWithMotor && activeUnsupportedFeatures.length === 0) void runFlightSim(rocketWithMotor);
+    if (rocketWithMotor && !flightSimBlocked()) void runFlightSim(rocketWithMotor);
     }
   });
 
@@ -622,7 +681,7 @@ function wireCgStatEdit(): void {
     // which depends on the rocket it'd be attached to) -- only the actual flight simulation is
     // gated, since that's the part this project's aero model can't trust for that geometry (see
     // activeUnsupportedFeatures' own doc comment).
-    if (rocketWithMotor && activeUnsupportedFeatures.length === 0) void runFlightSim(rocketWithMotor);
+    if (rocketWithMotor && !flightSimBlocked()) void runFlightSim(rocketWithMotor);
     }
   });
 }
@@ -776,7 +835,7 @@ const STANDARD_GRAVITY_MS2 = 9.80665; // matches isa-model.ts's own G0
  */
 function renderDescentDevicesSection(): string {
   if (activeDescentDevices.length === 0) return "";
-  const motor = lastMotorSelection ? buildSelectedMotor(lastMotorSelection.meta, lastMotorSelection.samples) : null;
+  const motor = lastMotorSelection ? buildSelectedMotor(lastMotorSelection) : null;
   const descentMassKg = motor ? activeDryMassKg + (motor.totalMassKg - motor.propellantMassKg) : null;
   const airDensityKgM3 = new IsaAtmosphere().at(activeRocket.launchAltitude).density;
 
@@ -1294,7 +1353,7 @@ function wireColumnDragReorder(resultsEl: HTMLElement): void {
 }
 
 /** The last motor a user actually selected, cached so a unit-toggle can re-render its detail panel without re-fetching from ThrustCurve.org. */
-let lastMotorSelection: { meta: MotorSearchResult; samples: ThrustSample[] } | null = null;
+let lastMotorSelection: MotorSelection | null = null;
 
 /**
  * Surfaces MassCurve.inconsistentRealData (see its own doc comment) as a visible, always-shown
@@ -1329,12 +1388,51 @@ function renderMassDataInconsistencyWarning(info: { firstSampleKg: number; publi
   `;
 }
 
-function renderMotorDetailHtml(meta: MotorSearchResult, samples: ThrustSample[]): { html: string; rocketWithMotor: Rocket } {
-  const motor = buildSelectedMotor(meta, samples);
+/**
+ * Surfaces a gap between the motor's ThrustCurve.org catalog weight and the actual source file's
+ * own header weight that this app is simulating with -- common (surveyed 24 real motors H-O impulse
+ * class: 8/20 non-hybrid motors disagreed by >2%, up to 7%), not a sign of a broken file, just two
+ * separately-maintained records for the same motor drifting apart. Named which source/quality file
+ * is actually driving the sim (per the user's own ask: "let users know which of the thrust curves we
+ * are using when these things disagree") rather than just showing two numbers with no indication of
+ * which one won. Silently returns "" when there's no real mass basis (RASP-sourced motor, or a
+ * hybrid -- see buildSelectedMotor) or the gap is small enough to be unremarkable.
+ */
+function renderMassBasisDriftWarning(motor: SelectedMotor, meta: MotorSearchResult, selection: MotorSelection): string {
+  if (!selection.realMassBasis || meta.propWeightG === undefined || meta.propWeightG === null || meta.propWeightG <= 0) return "";
+  const catalogPropKg = meta.propWeightG / 1000;
+  const deltaKg = motor.propellantMassKg - catalogPropKg;
+  const deltaPct = (deltaKg / catalogPropKg) * 100;
+  if (Math.abs(deltaPct) < 3) return "";
+  const fileKind = selection.sourceFormat === "RockSim" ? "RockSim (.rse)" : selection.sourceFormat;
+  return `
+    <div class="callout-warning">
+      <strong>⚠ This motor's data source disagrees with ThrustCurve.org's catalog figure</strong>
+      <p>
+        Simulating with the <strong>${fileKind}, ${selection.sourceQuality}-quality</strong> source file's own
+        published weight, not ThrustCurve.org's separately-listed catalog figure below — the file's own number is
+        used because it's what its real per-sample mass curve (when it has one) was actually built from, and stays
+        internally consistent with it. A few percent of drift between an individual submitted file and the
+        catalog is routine (different submissions for the same motor can report slightly different numbers), not
+        necessarily an error.
+      </p>
+      <table>
+        <tbody>
+          <tr><td>ThrustCurve.org catalog propellant mass</td><td>${fmtMass(catalogPropKg)}</td></tr>
+          <tr><td>${fileKind} file's own propellant mass (used here)</td><td>${fmtMass(motor.propellantMassKg)}</td></tr>
+          <tr><td>Difference</td><td>${fmtMass(Math.abs(deltaKg))} (${deltaPct >= 0 ? "+" : ""}${deltaPct.toFixed(1)}%)</td></tr>
+        </tbody>
+      </table>
+    </div>
+  `;
+}
 
+function renderMotorDetailHtml(meta: MotorSearchResult, samples: ThrustSample[]): { html: string; rocketWithMotor: Rocket } {
   // lastMotorSelection is already set to this exact (meta, samples) by the caller (selectMotor) --
-  // re-derive activeRocket's dry CG against THIS motor before building rocketWithMotor, so a
+  // built from THAT (not meta/samples alone) so realMassBasis/sourceFormat/sourceQuality come along
+  // too. Re-derive activeRocket's dry CG against THIS motor before building rocketWithMotor, so a
   // motor swap correctly changes how much of the loaded CG gets attributed to the airframe.
+  const motor = buildSelectedMotor(lastMotorSelection!);
   rederiveDryCg();
 
   const rocketWithMotor: Rocket = { ...activeRocket, motor, windProfile: activeWindProfile, launchRodLength: activeLaunchRodLengthM };
@@ -1351,6 +1449,7 @@ function renderMotorDetailHtml(meta: MotorSearchResult, samples: ThrustSample[])
     <h3>${meta.manufacturer} ${meta.designation}</h3>
     ${loadedMassWarning ? `<p><mark>${loadedMassWarning}</mark></p>` : ""}
     ${massCurve.inconsistentRealData ? renderMassDataInconsistencyWarning(massCurve.inconsistentRealData) : ""}
+    ${renderMassBasisDriftWarning(motor, meta, lastMotorSelection!)}
     <p>Thrust curve: ${samples.length} samples, burn time ${bt.toFixed(2)}s.
       Total impulse (integrated from curve): ${fmtImpulse(totalImpulse(motor))}
       (ThrustCurve.org reports ${meta.totImpulseNs === undefined || meta.totImpulseNs === null ? "—" : fmtImpulse(meta.totImpulseNs)}).
@@ -1392,7 +1491,9 @@ function renderMotorDetailHtml(meta: MotorSearchResult, samples: ThrustSample[])
     <div id="flight-sim-section">${
       activeUnsupportedFeatures.length > 0
         ? `<p><mark>Flight simulation not available: ${activeUnsupportedFeatures.join(", ")}.</mark> This rocket's geometry isn't modeled well enough for a trustworthy simulation yet -- the motor data above is still real (its own thrust/mass curve doesn't depend on the rocket it's attached to).</p>`
-        : `<p aria-busy="true">Simulating flight…</p>`
+        : isHybridMotor(meta)
+          ? `<p><mark>Flight simulation not available: hybrid motors aren't supported yet.</mark> This motor's own thrust/mass data above is still real -- only simulating a rocket flying on it is blocked, since this app's mass-curve modeling was built and checked against solid-motor data, not a hybrid's separately-tanked oxidizer.</p>`
+          : `<p aria-busy="true">Simulating flight…</p>`
     }</div>
   `;
   return { html, rocketWithMotor };
@@ -1429,7 +1530,7 @@ async function selectMotor(meta: MotorSearchResult): Promise<void> {
   }
 
   try {
-    const samples = await downloadThrustSamples(meta.motorId);
+    const { samples, realMassBasis, sourceFormat, sourceQuality } = await downloadThrustSamples(meta.motorId);
     // If the LOADED mass field was what got edited (a motor was already selected at edit time),
     // the dry mass currently stored is back-solved against that OLD motor's own mass and isn't
     // meaningful for a different one -- revert to the file's base dry mass before applying this
@@ -1441,7 +1542,7 @@ async function selectMotor(meta: MotorSearchResult): Promise<void> {
       dryMassOverriddenViaLoadedEdit = false;
       dryMassReverted = true;
     }
-    lastMotorSelection = { meta, samples };
+    lastMotorSelection = { meta, samples, realMassBasis, sourceFormat, sourceQuality };
     const rocketWithMotor = renderMotorDetailAndMountChart(meta, samples);
     // The mass stat card switches from "Dry mass" to "Loaded mass" (dry + this motor's mass) once
     // a motor's known -- re-render it here, not just the motor detail panel above, or it'd keep
@@ -1456,7 +1557,7 @@ async function selectMotor(meta: MotorSearchResult): Promise<void> {
     // which depends on the rocket it'd be attached to) -- only the actual flight simulation is
     // gated, since that's the part this project's aero model can't trust for that geometry (see
     // activeUnsupportedFeatures' own doc comment).
-    if (rocketWithMotor && activeUnsupportedFeatures.length === 0) void runFlightSim(rocketWithMotor);
+    if (rocketWithMotor && !flightSimBlocked()) void runFlightSim(rocketWithMotor);
   } catch (err) {
     detailEl.innerHTML = `<p><mark>Failed to load thrust curve: ${err instanceof Error ? err.message : String(err)}</mark></p>`;
   }
@@ -1734,7 +1835,7 @@ function wireWindImport(): void {
     // rebuild the rocket-with-motor object and re-run the sim as a side effect of an unrelated
     // action). Re-run directly here instead, if there's a motor to run it against.
     if (lastMotorSelection) {
-      const motor = buildSelectedMotor(lastMotorSelection.meta, lastMotorSelection.samples);
+      const motor = buildSelectedMotor(lastMotorSelection);
       void runFlightSim({ ...activeRocket, motor, windProfile: activeWindProfile, launchRodLength: activeLaunchRodLengthM });
     }
   });
@@ -1764,7 +1865,7 @@ function wireLaunchRodInput(): void {
     // Same "re-run if a motor's already selected" pattern as wind's own apply handler -- a flight
     // sim already run reflects whatever rod length was active AT THE TIME.
     if (lastMotorSelection) {
-      const motor = buildSelectedMotor(lastMotorSelection.meta, lastMotorSelection.samples);
+      const motor = buildSelectedMotor(lastMotorSelection);
       void runFlightSim({ ...activeRocket, motor, windProfile: activeWindProfile, launchRodLength: activeLaunchRodLengthM });
     }
   });
