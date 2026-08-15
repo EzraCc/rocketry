@@ -19,6 +19,12 @@ point in this list, and know immediately whether anything since then matters.
 
 ## 2026-08-15
 
+- `91eca90` — Ported OpenRocket's own supersonic/transonic fin CNa1 model, fin CP-shift model, and
+  fin pressure/base drag (previously entirely absent for fins) from `FinSetCalc.java`, replacing
+  formulas that were held flat past Mach 0.9 (see DEVIATIONS.md #2/#4). Changes CP, CNa, drag, and
+  hence apogee/velocity/stability margin for any flight that reaches Mach>0.9 — no effect on purely
+  subsonic flights. Resolved both previously-known supersonic apogee discrepancies in
+  `openrocket-comparison.test.ts` (mach1-chimera-bt60-j285, mach1-chimera-98mm-m685w).
 - `ca31526` — Fixed a real dry-mass/CG bug: RockSim's `<UseKnownCG>1</UseKnownCG>` overrides a
   shaped part's mass too, not just its CG — this parser only ever read it as CG-only. Changes
   `estimatedDryMassKg`/`estimatedDryCgM` for any RockSim file with a real weighed-part override
