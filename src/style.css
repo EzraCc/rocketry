@@ -29,6 +29,27 @@
   width: auto;
 }
 
+/* Embed mode only (see wireEmbedSendButton/updateEmbedSendButton in main.ts) -- deliberately NOT
+   sent automatically as soon as a motor's picked. A visitor should get to look over the flight-sim
+   result (apogee, stability, charts) first; this is the one explicit action that actually hands
+   data to splashcast. Fixed bottom-right so it stays reachable regardless of how far the page has
+   scrolled through the rocket/motor/results sections, same "float above the normal flow" pattern as
+   #unit-toggle (top-right) -- opposite corner so the two never collide. */
+#embed-send-btn {
+  position: fixed;
+  bottom: 0.75rem;
+  right: 0.75rem;
+  z-index: 100;
+  width: auto;
+  max-width: calc(100vw - 1.5rem);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.25);
+}
+
+#embed-send-btn[data-sent="true"] {
+  background: var(--pico-form-element-valid-border-color, #2a7);
+  border-color: var(--pico-form-element-valid-border-color, #2a7);
+}
+
 /* Alpha-stage disclaimer, near the top of the page so it's seen before anyone starts relying on a
    number -- reuses Pico's own <mark> warning colors (theme-aware already, same visual language as
    every other in-page warning) rather than a bespoke color, just as a bordered callout box instead

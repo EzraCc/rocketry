@@ -1857,6 +1857,61 @@ function mountFlightCharts(): void {
   if (lastFlightResult) renderFlightChart(FLIGHT_CHART_IDS, lastFlightResult.samples);
 }
 
+/**
+ * Embed mode's own "send to splashcast" button (see #embed-send-btn in the bootstrap template /
+ * style.css) -- deliberately NOT automatic. Sending the moment a motor's picked gave a visitor no
+ * chance to actually look over the flight-sim result (apogee, stability, charts) before it went to
+ * splashcast; this button is now the ONLY thing that triggers runEmbedMultiModelSim/postToEmbedParent
+ * on success. A cache-restored rocket+motor (restoreCachedConfigIfEmbedded) still auto-RUNS the
+ * local sim for review -- it just no longer auto-SENDS either, same as any other trigger.
+ *
+ * `sentForFlightResult` tracks WHICH result (by reference -- lastFlightResult is replaced wholesale
+ * by every successful runFlightSim, never mutated in place) has actually been sent, so any new local
+ * sim (a fresh motor pick, a CG/mass/rod-length edit) correctly flips the button back to "needs
+ * sending" even though it's the same DOM element just being relabeled.
+ */
+let sentForFlightResult: SimResult3D | null = null;
+let embedSendInFlight = false;
+
+function updateEmbedSendButton(): void {
+  const btn = document.querySelector<HTMLButtonElement>("#embed-send-btn");
+  if (!btn) return;
+  // windData/windContentFingerprint gate matches runEmbedMultiModelSim's own early-return exactly --
+  // without it, a click here would silently no-op (nothing computed, nothing posted) while the
+  // button still flipped to "sent," which would be a lie. In practice wind almost always finishes
+  // loading well before a visitor gets through picking a rocket + motor, but don't rely on that.
+  if (!embedState?.windData || !embedState.windContentFingerprint || !lastFlightResult || !lastFlightRocket) {
+    btn.hidden = true;
+    return;
+  }
+  btn.hidden = false;
+  btn.disabled = embedSendInFlight;
+  const alreadySent = sentForFlightResult === lastFlightResult;
+  btn.dataset.sent = String(alreadySent && !embedSendInFlight);
+  btn.textContent = embedSendInFlight
+    ? "Sending flight data to splashcast…"
+    : alreadySent
+      ? "✓ Sent to splashcast — send again"
+      : "📤 Send this flight to splashcast";
+}
+
+function wireEmbedSendButton(): void {
+  document.querySelector("#embed-send-btn")?.addEventListener("click", () => {
+    if (embedSendInFlight || !lastFlightRocket) return;
+    void (async () => {
+      embedSendInFlight = true;
+      updateEmbedSendButton();
+      try {
+        await runEmbedMultiModelSim(lastFlightRocket!);
+        sentForFlightResult = lastFlightResult;
+      } finally {
+        embedSendInFlight = false;
+        updateEmbedSendButton();
+      }
+    })();
+  });
+}
+
 /** Runs the (potentially expensive, many-thousand-substep) 3D ascent sim in a Web Worker and renders the result into #flight-sim-section once it resolves. */
 async function runFlightSim(rocket: Rocket): Promise<void> {
   const el = document.querySelector<HTMLDivElement>("#flight-sim-section");
@@ -1873,13 +1928,19 @@ async function runFlightSim(rocket: Rocket): Promise<void> {
     el.innerHTML = renderFlightResultHtml(rocket, result, elapsedMs);
     mountFlightCharts();
     // This single-profile result is only for the local display above -- the actual splashcast
-    // handoff runs its OWN independent sim per available forecast model (see its own doc comment
-    // on why: splashcast wants every model's ascent path, not just whichever one happened to be
-    // active locally). Not awaited -- the local display doesn't wait on the multi-model postMessage.
-    if (embedState) void runEmbedMultiModelSim(rocket);
+    // handoff runs its OWN independent sim per available forecast model (see runEmbedMultiModelSim's
+    // own doc comment on why: splashcast wants every model's ascent path, not just whichever one
+    // happened to be active locally). Deliberately NOT triggered automatically here -- see
+    // #embed-send-btn's own doc comment (updateEmbedSendButton) for why a visitor gets to review
+    // this result first, and only the button itself calls runEmbedMultiModelSim.
+    updateEmbedSendButton();
   } catch (err) {
     if (requestId !== flightSimRequestSeq) return;
     el.innerHTML = `<p><mark>Flight simulation failed: ${err instanceof Error ? err.message : String(err)}</mark></p>`;
+    // A failed sim leaves nothing reviewable -- hide the send button rather than leaving it
+    // pointing at a stale prior result the visitor can no longer see on screen.
+    const btn = document.querySelector<HTMLButtonElement>("#embed-send-btn");
+    if (btn) btn.hidden = true;
     if (embedState) {
       postToEmbedParent(buildErrorMessage(`Flight simulation failed: ${err instanceof Error ? err.message : String(err)}`));
     }
@@ -2673,6 +2734,10 @@ function wireEmbedMode(): void {
       activeWindProfile = data.profileFor(hour, models[0]!);
       updateActiveWindLabel();
       rerenderWindBody();
+      // Covers the (unlikely but possible) case where a visitor finishes picking a rocket+motor --
+      // and so already has a local result to review -- before this wind fetch itself resolves; the
+      // send button was hidden until now (see updateEmbedSendButton's own windData gate).
+      updateEmbedSendButton();
       // A cache-restored rocket+motor (see restoreCachedConfigIfEmbedded) may have finished BEFORE
       // this wind fetch resolved, in which case it left a rocket here waiting for wind data to
       // actually run against -- fire it now that wind's ready. Ordering the other way (wind first,
@@ -2848,6 +2913,7 @@ if (app) {
   resolveEmbedParamsAtBootstrap(); // before building HTML below, so renderWindSectionHtml sees the right mode
   app.innerHTML = `
     ${renderUnitToggleHtml()}
+    <button type="button" id="embed-send-btn" hidden></button>
     <main class="container">
       <hgroup>
         <h1>🚀 rocketry — flight simulator</h1>
@@ -2880,6 +2946,7 @@ if (app) {
   wireMotorSearch();
   wireWindImport();
   wireEmbedMode();
+  wireEmbedSendButton();
   wireLaunchRodInput();
   updateLaunchRodLengthUnitDisplay();
   wireUnitToggle();
