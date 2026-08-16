@@ -1008,6 +1008,22 @@ function wireNoseWeightPanel(): void {
 }
 
 function renderRocketSection(rocket: Rocket, mach: number, subtitle: string): string {
+  // Nothing loaded yet (initial page load before initLibrary/a restore resolves, or after a failed
+  // fetch) -- activeRocket is still defaultRocket()'s placeholder (0 components, 50g "dryMass" that
+  // means nothing real). Showing computed-looking stats (mass, CP, CG, length...) against that would
+  // read as real data about a rocket that doesn't exist; just show the subtitle's own status message
+  // instead (already carries "Loading...", "Browse the library below...", or a fetch-error string).
+  if (rocket.components.length === 0) {
+    return `
+      <article>
+        <header>
+          <h2>${rocket.name}</h2>
+          <p>${subtitle}</p>
+        </header>
+      </article>
+    `;
+  }
+
   const { cpX, refDiameter } = computeBarrowman(rocket.components, mach);
   // The displayed/stability-relevant CP: a user override (manual entry or "Use simfile CP") when
   // set, else the freshly computed value -- see activeCpOverrideM's own doc comment for why this
