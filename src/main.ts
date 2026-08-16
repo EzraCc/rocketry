@@ -32,6 +32,15 @@ import { parseSplashcastWindData, type SplashcastWindData } from "./physics/wind
 import { buildAscentPath } from "./physics/sim/ascent-path.js";
 import { parseEmbedParams, buildAscentResultsMessage, buildErrorMessage, type EmbedParams, type ModelAscentResult } from "./ui/embed.js";
 import {
+  saveCachedConfig,
+  loadCachedConfig,
+  clearCachedConfig,
+  buildOutboundRocketConfig,
+  type CachedRocketConfig,
+  type CachedParsedRocket,
+} from "./ui/rocket-cache.js";
+import { hashString, buildSimCacheKey, loadCachedSimResult, saveCachedSimResult } from "./ui/sim-result-cache.js";
+import {
   getUnitSystem,
   setUnitSystem,
   type UnitSystem,
@@ -196,6 +205,17 @@ let activeRocket: Rocket = defaultRocket();
  * find real sim files, independent of running anything here.
  */
 let activeLibraryEntry: LibraryManifestEntry | null = null;
+/**
+ * The parsed shape of the currently-active UPLOADED rocket (null when the active rocket came from
+ * the library instead, or nothing's loaded yet) -- set alongside `activeLibraryEntry = null` in
+ * wireOrkImport's upload handler, cleared alongside `activeLibraryEntry = entry` in
+ * selectLibraryEntry, same mutually-exclusive pairing. Exists purely so saveCurrentConfigToCache
+ * (see src/ui/rocket-cache.ts) can cache an upload's already-parsed geometry directly -- there's no
+ * stable ID for an uploaded file the way a library entry has one, so the cache holds the small
+ * parsed result itself rather than trying to re-identify/re-fetch the original file later.
+ */
+let lastUploadedParsedRocket: CachedParsedRocket | null = null;
+let lastUploadedFileName: string | null = null;
 let activeRocketSource = "Loading the rocket library…";
 /** Set by applyParsedRocket — the actual motor-fitting diameter (mm), used to pre-fill and constrain the motor search's diameter filter. Real value when available, else the rocket's own reference (outer body) diameter. */
 let activeMotorMountDiameterMm: number | null = null;
@@ -583,6 +603,49 @@ function wireInlineEditStat(idPrefix: string, onCommit: (rawInputValue: number) 
   });
 }
 
+/**
+ * Snapshots the currently-active rocket + motor + manual overrides into localStorage (see
+ * src/ui/rocket-cache.ts) -- called after every point that already mutates one of those pieces
+ * (a fresh rocket load, a motor pick, or a CG/mass/CP/launch-rod-length edit) so a later embed-mode
+ * visit in the same browser can skip straight back to "just rerun with today's weather" instead of
+ * redoing the whole setup (see restoreCachedConfigIfEmbedded). A no-op until a rocket's actually
+ * loaded (activeRocket.components.length === 0 at startup, before initLibrary/an upload resolves).
+ */
+function saveCurrentConfigToCache(): void {
+  if (activeRocket.components.length === 0) return;
+
+  const rocketSource: CachedRocketConfig["rocketSource"] | null = activeLibraryEntry
+    ? { kind: "library", entryId: activeLibraryEntry.id, displayName: activeRocket.name }
+    : lastUploadedParsedRocket
+      ? { kind: "upload", parsed: lastUploadedParsedRocket, fileName: lastUploadedFileName ?? "uploaded file", displayName: activeRocket.name }
+      : null;
+  if (!rocketSource) return; // nothing identifiable to cache yet (shouldn't happen once components.length > 0, but no source to replay is no source to save)
+
+  saveCachedConfig({
+    version: 1,
+    savedAt: new Date().toISOString(),
+    rocketSource,
+    overrides: {
+      dryMassKg: activeDryMassKg,
+      cgM: activeLoadedCgM,
+      cgOverriddenByUser,
+      cpOverrideM: activeCpOverrideM,
+      cpOverrideSource,
+      launchRodLengthM: activeLaunchRodLengthM,
+    },
+    motor: lastMotorSelection
+      ? {
+          motorId: lastMotorSelection.meta.motorId,
+          meta: lastMotorSelection.meta,
+          samples: lastMotorSelection.samples,
+          realMassBasis: lastMotorSelection.realMassBasis,
+          sourceFormat: lastMotorSelection.sourceFormat,
+          sourceQuality: lastMotorSelection.sourceQuality,
+        }
+      : null,
+  });
+}
+
 /** Re-renders everything downstream of a dry-mass change: the stats card, the motor table's T:W column, and (if a motor's selected) the motor detail panel + flight sim. Shared by the mass stat's commit and its reset. */
 function afterDryMassChanged(): void {
   rederiveDryCg();
@@ -600,6 +663,7 @@ function afterDryMassChanged(): void {
     // activeUnsupportedFeatures' own doc comment).
     if (rocketWithMotor && !flightSimBlocked()) void runFlightSim(rocketWithMotor);
   }
+  saveCurrentConfigToCache();
 }
 
 /**
@@ -712,6 +776,7 @@ function wireCgStatEdit(): void {
     // activeUnsupportedFeatures' own doc comment).
     if (rocketWithMotor && !flightSimBlocked()) void runFlightSim(rocketWithMotor);
     }
+    saveCurrentConfigToCache();
   });
 
   document.querySelector("#app")?.addEventListener("click", (e) => {
@@ -730,6 +795,7 @@ function wireCgStatEdit(): void {
     // activeUnsupportedFeatures' own doc comment).
     if (rocketWithMotor && !flightSimBlocked()) void runFlightSim(rocketWithMotor);
     }
+    saveCurrentConfigToCache();
   });
 }
 
@@ -773,6 +839,7 @@ function wireCpStatEdit(): void {
     activeCpOverrideM = lengthFromInput(rawInputValue);
     cpOverrideSource = "manual";
     renderActiveRocketDisplay();
+    saveCurrentConfigToCache();
   });
 
   document.querySelector("#app")?.addEventListener("click", (e) => {
@@ -780,6 +847,7 @@ function wireCpStatEdit(): void {
     activeCpOverrideM = undefined;
     cpOverrideSource = null;
     renderActiveRocketDisplay();
+    saveCurrentConfigToCache();
   });
 
   document.querySelector("#app")?.addEventListener("click", (e) => {
@@ -787,6 +855,7 @@ function wireCpStatEdit(): void {
     activeCpOverrideM = activeEmbeddedCpM;
     cpOverrideSource = "simfile";
     renderActiveRocketDisplay();
+    saveCurrentConfigToCache();
   });
 }
 
@@ -1763,6 +1832,7 @@ async function selectMotor(meta: MotorSearchResult): Promise<void> {
     // gated, since that's the part this project's aero model can't trust for that geometry (see
     // activeUnsupportedFeatures' own doc comment).
     if (rocketWithMotor && !flightSimBlocked()) void runFlightSim(rocketWithMotor);
+    saveCurrentConfigToCache();
   } catch (err) {
     detailEl.innerHTML = `<p><mark>Failed to load thrust curve: ${err instanceof Error ? err.message : String(err)}</mark></p>`;
   }
@@ -1993,9 +2063,13 @@ interface EmbedState {
   windUrl: string;
   hour: number;
   windData: SplashcastWindData | null;
+  /** A content hash (see src/ui/sim-result-cache.ts's hashString) of the raw fetched windUrl JSON text -- null until the fetch resolves, alongside windData. Used as the sim-result cache's own "did the forecast actually change" key, so a byte-identical refetch of the SAME hour still hits the cache while a genuinely updated forecast correctly forces a rerun. */
+  windContentFingerprint: string | null;
 }
 let embedState: EmbedState | null = null;
 let embedConfigError: { message: string; parentOrigin: string | null } | null = null;
+/** Set by restoreCachedConfigIfEmbedded when a cache-restored rocket+motor is ready to auto-run but wind data hasn't finished loading yet; cleared and fired by wireEmbedMode's own wind-load success handler once it has (see both functions' own doc comments -- restoring and wind-loading race, so whichever finishes second is the one that actually triggers the sim). */
+let pendingEmbedAutoRunRocket: Rocket | null = null;
 
 /** postMessage to embed mode's own parentOrigin -- a no-op outside embed mode (nothing to report to) or when a config error left no known parentOrigin to report to (see parseEmbedParams's own doc comment on that split). Never '*' -- always the exact origin embed mode was given. */
 function postToEmbedParent(message: ReturnType<typeof buildAscentResultsMessage> | ReturnType<typeof buildErrorMessage>): void {
@@ -2022,12 +2096,18 @@ function renderWindBodyHtml(): string {
       return `<p aria-busy="true">Loading wind data for hour ${embedState.hour}…</p>`;
     }
     const models = embedState.windData.modelsForHour(embedState.hour);
+    const cached = loadCachedConfig();
     return `
       <p><small>
         Real forecast wind for hour ${embedState.hour}:00, from splashcast --
         ${models.length} model${models.length === 1 ? "" : "s"} available (${models.map((m) => m.toUpperCase()).join(", ")}).
         Pick a rocket and motor below; every available model gets simulated and sent to splashcast, which shows or hides each one on its own side.
       </small></p>
+      ${
+        cached
+          ? `<p><small>Remembered from your last visit: ${buildOutboundRocketConfig(cached).label}. <button type="button" id="clear-cached-rocket-btn" class="outline secondary">Clear &amp; start over</button></small></p>`
+          : ""
+      }
     `;
   }
   return `
@@ -2154,6 +2234,7 @@ function wireLaunchRodInput(): void {
       const motor = buildSelectedMotor(lastMotorSelection);
       void runFlightSim({ ...activeRocket, motor, windProfile: activeWindProfile, launchRodLength: activeLaunchRodLengthM });
     }
+    saveCurrentConfigToCache();
   });
 }
 
@@ -2231,8 +2312,11 @@ function wireOrkImport(): void {
       try {
         // Only .ork carries an embedded motor reference -- RockSim and RASAero files have no
         // motor data at all, only mount geometry (parseRocksimXml/parseRasaeroXml's results have
-        // no `motor` field to begin with).
-        let parsed: { name: string; components: Component[]; warnings: string[]; estimatedDryMassKg?: number };
+        // no `motor` field to begin with). Widened to include every optional field
+        // applyParsedRocket/CachedParsedRocket can carry (not just the 4 always read directly
+        // below) so this same `parsed` can also be handed straight to saveCurrentConfigToCache
+        // without re-deriving a second, narrower view of the same parse result.
+        let parsed: CachedParsedRocket;
         let motor: { manufacturer: string; designation: string } | null;
         if (lowerName.endsWith(".rkt")) {
           parsed = parseRocksimXml(await file.text());
@@ -2249,6 +2333,8 @@ function wireOrkImport(): void {
         applyParsedRocket(parsed, `Uploaded: ${file.name}`);
         activeParseWarnings = parsed.warnings;
         activeLibraryEntry = null; // an uploaded file has no library manifest entry to link a download to
+        lastUploadedParsedRocket = parsed;
+        lastUploadedFileName = file.name;
 
         const massNote = parsed.estimatedDryMassKg && parsed.estimatedDryMassKg > 0
           ? ` Dry mass prefilled at ${fmtMass(activeDryMassKg)} from the file's own (structural-only) component masses — check it, then set loaded CG below (pencil icons on each figure — CG is never guessed).`
@@ -2260,6 +2346,7 @@ function wireOrkImport(): void {
 
         renderActiveRocketDisplay();
         renderAndWireResults(); // this rocket's dry mass changed -- keep the motor table's T:W column in sync
+        saveCurrentConfigToCache();
 
         if (motor) {
           const mfgEl = filterElement("manufacturer");
@@ -2408,6 +2495,8 @@ async function selectLibraryEntry(entry: LibraryManifestEntry): Promise<void> {
     applyParsedRocket(parsed, `From the library: ${entry.vendor} — ${entry.name}`, entry.name);
     activeParseWarnings = parsed.warnings;
     activeLibraryEntry = entry;
+    lastUploadedParsedRocket = null; // mutually exclusive with a library pick -- see its own doc comment
+    lastUploadedFileName = null;
 
     if (warningsEl) {
       const parseNote = parsed.warnings.length
@@ -2418,6 +2507,7 @@ async function selectLibraryEntry(entry: LibraryManifestEntry): Promise<void> {
     if (pickerEl) pickerEl.open = false;
     renderActiveRocketDisplay();
     renderAndWireResults(); // this rocket's dry mass changed -- keep the motor table's T:W column in sync
+    saveCurrentConfigToCache();
   } catch (err) {
     if (warningsEl) warningsEl.innerHTML = `<p><mark>Failed to load ${entry.name}: ${err instanceof Error ? err.message : String(err)}</mark></p>`;
   }
@@ -2535,7 +2625,7 @@ function resolveEmbedParamsAtBootstrap(): void {
     embedConfigError = { message: parsed.error, parentOrigin: parsed.parentOrigin };
     return;
   }
-  embedState = { parentOrigin: parsed.parentOrigin, windUrl: parsed.windUrl, hour: parsed.hour, windData: null };
+  embedState = { parentOrigin: parsed.parentOrigin, windUrl: parsed.windUrl, hour: parsed.hour, windData: null, windContentFingerprint: null };
 }
 
 /** Re-renders just the #wind-body slot -- same targeted-update pattern as #motor-results/#library-results elsewhere in this file, so an async wind-data update doesn't disturb the rest of the (already-interacted-with) page. */
@@ -2565,18 +2655,33 @@ function wireEmbedMode(): void {
   void fetch(windUrl)
     .then((res) => {
       if (!res.ok) throw new Error(`Wind data request failed (HTTP ${res.status}).`);
-      return res.json();
+      return res.text();
     })
-    .then((json) => {
-      const data = parseSplashcastWindData(json);
+    .then((text) => {
+      // Fetched as text (not res.json() directly) so the RAW bytes can be hashed for the sim-result
+      // cache's own "did the forecast actually change" key (see sim-result-cache.ts) -- re-serializing
+      // the parsed object back to JSON to hash it would risk key-order drift producing a spurious
+      // "changed" hash for byte-identical data.
+      const windContentFingerprint = hashString(text);
+      const data = parseSplashcastWindData(JSON.parse(text));
       const models = data.modelsForHour(hour);
       if (models.length === 0) {
         throw new Error(`No wind data available for hour ${hour}.`);
       }
       embedState!.windData = data;
+      embedState!.windContentFingerprint = windContentFingerprint;
       activeWindProfile = data.profileFor(hour, models[0]!);
       updateActiveWindLabel();
       rerenderWindBody();
+      // A cache-restored rocket+motor (see restoreCachedConfigIfEmbedded) may have finished BEFORE
+      // this wind fetch resolved, in which case it left a rocket here waiting for wind data to
+      // actually run against -- fire it now that wind's ready. Ordering the other way (wind first,
+      // restore later) is handled on restore's own side instead (see its own doc comment).
+      if (pendingEmbedAutoRunRocket) {
+        const rocket = pendingEmbedAutoRunRocket;
+        pendingEmbedAutoRunRocket = null;
+        void runFlightSim(rocket);
+      }
     })
     .catch((err) => {
       const reason = err instanceof Error ? err.message : String(err);
@@ -2589,6 +2694,22 @@ function wireEmbedMode(): void {
 }
 
 /**
+ * A rocket's own sim-relevant state, fingerprinted for the sim-result cache's cache key (see
+ * sim-result-cache.ts) -- everything on Rocket EXCEPT windProfile (that's covered separately, via
+ * the forecast content hash + model + hour, since the same rocket gets simulated against several
+ * different wind profiles per call here). Deliberately the raw Rocket object, not a hand-picked list
+ * of fields: whatever actually feeds simulateFlight3D (components, mass, CG, motor, launch rod
+ * length, launch altitude) automatically stays covered without this needing to be kept in sync by
+ * hand as those fields evolve. cpOverrideM/cpOverrideSource are correctly NOT included here since
+ * they're not part of Rocket at all -- display-only, never fed to the sim (see their own doc
+ * comments in main.ts) -- so editing CP correctly does NOT invalidate this fingerprint.
+ */
+function computeSimFingerprint(rocket: Rocket): string {
+  const { windProfile: _windProfile, ...rest } = rocket;
+  return hashString(JSON.stringify(rest));
+}
+
+/**
  * Runs the flight sim once per forecast model actually available for embedState's own hour (not a
  * fixed count, not user-chosen -- see renderWindBodyHtml's own doc comment), collecting one
  * AscentPath per model, and posts them all together as a single rocketry:ascentResults message.
@@ -2596,19 +2717,33 @@ function wireEmbedMode(): void {
  * A single model's own sim throwing doesn't take down the rest -- skipped with a console warning,
  * not a fatal error, since the other models' own runs are independently valid regardless. Only
  * posts an error if EVERY model failed (nothing usable to send at all).
+ *
+ * Checks the sim-result cache (see sim-result-cache.ts) before actually simulating each model --
+ * scrubbing splashcast's own time slider back to an hour already visited earlier in this browsing
+ * session, with the same rocket+motor+overrides and an unchanged forecast, returns the previous
+ * result instantly instead of re-running a real numerical simulation for identical inputs.
  */
 async function runEmbedMultiModelSim(rocket: Rocket): Promise<void> {
-  if (!embedState?.windData) return;
-  const { windData, hour } = embedState;
+  if (!embedState?.windData || !embedState.windContentFingerprint) return;
+  const { windData, hour, windContentFingerprint } = embedState;
   const models = windData.modelsForHour(hour);
+  const rocketFingerprint = computeSimFingerprint(rocket);
 
   const results: ModelAscentResult[] = [];
   for (const model of models) {
+    const cacheKey = buildSimCacheKey({ forecastFingerprint: windContentFingerprint, hour, model, rocketFingerprint });
+    const cached = loadCachedSimResult(cacheKey);
+    if (cached) {
+      results.push({ model, ascentPath: cached });
+      continue;
+    }
     try {
       const windProfile = windData.profileFor(hour, model);
       const modelRocket: Rocket = { ...rocket, windProfile };
       const result = await simulateFlight3DInWorker(modelRocket);
-      results.push({ model, ascentPath: buildAscentPath(result, modelRocket) });
+      const ascentPath = buildAscentPath(result, modelRocket);
+      results.push({ model, ascentPath });
+      saveCachedSimResult(cacheKey, ascentPath);
     } catch (err) {
       console.warn(`Skipping model "${model}" in embed multi-model sim:`, err);
     }
@@ -2620,7 +2755,91 @@ async function runEmbedMultiModelSim(rocket: Rocket): Promise<void> {
   }
 
   const stability = computeLiftoffStability(rocket);
-  postToEmbedParent(buildAscentResultsMessage(rocket.name, activeParseWarnings, stability, results));
+  const cachedConfig = loadCachedConfig();
+  const rocketConfig = cachedConfig ? buildOutboundRocketConfig(cachedConfig) : undefined;
+  postToEmbedParent(buildAscentResultsMessage(rocket.name, activeParseWarnings, stability, results, rocketConfig));
+}
+
+/**
+ * Snapshot restore counterpart to saveCurrentConfigToCache -- reapplies a cached rocket+motor+
+ * overrides config (see src/ui/rocket-cache.ts) in embed mode ONLY, so a repeat splashcast-embed
+ * visit in the same browser skips straight back to "just rerun with today's weather" instead of
+ * redoing the whole rocket pick / motor search / CG-mass-CP entry every single time (splashcast
+ * fully tears down and rebuilds the iframe on every modal close/open, but always from this same
+ * origin -- see this feature's own plan file for the confirmed details). Deliberately scoped to
+ * embed mode -- normal browsing already has its own `?rocket=` URL-param auto-load (initLibrary),
+ * and layering a second silent auto-restore mechanism on top of that in normal mode would make it
+ * ambiguous which one "won" on any given visit.
+ *
+ * Called once, after initLibrary() has resolved (so a library-sourced cache entry can be looked up
+ * in the now-populated libraryManifest) -- see the bootstrap below. A no-op if something's already
+ * loaded (e.g. a `?rocket=` URL param initLibrary itself already handled) or if there's nothing
+ * cached yet.
+ */
+async function restoreCachedConfigIfEmbedded(): Promise<void> {
+  if (!embedState) return;
+  if (activeRocket.components.length > 0) return; // something already loaded -- don't clobber it
+  const cached = loadCachedConfig();
+  if (!cached) return;
+
+  if (cached.rocketSource.kind === "library") {
+    const entryId = cached.rocketSource.entryId;
+    const entry = libraryManifest.find((e) => e.id === entryId);
+    if (!entry) return; // soft cache -- the library entry was renamed/removed since, just skip silently
+    await selectLibraryEntry(entry);
+  } else {
+    const { parsed, fileName } = cached.rocketSource;
+    applyParsedRocket(parsed, `Restored from your last session (uploaded: ${fileName})`, parsed.name);
+    activeParseWarnings = parsed.warnings;
+    activeLibraryEntry = null;
+    lastUploadedParsedRocket = parsed;
+    lastUploadedFileName = fileName;
+    renderActiveRocketDisplay();
+    renderAndWireResults();
+  }
+
+  applyRestoredOverridesAndMotor(cached);
+  // The rocket-load step above (selectLibraryEntry/applyParsedRocket) triggers its own
+  // saveCurrentConfigToCache internally, using module state AS OF THAT MOMENT -- lastMotorSelection
+  // hasn't been restored yet at that point, so it saves a motor-less snapshot, clobbering the very
+  // cache entry this function is restoring FROM. Re-save now that every piece (rocket, overrides,
+  // motor) is actually in place, so the on-disk cache ends up correct regardless of what happened
+  // in between.
+  saveCurrentConfigToCache();
+}
+
+/** The override-reapply + motor-restore half of restoreCachedConfigIfEmbedded, split out since the library and upload branches above both need to run it identically once the base rocket itself is loaded. */
+function applyRestoredOverridesAndMotor(cached: CachedRocketConfig): void {
+  activeDryMassKg = cached.overrides.dryMassKg;
+  activeLoadedCgM = cached.overrides.cgM;
+  cgOverriddenByUser = cached.overrides.cgOverriddenByUser;
+  activeCpOverrideM = cached.overrides.cpOverrideM;
+  cpOverrideSource = cached.overrides.cpOverrideSource;
+  activeLaunchRodLengthM = cached.overrides.launchRodLengthM;
+  dryMassOverriddenViaLoadedEdit = false; // a restored mass is a fresh baseline, not entangled with any specific motor's own mass
+  rederiveDryCg();
+  updateLaunchRodLengthUnitDisplay();
+  renderActiveRocketDisplay();
+
+  if (!cached.motor) return;
+  lastMotorSelection = {
+    meta: cached.motor.meta,
+    samples: cached.motor.samples,
+    realMassBasis: cached.motor.realMassBasis,
+    sourceFormat: cached.motor.sourceFormat,
+    sourceQuality: cached.motor.sourceQuality,
+  };
+  const rocketWithMotor = renderMotorDetailAndMountChart(cached.motor.meta, cached.motor.samples);
+  renderActiveRocketDisplay();
+  if (!rocketWithMotor || flightSimBlocked()) return;
+
+  if (embedState?.windData) {
+    void runFlightSim(rocketWithMotor);
+  } else {
+    // Wind hasn't finished loading yet -- wireEmbedMode's own wind-load success handler picks this
+    // up and fires it once it has (see pendingEmbedAutoRunRocket's own doc comment).
+    pendingEmbedAutoRunRocket = rocketWithMotor;
+  }
 }
 
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -2670,7 +2889,14 @@ if (app) {
   wireCpStatEdit();
   wireNoseWeightPanel();
   wireChartCursorReset();
-  void initLibrary();
+  document.querySelector("#app")?.addEventListener("click", (e) => {
+    if (!(e.target as HTMLElement).closest("#clear-cached-rocket-btn")) return;
+    clearCachedConfig();
+    rerenderWindBody();
+  });
+  void initLibrary().then(() => {
+    if (embedState) void restoreCachedConfigIfEmbedded();
+  });
   const urlParams = new URLSearchParams(location.search);
   const hadUrlFilters = (Object.keys(FILTER_DEFAULTS) as FilterKey[]).some((k) => urlParams.has(k));
   void loadMotorMetadata().then(() => {

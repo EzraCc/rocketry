@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildAscentResultsMessage, buildErrorMessage, parseEmbedParams, type ModelAscentResult } from "./embed.js";
 import type { StabilityCheck } from "../physics/aero/stability-check.js";
 import type { AscentPath } from "../physics/sim/ascent-path.js";
+import type { OutboundRocketConfig } from "./rocket-cache.js";
 
 const EMPTY_ASCENT_PATH: AscentPath = {
   waypoints: [],
@@ -103,6 +104,25 @@ describe("buildAscentResultsMessage", () => {
     const stability: StabilityCheck = { margin: 1.0, flyable: true, warnings: [] };
     const msg = buildAscentResultsMessage("Rocket", [], stability, [{ model: "hrrr", ascentPath: EMPTY_ASCENT_PATH }]);
     expect(msg.results).toHaveLength(1);
+  });
+
+  it("omits rocketConfig entirely (undefined, not present after JSON serialization) when the caller has no cached config to attach -- existing consumers unaffected", () => {
+    const stability: StabilityCheck = { margin: 1.0, flyable: true, warnings: [] };
+    const msg = buildAscentResultsMessage("Rocket", [], stability, [{ model: "gfs", ascentPath: EMPTY_ASCENT_PATH }]);
+    expect(msg.rocketConfig).toBeUndefined();
+    expect(JSON.parse(JSON.stringify(msg))).not.toHaveProperty("rocketConfig");
+  });
+
+  it("carries a human-labeled rocketConfig through untouched when provided", () => {
+    const stability: StabilityCheck = { margin: 1.0, flyable: true, warnings: [] };
+    const rocketConfig: OutboundRocketConfig = {
+      label: "LOC-IV X2 + AeroTech K400C",
+      rocketSource: { kind: "library", entryId: "loc-iv-x2" },
+      motorId: "5f4294d20002310000000450",
+      overrides: { dryMassKg: 1.7, cgM: 0.8, cgOverriddenByUser: false, cpOverrideM: undefined, cpOverrideSource: null, launchRodLengthM: 2.1336 },
+    };
+    const msg = buildAscentResultsMessage("Rocket", [], stability, [{ model: "gfs", ascentPath: EMPTY_ASCENT_PATH }], rocketConfig);
+    expect(msg.rocketConfig).toEqual(rocketConfig);
   });
 });
 

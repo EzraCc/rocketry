@@ -1,5 +1,6 @@
 import type { StabilityCheck } from "../physics/aero/stability-check.js";
 import type { AscentPath } from "../physics/sim/ascent-path.js";
+import type { OutboundRocketConfig } from "./rocket-cache.js";
 
 /**
  * "Embed mode" -- gated behind `?embed=1` on the existing single-page app, for splashcast
@@ -62,14 +63,30 @@ export interface ModelAscentResult {
  * `stability` is a single top-level field, not duplicated per model -- the static margin depends
  * only on CP/CG geometry, never on wind, so every model would report the exact same value; sending
  * it once avoids N identical copies and makes that invariant explicit rather than implicit.
+ *
+ * `rocketConfig` (optional, added for the repeat-visitor caching feature -- see
+ * src/ui/rocket-cache.ts) is a compact, human-labeled descriptor of the rocket+motor+overrides that
+ * produced this result. Additive-only: omitted entirely (`undefined`, not present in the JSON when
+ * serialized) whenever the caller has no cached config to attach, so a consumer that predates this
+ * field (splashcast's own listener, at time of writing) is entirely unaffected either way. Not yet
+ * consumed on the inbound side by anything in this repo -- see rocket-cache.ts's own header comment
+ * for the deferred "splashcast stores this and passes it back" follow-up this unlocks.
  */
 export function buildAscentResultsMessage(
   rocketName: string,
   parseWarnings: string[],
   stability: StabilityCheck,
   results: ModelAscentResult[],
-): { type: "rocketry:ascentResults"; rocketName: string; parseWarnings: string[]; stability: StabilityCheck; results: ModelAscentResult[] } {
-  return { type: "rocketry:ascentResults", rocketName, parseWarnings, stability, results };
+  rocketConfig?: OutboundRocketConfig,
+): {
+  type: "rocketry:ascentResults";
+  rocketName: string;
+  parseWarnings: string[];
+  stability: StabilityCheck;
+  results: ModelAscentResult[];
+  rocketConfig?: OutboundRocketConfig;
+} {
+  return { type: "rocketry:ascentResults", rocketName, parseWarnings, stability, results, rocketConfig };
 }
 
 /** Assembles the exact `rocketry:error` postMessage envelope. `message` should be specific enough to show directly to the splashcast visitor (see the contract's own guidance), not a raw stack trace. */
