@@ -215,8 +215,11 @@ pure logic in dedicated modules):
       text lists all 6 models, one `rocketry:ascentResults` message with
       `results.length === 6` (distinct per-model apogee altitudes), single
       top-level `stability`, no per-result `stability` duplication
-- [ ] Commit + push + verify live on GitHub Pages against production splashcast
-- [ ] Flag to the user (done in-conversation, not a code task) that
+- [x] Commit (`df1fa0c`) + push + verify live on GitHub Pages against
+      production splashcast -- `https://ezracc.github.io/rocketry/?embed=1&...`
+      confirmed identical to local dev: no picker, 6 models, single
+      `rocketry:ascentResults` with 6 results and one top-level `stability`
+- [x] Flag to the user (done in-conversation, not a code task) that
       splashcast's own consumer code needs a corresponding update for the new
       plural message shape
 
