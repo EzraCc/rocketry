@@ -30,7 +30,7 @@ import { simulateFlight3DInWorker } from "./worker/sim-worker-client.js";
 import { windAt, constantWindProfile, type WindProfile } from "./model/wind.js";
 import { parseSplashcastWindData, type SplashcastWindData } from "./physics/wind/splashcast-import.js";
 import { buildAscentPath } from "./physics/sim/ascent-path.js";
-import { parseEmbedParams, buildAscentResultMessage, buildErrorMessage, type EmbedParams } from "./ui/embed.js";
+import { parseEmbedParams, buildAscentResultsMessage, buildErrorMessage, type EmbedParams, type ModelAscentResult } from "./ui/embed.js";
 import {
   getUnitSystem,
   setUnitSystem,
@@ -1802,20 +1802,11 @@ async function runFlightSim(rocket: Rocket): Promise<void> {
     lastFlightElapsedMs = elapsedMs;
     el.innerHTML = renderFlightResultHtml(rocket, result, elapsedMs);
     mountFlightCharts();
-    if (embedState) {
-      // Posted regardless of stability.flyable -- a marginal or unstable pick is still a real,
-      // legitimate answer to "what would this rocket actually do," not something to block here;
-      // splashcast is responsible for surfacing the warning on its own side (see the contract).
-      // Its own try/catch: a failure building the ascent path shouldn't leave the promise's
-      // success branch silently posting nothing back to splashcast.
-      try {
-        const stability = computeLiftoffStability(rocket);
-        const ascentPath = buildAscentPath(result, rocket);
-        postToEmbedParent(buildAscentResultMessage(rocket.name, activeParseWarnings, stability, ascentPath));
-      } catch (err) {
-        postToEmbedParent(buildErrorMessage(`Could not build the ascent-path result: ${err instanceof Error ? err.message : String(err)}`));
-      }
-    }
+    // This single-profile result is only for the local display above -- the actual splashcast
+    // handoff runs its OWN independent sim per available forecast model (see its own doc comment
+    // on why: splashcast wants every model's ascent path, not just whichever one happened to be
+    // active locally). Not awaited -- the local display doesn't wait on the multi-model postMessage.
+    if (embedState) void runEmbedMultiModelSim(rocket);
   } catch (err) {
     if (requestId !== flightSimRequestSeq) return;
     el.innerHTML = `<p><mark>Flight simulation failed: ${err instanceof Error ? err.message : String(err)}</mark></p>`;
@@ -1994,27 +1985,34 @@ function wireMotorSearch(): void {
  * once at bootstrap from the URL, before the first render, since renderWindSectionHtml/
  * renderWindBodyHtml need to know which of three states to show synchronously: normal manual-wind
  * entry (both null), a config error (embedConfigError set), or a valid embed session that's either
- * still loading its wind data (embedState set, windData still null) or ready with a model picker
- * (embedState.windData set).
+ * still loading its wind data (embedState set, windData still null) or ready (embedState.windData
+ * set -- every available model gets simulated automatically, no picker to wait on here).
  */
 interface EmbedState {
   parentOrigin: string;
   windUrl: string;
   hour: number;
   windData: SplashcastWindData | null;
-  selectedModel: string | null;
 }
 let embedState: EmbedState | null = null;
 let embedConfigError: { message: string; parentOrigin: string | null } | null = null;
 
 /** postMessage to embed mode's own parentOrigin -- a no-op outside embed mode (nothing to report to) or when a config error left no known parentOrigin to report to (see parseEmbedParams's own doc comment on that split). Never '*' -- always the exact origin embed mode was given. */
-function postToEmbedParent(message: ReturnType<typeof buildAscentResultMessage> | ReturnType<typeof buildErrorMessage>): void {
+function postToEmbedParent(message: ReturnType<typeof buildAscentResultsMessage> | ReturnType<typeof buildErrorMessage>): void {
   const target = embedState?.parentOrigin ?? embedConfigError?.parentOrigin;
   if (!target || !window.parent) return;
   window.parent.postMessage(message, target);
 }
 
-/** The part of the "Launch settings" article that varies by mode -- manual wind entry (normal), a model picker (valid embed session), a loading placeholder (embed session, wind fetch in flight), or an error (embed config error, or the wind fetch/parse itself failing). Re-rendered into #wind-body once the async wind fetch settles (see wireEmbedMode); the rest of the article (header, launch rod length) never changes shape between modes. */
+/**
+ * The part of the "Launch settings" article that varies by mode -- manual wind entry (normal), an
+ * informational note (valid embed session -- no picker: splashcast's own `selectedModels` toggle
+ * already shows/hides individual models on ITS side once it has every available model's own ascent
+ * path, so there's nothing for a visitor to pick here), a loading placeholder (embed session, wind
+ * fetch in flight), or an error (embed config error, or the wind fetch/parse itself failing).
+ * Re-rendered into #wind-body once the async wind fetch settles (see wireEmbedMode); the rest of
+ * the article (header, launch rod length) never changes shape between modes.
+ */
 function renderWindBodyHtml(): string {
   if (embedConfigError) {
     return `<p><mark>${embedConfigError.message}</mark></p>`;
@@ -2024,16 +2022,12 @@ function renderWindBodyHtml(): string {
       return `<p aria-busy="true">Loading wind data for hour ${embedState.hour}…</p>`;
     }
     const models = embedState.windData.modelsForHour(embedState.hour);
-    const options = models
-      .map(
-        (model) =>
-          `<label><input type="radio" name="embed-wind-model" value="${model}" ${model === embedState!.selectedModel ? "checked" : ""} /> ${model.toUpperCase()}</label>`,
-      )
-      .join("");
     return `
-      <p><small>Real forecast wind for hour ${embedState.hour}:00, from splashcast. Pick a weather model:</small></p>
-      <div id="embed-model-picker">${options}</div>
-      <p id="wind-active-label"><small>Currently: calm (no wind).</small></p>
+      <p><small>
+        Real forecast wind for hour ${embedState.hour}:00, from splashcast --
+        ${models.length} model${models.length === 1 ? "" : "s"} available (${models.map((m) => m.toUpperCase()).join(", ")}).
+        Pick a rocket and motor below; every available model gets simulated and sent to splashcast, which shows or hides each one on its own side.
+      </small></p>
     `;
   }
   return `
@@ -2541,7 +2535,7 @@ function resolveEmbedParamsAtBootstrap(): void {
     embedConfigError = { message: parsed.error, parentOrigin: parsed.parentOrigin };
     return;
   }
-  embedState = { parentOrigin: parsed.parentOrigin, windUrl: parsed.windUrl, hour: parsed.hour, windData: null, selectedModel: null };
+  embedState = { parentOrigin: parsed.parentOrigin, windUrl: parsed.windUrl, hour: parsed.hour, windData: null };
 }
 
 /** Re-renders just the #wind-body slot -- same targeted-update pattern as #motor-results/#library-results elsewhere in this file, so an async wind-data update doesn't disturb the rest of the (already-interacted-with) page. */
@@ -2553,8 +2547,12 @@ function rerenderWindBody(): void {
 /**
  * The async/side-effecting half of embed setup -- called once after the initial render (see the
  * bootstrap below). Posts the config-error message (if any) now that there's a parent frame to
- * post to, kicks off the wind fetch+parse for a valid embed session, and wires the model-picker's
- * delegated change handler.
+ * post to, and kicks off the wind fetch+parse for a valid embed session. No model-picker wiring --
+ * there's no picker (see renderWindBodyHtml's own doc comment); once wind data loads, the FIRST
+ * available model becomes activeWindProfile purely so this project's own local UI (the single
+ * flight-sim-results panel a visitor sees while embedded) has something representative to show --
+ * the actual multi-model work happens independently in runEmbedMultiModelSim, using every
+ * available model, not just this one.
  */
 function wireEmbedMode(): void {
   if (embedConfigError) {
@@ -2571,10 +2569,13 @@ function wireEmbedMode(): void {
     })
     .then((json) => {
       const data = parseSplashcastWindData(json);
-      if (data.modelsForHour(hour).length === 0) {
+      const models = data.modelsForHour(hour);
+      if (models.length === 0) {
         throw new Error(`No wind data available for hour ${hour}.`);
       }
       embedState!.windData = data;
+      activeWindProfile = data.profileFor(hour, models[0]!);
+      updateActiveWindLabel();
       rerenderWindBody();
     })
     .catch((err) => {
@@ -2585,22 +2586,41 @@ function wireEmbedMode(): void {
       postToEmbedParent(buildErrorMessage(message));
       rerenderWindBody();
     });
+}
 
-  document.querySelector("#app")?.addEventListener("change", (e) => {
-    const target = e.target as HTMLInputElement;
-    if (target.name !== "embed-wind-model" || !embedState?.windData) return;
-    const model = target.value;
-    embedState.selectedModel = model;
-    activeWindProfile = embedState.windData.profileFor(embedState.hour, model);
-    updateActiveWindLabel();
-    // Same "re-run immediately, don't wait for an unrelated action" behavior wireWindImport's own
-    // manual-apply handler already has -- a wind change should be reflected right away if a motor
-    // is already selected, not just on the next unrelated interaction.
-    if (lastMotorSelection) {
-      const motor = buildSelectedMotor(lastMotorSelection);
-      void runFlightSim({ ...activeRocket, motor, windProfile: activeWindProfile, launchRodLength: activeLaunchRodLengthM });
+/**
+ * Runs the flight sim once per forecast model actually available for embedState's own hour (not a
+ * fixed count, not user-chosen -- see renderWindBodyHtml's own doc comment), collecting one
+ * AscentPath per model, and posts them all together as a single rocketry:ascentResults message.
+ * Stability is rocket-geometry-only (never depends on wind), so it's computed once, not per model.
+ * A single model's own sim throwing doesn't take down the rest -- skipped with a console warning,
+ * not a fatal error, since the other models' own runs are independently valid regardless. Only
+ * posts an error if EVERY model failed (nothing usable to send at all).
+ */
+async function runEmbedMultiModelSim(rocket: Rocket): Promise<void> {
+  if (!embedState?.windData) return;
+  const { windData, hour } = embedState;
+  const models = windData.modelsForHour(hour);
+
+  const results: ModelAscentResult[] = [];
+  for (const model of models) {
+    try {
+      const windProfile = windData.profileFor(hour, model);
+      const modelRocket: Rocket = { ...rocket, windProfile };
+      const result = await simulateFlight3DInWorker(modelRocket);
+      results.push({ model, ascentPath: buildAscentPath(result, modelRocket) });
+    } catch (err) {
+      console.warn(`Skipping model "${model}" in embed multi-model sim:`, err);
     }
-  });
+  }
+
+  if (results.length === 0) {
+    postToEmbedParent(buildErrorMessage(`Flight simulation failed for every available model (${models.join(", ")}).`));
+    return;
+  }
+
+  const stability = computeLiftoffStability(rocket);
+  postToEmbedParent(buildAscentResultsMessage(rocket.name, activeParseWarnings, stability, results));
 }
 
 const app = document.querySelector<HTMLDivElement>("#app");

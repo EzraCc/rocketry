@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { buildAscentResultMessage, buildErrorMessage, parseEmbedParams } from "./embed.js";
+import { buildAscentResultsMessage, buildErrorMessage, parseEmbedParams, type ModelAscentResult } from "./embed.js";
 import type { StabilityCheck } from "../physics/aero/stability-check.js";
 import type { AscentPath } from "../physics/sim/ascent-path.js";
+
+const EMPTY_ASCENT_PATH: AscentPath = {
+  waypoints: [],
+  path: [],
+  segments: [],
+  windShear: { ground: { vx: 0, vy: 0, speed: 0, directionFromDeg: 0 }, aloft: { vx: 0, vy: 0, speed: 0, directionFromDeg: 0 }, speedDeltaMs: 0, directionDeltaDeg: 0 },
+};
 
 describe("parseEmbedParams", () => {
   it("returns null when embed isn't exactly \"1\" (normal mode)", () => {
@@ -57,37 +64,45 @@ describe("parseEmbedParams", () => {
   });
 });
 
-describe("buildAscentResultMessage", () => {
-  it("assembles the exact rocketry:ascentResult envelope, passing StabilityCheck through unchanged (real field name \"margin\", not \"marginCalibers\")", () => {
+describe("buildAscentResultsMessage", () => {
+  it("assembles the exact rocketry:ascentResults envelope, passing StabilityCheck through unchanged (real field name \"margin\", not \"marginCalibers\") as a single top-level field, not duplicated per model", () => {
     const stability: StabilityCheck = { margin: 1.5, flyable: true, warnings: [] };
-    const ascentPath: AscentPath = {
-      waypoints: [],
-      path: [],
-      segments: [],
-      windShear: { ground: { vx: 0, vy: 0, speed: 0, directionFromDeg: 0 }, aloft: { vx: 0, vy: 0, speed: 0, directionFromDeg: 0 }, speedDeltaMs: 0, directionDeltaDeg: 0 },
-    };
-    const msg = buildAscentResultMessage("My Rocket", ["warning 1"], stability, ascentPath);
+    const results: ModelAscentResult[] = [
+      { model: "gfs", ascentPath: EMPTY_ASCENT_PATH },
+      { model: "ecmwf", ascentPath: EMPTY_ASCENT_PATH },
+    ];
+    const msg = buildAscentResultsMessage("My Rocket", ["warning 1"], stability, results);
     expect(msg).toEqual({
-      type: "rocketry:ascentResult",
+      type: "rocketry:ascentResults",
       rocketName: "My Rocket",
       parseWarnings: ["warning 1"],
       stability,
-      ascentPath,
+      results,
     });
     expect((msg.stability as { marginCalibers?: number }).marginCalibers).toBeUndefined();
+    // Only one stability value, shared across every model -- no per-result duplicate.
+    expect("stability" in msg.results[0]!).toBe(false);
   });
 
   it("includes stability.flyable=false as-is -- never gates or blocks a marginal/unstable result", () => {
     const stability: StabilityCheck = { margin: -0.3, flyable: false, warnings: ["NOT FLYABLE: ..."] };
-    const ascentPath: AscentPath = {
-      waypoints: [],
-      path: [],
-      segments: [],
-      windShear: { ground: { vx: 0, vy: 0, speed: 0, directionFromDeg: 0 }, aloft: { vx: 0, vy: 0, speed: 0, directionFromDeg: 0 }, speedDeltaMs: 0, directionDeltaDeg: 0 },
-    };
-    const msg = buildAscentResultMessage("Marginal Rocket", [], stability, ascentPath);
+    const msg = buildAscentResultsMessage("Marginal Rocket", [], stability, [{ model: "gfs", ascentPath: EMPTY_ASCENT_PATH }]);
     expect(msg.stability.flyable).toBe(false);
     expect(msg.stability.warnings).toEqual(["NOT FLYABLE: ..."]);
+  });
+
+  it("supports an arbitrary number of models -- whatever's actually available, not a fixed count", () => {
+    const stability: StabilityCheck = { margin: 1.0, flyable: true, warnings: [] };
+    const results: ModelAscentResult[] = ["gfs", "ecmwf", "gem", "icon", "arpege", "hrrr"].map((model) => ({ model, ascentPath: EMPTY_ASCENT_PATH }));
+    const msg = buildAscentResultsMessage("Rocket", [], stability, results);
+    expect(msg.results).toHaveLength(6);
+    expect(msg.results.map((r) => r.model)).toEqual(["gfs", "ecmwf", "gem", "icon", "arpege", "hrrr"]);
+  });
+
+  it("handles a single available model too (e.g. close to launch, only one forecast still live)", () => {
+    const stability: StabilityCheck = { margin: 1.0, flyable: true, warnings: [] };
+    const msg = buildAscentResultsMessage("Rocket", [], stability, [{ model: "hrrr", ascentPath: EMPTY_ASCENT_PATH }]);
+    expect(msg.results).toHaveLength(1);
   });
 });
 

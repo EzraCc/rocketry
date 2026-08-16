@@ -1,7 +1,7 @@
 Status: done
 Priority: high
 Type: new-feature
-Last updated: 2026-08-16
+Last updated: 2026-08-16 (multi-model redesign)
 
 # rocketry "embed mode" for the splashcast integration
 
@@ -24,6 +24,81 @@ exist and are waiting). The task on this side is exactly what
 `splashcast/.claude/plans/rocketry-flight-sim-integration.md`, read in full)
 specifies: a new "embed mode" gated behind a URL flag on the existing
 single-page app.
+
+## Update 2026-08-16: multi-model redesign
+
+The original design (below, kept for history) shipped and was verified live
+against production splashcast, but the user then pointed out a real design
+flaw after using it: splashcast is explicitly named for running *multiple*
+forecast models and drawing a "somewhere here, probably" landing footprint —
+forcing the visitor to pick ONE model at the rocketry-embed step, before the
+motor is even flown, contradicted that. Splashcast's own descent side
+already computes drift independently per model and lets the visitor toggle
+each model's visibility client-side (`state.selectedModels`, confirmed by
+reading `splashcast/site/assets/js/app.js` directly) — the ascent side
+should work the same way: simulate every available model, hand all of them
+to splashcast, let splashcast own the show/hide toggle.
+
+**Contract change: `rocketry:ascentResult` (singular, one ascent path) →
+`rocketry:ascentResults` (plural, one ascent path per available forecast
+model).** New shape:
+```
+{ type: "rocketry:ascentResults", rocketName, parseWarnings,
+  stability,             // single top-level StabilityCheck, NOT per-model —
+                          // margin depends only on CP/CG geometry, never on
+                          // wind, so every model would report an identical
+                          // value; sending it once makes that invariant
+                          // explicit instead of shipping N duplicate copies
+  results: [ { model: "gfs", ascentPath }, { model: "ecmwf", ascentPath }, ... ] }
+```
+"Available models" varies by how far out the launch is (e.g. HRRR only
+inside 48h) — rocketry doesn't filter or choose, it simulates whatever
+`SplashcastWindData.modelsForHour(hour)` actually returns for that hour.
+
+**Design changes from the original (struck through in place below, not
+deleted):**
+- ~~Render a model picker (radio buttons)... Selecting one calls
+  `.profileFor(hour, model)` and sets it as the active wind profile~~ —
+  superseded 2026-08-16: no picker at all now. `renderWindBodyHtml()` shows
+  a non-interactive informational paragraph (available model count + names).
+  `wireEmbedMode()` still sets `activeWindProfile` to the *first* available
+  model, but purely for local on-screen display before simulating — it has
+  no bearing on what gets simulated or posted.
+- `runFlightSim`'s success branch now calls a new `runEmbedMultiModelSim
+  (rocket)`: loops `windData.modelsForHour(hour)`, builds a per-model
+  `Rocket` (same rocket, `windProfile` swapped per model), runs
+  `simulateFlight3DInWorker` once per model sequentially (the shared worker
+  processes one request at a time, so sequential is correct, not just
+  simplest), collects `{model, ascentPath}` into `ModelAscentResult[]`,
+  skipping (and `console.warn`-ing) any single model whose sim throws rather
+  than failing the whole batch. `stability` is computed once
+  (`computeLiftoffStability`, factored out as a shared helper) since it's
+  wind-independent. Posts one `rocketry:ascentResults` — only posts
+  `rocketry:error` if *every* model failed.
+- `src/ui/embed.ts`: `buildAscentResultMessage` (singular) replaced outright
+  by `buildAscentResultsMessage` (plural) + new `ModelAscentResult`
+  interface; `stability` stayed a single top-level field the whole time
+  (never duplicated), so that part of the original design carried over
+  unchanged.
+
+**Verified 2026-08-16** via Playwright against a real running dev server
+with a real live splashcast wind JSON (same URL as the original
+verification) and a real LOC-IV X2 + motor pick: informational text showed
+"6 models available (GFS, ECMWF, GEM, ICON, ARPEGE, HRRR)", no picker
+element present, one `rocketry:ascentResults` message captured with
+`results.length === 6`, each model present with a real 4-waypoint
+`AscentPath` and a distinct apogee altitude (120.78–121.21 m, i.e. genuinely
+per-model, not a stub), one top-level `stability` object (`margin: 3.62`,
+`flyable: true`), and no `stability` key duplicated inside any individual
+result.
+
+**Not yet done, flagged explicitly rather than attempted here**:
+splashcast's own consumer code (`site/assets/js/app.js` /
+`descent3d.js`) currently expects the old singular `rocketry:ascentResult`
+message and will need a corresponding update to consume the new
+`rocketry:ascentResults` (plural, `results: [...]`) shape — that's a change
+on splashcast's own side, a separate repo/session, not something to make
+unilaterally from here.
 
 ## Verified against current code (not just the spec's prose)
 
@@ -123,6 +198,28 @@ pure logic in dedicated modules):
       https://ezracc.github.io` confirmed live: wind loads, 6-model picker populates,
       identical to local dev verification.
 
+### Multi-model redesign (2026-08-16)
+
+- [x] `src/ui/embed.ts`: replace `buildAscentResultMessage` (singular) with
+      `buildAscentResultsMessage` (plural) + `ModelAscentResult`
+- [x] `src/ui/embed.test.ts`: rewritten -- 13 tests, envelope shape + single
+      top-level `stability` (not duplicated per result) + arbitrary model counts
+- [x] `main.ts`: remove `EmbedState.selectedModel` + radio-button picker UI/wiring
+- [x] `main.ts`: `renderWindBodyHtml()` -- informational (non-interactive)
+      available-models paragraph, no picker
+- [x] `main.ts`: new `runEmbedMultiModelSim(rocket)` -- one sim per available
+      model, single shared `stability`, posts `rocketry:ascentResults`
+- [x] `npx tsc --noEmit` clean, full `npx vitest run` -- 635 passed / 29 files
+- [x] Manual acceptance test (real browser via Playwright, real live splashcast
+      JSON, real LOC-IV X2 + motor pick) -- confirmed no picker, informational
+      text lists all 6 models, one `rocketry:ascentResults` message with
+      `results.length === 6` (distinct per-model apogee altitudes), single
+      top-level `stability`, no per-result `stability` duplication
+- [ ] Commit + push + verify live on GitHub Pages against production splashcast
+- [ ] Flag to the user (done in-conversation, not a code task) that
+      splashcast's own consumer code needs a corresponding update for the new
+      plural message shape
+
 ## Verification
 
 - `npx tsc --noEmit` + `npx vitest run`.
@@ -147,6 +244,8 @@ pure logic in dedicated modules):
 
 ## Open questions
 
-- None currently — spec is fully verified against both sides' actual code,
-  the one real discrepancy (`marginCalibers` vs `margin`) is resolved by
-  evidence (splashcast's consumer never reads that field either way).
+- None currently on rocketry's side — the multi-model redesign is fully
+  implemented and verified here. The remaining open item is entirely on
+  splashcast's side: its consumer code still expects the old singular
+  `rocketry:ascentResult` and needs updating to handle
+  `rocketry:ascentResults` (plural, `results: [...]`) — tracked there, not here.

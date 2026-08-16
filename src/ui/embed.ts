@@ -44,14 +44,32 @@ export function parseEmbedParams(search: URLSearchParams): EmbedParams | { error
   return { windUrl, hour: Number.parseInt(hourRaw, 10), parentOrigin };
 }
 
-/** Assembles the exact `rocketry:ascentResult` postMessage envelope -- one place so it can't drift between call sites (there's only one right now, but the shape itself is the contract, worth pinning down explicitly). */
-export function buildAscentResultMessage(
+export interface ModelAscentResult {
+  model: string;
+  ascentPath: AscentPath;
+}
+
+/**
+ * Assembles the `rocketry:ascentResults` (plural) postMessage envelope -- one ascent path PER
+ * forecast model actually available for the requested hour (splashcast's own `selectedModels`
+ * show/hide toggle already operates on "all available models, all start selected" for the descent
+ * side -- see app.js -- so rocketry sends every available model's own ascent path rather than
+ * picking one, and splashcast applies that same toggle to these too, matching each one to the
+ * descent path it already computes independently per model). Never a subset chosen on this side:
+ * which models are even available varies by how far out the launch is (e.g. HRRR only inside 48h),
+ * so "available" is already the real constraint, not something to filter further.
+ *
+ * `stability` is a single top-level field, not duplicated per model -- the static margin depends
+ * only on CP/CG geometry, never on wind, so every model would report the exact same value; sending
+ * it once avoids N identical copies and makes that invariant explicit rather than implicit.
+ */
+export function buildAscentResultsMessage(
   rocketName: string,
   parseWarnings: string[],
   stability: StabilityCheck,
-  ascentPath: AscentPath,
-): { type: "rocketry:ascentResult"; rocketName: string; parseWarnings: string[]; stability: StabilityCheck; ascentPath: AscentPath } {
-  return { type: "rocketry:ascentResult", rocketName, parseWarnings, stability, ascentPath };
+  results: ModelAscentResult[],
+): { type: "rocketry:ascentResults"; rocketName: string; parseWarnings: string[]; stability: StabilityCheck; results: ModelAscentResult[] } {
+  return { type: "rocketry:ascentResults", rocketName, parseWarnings, stability, results };
 }
 
 /** Assembles the exact `rocketry:error` postMessage envelope. `message` should be specific enough to show directly to the splashcast visitor (see the contract's own guidance), not a raw stack trace. */
