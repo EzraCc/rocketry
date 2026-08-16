@@ -2,7 +2,7 @@ import "@picocss/pico/css/pico.indigo.min.css";
 import "./style.css";
 import { computeBarrowman, stabilityMargin } from "./physics/aero/barrowman.js";
 import { overallLength, referenceDiameter } from "./physics/geometry/rocket-geometry.js";
-import { checkStability, LOW_MARGIN_THRESHOLD } from "./physics/aero/stability-check.js";
+import { checkStability, LOW_MARGIN_THRESHOLD, type StabilityCheck } from "./physics/aero/stability-check.js";
 import { previewNoseWeight, solveNoseWeight } from "./physics/mass/nose-weight.js";
 import { renderSchematicSvg } from "./ui/schematic/render.js";
 import { defaultRocket, type Rocket, type SelectedMotor } from "./model/rocket.js";
@@ -28,6 +28,9 @@ import type { SimResult3D } from "./physics/sim/types3d.js";
 import { renderFlightChart, renderThrustCurveChart, clearAllChartCursors, isScrubLocked, setScrubLockListener } from "./ui/charts/flight-chart.js";
 import { simulateFlight3DInWorker } from "./worker/sim-worker-client.js";
 import { windAt, constantWindProfile, type WindProfile } from "./model/wind.js";
+import { parseSplashcastWindData, type SplashcastWindData } from "./physics/wind/splashcast-import.js";
+import { buildAscentPath } from "./physics/sim/ascent-path.js";
+import { parseEmbedParams, buildAscentResultMessage, buildErrorMessage, type EmbedParams } from "./ui/embed.js";
 import {
   getUnitSystem,
   setUnitSystem,
@@ -205,6 +208,9 @@ let activeMotorMountDiameterMm: number | null = null;
  * itself is still viewable/downloadable regardless.
  */
 let activeUnsupportedFeatures: string[] = [];
+
+/** The active file's own non-fatal parse warnings (e.g. "multi-stage file, only sustainer imported") -- shown inline once at load time already; also threaded into embed mode's own postMessage payload (AscentResult.parseWarnings) so a splashcast visitor sees the same caveats this UI would show them. Set directly at each applyParsedRocket call site (both already have `parsed.warnings` in scope there for their own inline display), not inside applyParsedRocket itself -- its own parameter type doesn't carry warnings through, and duplicating that plumbing for one assignment isn't worth it. */
+let activeParseWarnings: string[] = [];
 
 /**
  * The active file's own last-computed CP, when it has one -- parseRocksimXml's embeddedCpM
@@ -1796,9 +1802,26 @@ async function runFlightSim(rocket: Rocket): Promise<void> {
     lastFlightElapsedMs = elapsedMs;
     el.innerHTML = renderFlightResultHtml(rocket, result, elapsedMs);
     mountFlightCharts();
+    if (embedState) {
+      // Posted regardless of stability.flyable -- a marginal or unstable pick is still a real,
+      // legitimate answer to "what would this rocket actually do," not something to block here;
+      // splashcast is responsible for surfacing the warning on its own side (see the contract).
+      // Its own try/catch: a failure building the ascent path shouldn't leave the promise's
+      // success branch silently posting nothing back to splashcast.
+      try {
+        const stability = computeLiftoffStability(rocket);
+        const ascentPath = buildAscentPath(result, rocket);
+        postToEmbedParent(buildAscentResultMessage(rocket.name, activeParseWarnings, stability, ascentPath));
+      } catch (err) {
+        postToEmbedParent(buildErrorMessage(`Could not build the ascent-path result: ${err instanceof Error ? err.message : String(err)}`));
+      }
+    }
   } catch (err) {
     if (requestId !== flightSimRequestSeq) return;
     el.innerHTML = `<p><mark>Flight simulation failed: ${err instanceof Error ? err.message : String(err)}</mark></p>`;
+    if (embedState) {
+      postToEmbedParent(buildErrorMessage(`Flight simulation failed: ${err instanceof Error ? err.message : String(err)}`));
+    }
   }
 }
 
@@ -1811,19 +1834,27 @@ function rerenderFlightResultOnly(): void {
   mountFlightCharts();
 }
 
-function renderFlightResultHtml(rocket: Rocket, result: SimResult3D, elapsedMs: number): string {
-  // Stability check uses the CG AT LAUNCH (full propellant load), not the dry CG -- for a
-  // typical aft-mounted motor, CG is furthest aft (least stable) at liftoff and moves forward
-  // as propellant burns, so liftoff is the safety-relevant worst case to check, not burnout.
+/**
+ * Stability at LAUNCH (full propellant load), not dry -- for a typical aft-mounted motor, CG is
+ * furthest aft (least stable) at liftoff and moves forward as propellant burns, so liftoff is the
+ * safety-relevant worst case to check, not burnout. Mach 0.1 (~100fps) -- the actually safety-
+ * relevant rail-exit speed, not an arbitrary "typical flight" number. CP shifts slightly aft (more
+ * stable-looking) as Mach rises in the subsonic band (traced to the fin CNa1 compressibility term
+ * in fin-calc.ts, which nose/body CNa has no equivalent of) -- checking stability at a higher Mach
+ * than this would be mildly optimistic relative to the moment stability actually matters most.
+ * Shared by renderFlightResultHtml (display) and runFlightSim's embed-mode postMessage hook, so
+ * the number a splashcast visitor gets matches exactly what this project's own UI would show for
+ * the same rocket/motor.
+ */
+function computeLiftoffStability(rocket: Rocket): StabilityCheck {
   const massCurve = rocket.motor ? deriveMotorMassCurve(rocket.motor) : null;
   const launchCgX = massCurve ? combinedMassAt(rocket, massCurve, 0).cgX : rocket.dryCg;
-  // Mach 0.1 (~100fps) -- the actually safety-relevant rail-exit speed, not an arbitrary
-  // "typical flight" number. CP shifts slightly aft (more stable-looking) as Mach rises in the
-  // subsonic band (traced to the fin CNa1 compressibility term in fin-calc.ts, which nose/body
-  // CNa has no equivalent of) -- checking stability at a higher Mach than this would be mildly
-  // optimistic relative to the moment stability actually matters most.
   const { cpX, refDiameter } = computeBarrowman(rocket.components, 0.1);
-  const stability = checkStability(cpX, launchCgX, refDiameter, rocket.motor !== null);
+  return checkStability(cpX, launchCgX, refDiameter, rocket.motor !== null);
+}
+
+function renderFlightResultHtml(rocket: Rocket, result: SimResult3D, elapsedMs: number): string {
+  const stability = computeLiftoffStability(rocket);
 
   const notFlyableHtml = !stability.flyable
     ? `<p style="padding: 0.75rem; border-radius: var(--pico-border-radius); background: var(--pico-del-color, #c0392b); color: white;"><strong>⚠ ${stability.warnings[0]}</strong></p>`
@@ -1958,18 +1989,54 @@ function wireMotorSearch(): void {
   }
 }
 
-const windSectionHtml = `
-  <article>
-    <header>
-      <h2>Launch settings</h2>
-      <p>
-        Sets the wind and launch rod length used by the flight simulation above (re-select a motor
-        after changing either to re-run with the new setting) — a plain constant wind for now. Real
-        altitude-varying wind will come from splashcast (the launch-day wind/drift predictor) once
-        it's wired in directly through this tool's library API, replacing manual entry rather than
-        adding a file to upload.
-      </p>
-    </header>
+/**
+ * Embed-mode state (see ui/embed.ts's own doc comment for the full splashcast contract). Resolved
+ * once at bootstrap from the URL, before the first render, since renderWindSectionHtml/
+ * renderWindBodyHtml need to know which of three states to show synchronously: normal manual-wind
+ * entry (both null), a config error (embedConfigError set), or a valid embed session that's either
+ * still loading its wind data (embedState set, windData still null) or ready with a model picker
+ * (embedState.windData set).
+ */
+interface EmbedState {
+  parentOrigin: string;
+  windUrl: string;
+  hour: number;
+  windData: SplashcastWindData | null;
+  selectedModel: string | null;
+}
+let embedState: EmbedState | null = null;
+let embedConfigError: { message: string; parentOrigin: string | null } | null = null;
+
+/** postMessage to embed mode's own parentOrigin -- a no-op outside embed mode (nothing to report to) or when a config error left no known parentOrigin to report to (see parseEmbedParams's own doc comment on that split). Never '*' -- always the exact origin embed mode was given. */
+function postToEmbedParent(message: ReturnType<typeof buildAscentResultMessage> | ReturnType<typeof buildErrorMessage>): void {
+  const target = embedState?.parentOrigin ?? embedConfigError?.parentOrigin;
+  if (!target || !window.parent) return;
+  window.parent.postMessage(message, target);
+}
+
+/** The part of the "Launch settings" article that varies by mode -- manual wind entry (normal), a model picker (valid embed session), a loading placeholder (embed session, wind fetch in flight), or an error (embed config error, or the wind fetch/parse itself failing). Re-rendered into #wind-body once the async wind fetch settles (see wireEmbedMode); the rest of the article (header, launch rod length) never changes shape between modes. */
+function renderWindBodyHtml(): string {
+  if (embedConfigError) {
+    return `<p><mark>${embedConfigError.message}</mark></p>`;
+  }
+  if (embedState) {
+    if (!embedState.windData) {
+      return `<p aria-busy="true">Loading wind data for hour ${embedState.hour}…</p>`;
+    }
+    const models = embedState.windData.modelsForHour(embedState.hour);
+    const options = models
+      .map(
+        (model) =>
+          `<label><input type="radio" name="embed-wind-model" value="${model}" ${model === embedState!.selectedModel ? "checked" : ""} /> ${model.toUpperCase()}</label>`,
+      )
+      .join("");
+    return `
+      <p><small>Real forecast wind for hour ${embedState.hour}:00, from splashcast. Pick a weather model:</small></p>
+      <div id="embed-model-picker">${options}</div>
+      <p id="wind-active-label"><small>Currently: calm (no wind).</small></p>
+    `;
+  }
+  return `
     <div class="grid">
       <label>Constant wind speed (<span id="wind-speed-unit-label">m/s</span>) <input type="number" inputmode="decimal" id="wind-manual-speed" value="0" min="0" step="0.5" /></label>
       <label>From direction (deg, compass) <input type="number" inputmode="numeric" id="wind-manual-direction" value="0" min="0" max="360" step="5" /></label>
@@ -1978,11 +2045,32 @@ const windSectionHtml = `
       </div>
     </div>
     <p id="wind-active-label"><small>Currently: calm (no wind).</small></p>
+  `;
+}
+
+function renderWindSectionHtml(): string {
+  return `
+  <article>
+    <header>
+      <h2>Launch settings</h2>
+      <p>
+        ${
+          embedState || embedConfigError
+            ? "Wind comes from splashcast's own launch-day forecast in embed mode, replacing manual entry."
+            : `Sets the wind and launch rod length used by the flight simulation above (re-select a motor
+        after changing either to re-run with the new setting) — a plain constant wind for now. Real
+        altitude-varying wind comes from splashcast (the launch-day wind/drift predictor) when this
+        app is embedded there, replacing manual entry.`
+        }
+      </p>
+    </header>
+    <div id="wind-body">${renderWindBodyHtml()}</div>
     <div class="grid">
       <label>Launch rod length (<span id="launch-rod-unit-label">m</span>) <input type="number" inputmode="decimal" id="launch-rod-length-input" min="0" step="0.5" /></label>
     </div>
   </article>
 `;
+}
 
 let activeWindProfile: WindProfile | null = null;
 /**
@@ -2165,6 +2253,7 @@ function wireOrkImport(): void {
         }
 
         applyParsedRocket(parsed, `Uploaded: ${file.name}`);
+        activeParseWarnings = parsed.warnings;
         activeLibraryEntry = null; // an uploaded file has no library manifest entry to link a download to
 
         const massNote = parsed.estimatedDryMassKg && parsed.estimatedDryMassKg > 0
@@ -2323,6 +2412,7 @@ async function selectLibraryEntry(entry: LibraryManifestEntry): Promise<void> {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const parsed = parseRocksimXml(await res.text());
     applyParsedRocket(parsed, `From the library: ${entry.vendor} — ${entry.name}`, entry.name);
+    activeParseWarnings = parsed.warnings;
     activeLibraryEntry = entry;
 
     if (warningsEl) {
@@ -2438,9 +2528,85 @@ function wireUnitToggle(): void {
   });
 }
 
+/**
+ * Resolves embed-mode state from the URL synchronously, BEFORE the first app.innerHTML render --
+ * renderWindSectionHtml/renderWindBodyHtml read embedState/embedConfigError directly, so this must
+ * run before that first render, not alongside the other wire*() calls that run after it (see
+ * wireEmbedMode below for the async/side-effecting half of embed setup).
+ */
+function resolveEmbedParamsAtBootstrap(): void {
+  const parsed = parseEmbedParams(new URLSearchParams(location.search));
+  if (parsed === null) return; // normal mode, nothing to do
+  if ("error" in parsed) {
+    embedConfigError = { message: parsed.error, parentOrigin: parsed.parentOrigin };
+    return;
+  }
+  embedState = { parentOrigin: parsed.parentOrigin, windUrl: parsed.windUrl, hour: parsed.hour, windData: null, selectedModel: null };
+}
+
+/** Re-renders just the #wind-body slot -- same targeted-update pattern as #motor-results/#library-results elsewhere in this file, so an async wind-data update doesn't disturb the rest of the (already-interacted-with) page. */
+function rerenderWindBody(): void {
+  const el = document.querySelector<HTMLDivElement>("#wind-body");
+  if (el) el.innerHTML = renderWindBodyHtml();
+}
+
+/**
+ * The async/side-effecting half of embed setup -- called once after the initial render (see the
+ * bootstrap below). Posts the config-error message (if any) now that there's a parent frame to
+ * post to, kicks off the wind fetch+parse for a valid embed session, and wires the model-picker's
+ * delegated change handler.
+ */
+function wireEmbedMode(): void {
+  if (embedConfigError) {
+    postToEmbedParent(buildErrorMessage(embedConfigError.message));
+    return;
+  }
+  if (!embedState) return;
+
+  const { windUrl, hour } = embedState;
+  void fetch(windUrl)
+    .then((res) => {
+      if (!res.ok) throw new Error(`Wind data request failed (HTTP ${res.status}).`);
+      return res.json();
+    })
+    .then((json) => {
+      const data = parseSplashcastWindData(json);
+      if (data.modelsForHour(hour).length === 0) {
+        throw new Error(`No wind data available for hour ${hour}.`);
+      }
+      embedState!.windData = data;
+      rerenderWindBody();
+    })
+    .catch((err) => {
+      const reason = err instanceof Error ? err.message : String(err);
+      const message = `Could not load wind data for hour ${hour}: ${reason}`;
+      embedConfigError = { message, parentOrigin: embedState!.parentOrigin };
+      embedState = null; // fall back to the error-body branch in renderWindBodyHtml
+      postToEmbedParent(buildErrorMessage(message));
+      rerenderWindBody();
+    });
+
+  document.querySelector("#app")?.addEventListener("change", (e) => {
+    const target = e.target as HTMLInputElement;
+    if (target.name !== "embed-wind-model" || !embedState?.windData) return;
+    const model = target.value;
+    embedState.selectedModel = model;
+    activeWindProfile = embedState.windData.profileFor(embedState.hour, model);
+    updateActiveWindLabel();
+    // Same "re-run immediately, don't wait for an unrelated action" behavior wireWindImport's own
+    // manual-apply handler already has -- a wind change should be reflected right away if a motor
+    // is already selected, not just on the next unrelated interaction.
+    if (lastMotorSelection) {
+      const motor = buildSelectedMotor(lastMotorSelection);
+      void runFlightSim({ ...activeRocket, motor, windProfile: activeWindProfile, launchRodLength: activeLaunchRodLengthM });
+    }
+  });
+}
+
 const app = document.querySelector<HTMLDivElement>("#app");
 if (app) {
   applyUnitsFromUrl(); // before building HTML below, so the toggle + every formatted value start correct
+  resolveEmbedParamsAtBootstrap(); // before building HTML below, so renderWindSectionHtml sees the right mode
   app.innerHTML = `
     ${renderUnitToggleHtml()}
     <main class="container">
@@ -2466,7 +2632,7 @@ if (app) {
         motor selection) against a mature simulator before relying on it for a real flight.
       </div>
       ${orkSectionHtml}
-      ${windSectionHtml}
+      ${renderWindSectionHtml()}
       ${motorSectionHtml}
     </main>
   `;
@@ -2474,6 +2640,7 @@ if (app) {
   wireOrkImport();
   wireMotorSearch();
   wireWindImport();
+  wireEmbedMode();
   wireLaunchRodInput();
   updateLaunchRodLengthUnitDisplay();
   wireUnitToggle();
