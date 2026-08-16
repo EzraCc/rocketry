@@ -1892,7 +1892,7 @@ function updateEmbedSendButton(): void {
     ? "Sending flight data to splashcast…"
     : alreadySent
       ? "✓ Sent to splashcast — send again"
-      : "📤 Send this flight to splashcast";
+      : "📤 Send to splashcast";
 }
 
 function wireEmbedSendButton(): void {
