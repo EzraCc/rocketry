@@ -1,23 +1,25 @@
 # rocketry
 
+**Live site: https://ezracc.github.io/rocketry/**
+
 A browser-based flight simulator for basic model/high-power rockets (nose cone, body tubes,
 transitions/boat tails, trapezoidal or freeform fins). Client-side TypeScript, no backend — the
 whole app, including the 3D flight simulation, runs in the browser (via a Web Worker for the
 actual integration).
 
 This is an independent project — not a fork, submodule, or dependent package of OpenRocket.
-Physics is re-derived/re-implemented from OpenRocket's published algorithms (classical Barrowman
-component buildup, with a corrected fin-body interference factor) rather than transcribed
-verbatim. Licensed under **GPLv3** (see `LICENSE`) — deliberately matching OpenRocket's own
-license, not because this project's independently-derived code requires it, but to keep the door
-open for future collaboration and cross-compatibility with OpenRocket rather than diverging on
-licensing terms. Accuracy is checked directly against real OpenRocket Java simulations and
-RockSim's own embedded data for a curated set of real rocket+motor cases — see the validation
-report (`public/validation-report.html`, served at `/validation-report.html`, linked from the
-site's own footer), generated from `validation/`, regenerate with
+Licensed under **GPLv3** (see `LICENSE`), matching OpenRocket's own license, so physics can
+directly follow OpenRocket's own published algorithms — classical Barrowman component buildup,
+transonic/supersonic fin normal-force and center-of-pressure models, the Galejs body-lift term,
+and more ported straight from its source — rather than maintaining an independently re-derived
+model. A handful of deliberate, documented deviations remain where this project does something
+different on purpose (e.g. a corrected fin-body interference factor); every one of them, and why,
+is cataloged in `DEVIATIONS.md`. Accuracy is checked directly against real OpenRocket Java
+simulations and RockSim's own embedded data for a curated set of real rocket+motor cases — see the
+validation report (`public/validation-report.html`, served at `/validation-report.html`, linked
+from the site's own footer), generated from `validation/`, regenerate with
 `validation/openrocket-oracle/run.sh` + `npx tsx validation/openrocket-oracle/fetch-motor-fixtures.ts`
-+ `npx tsx validation/build-report.ts`). Every place this project's physics computes a different
-number than OpenRocket's own — and why — is cataloged in `DEVIATIONS.md`.
++ `npx tsx validation/build-report.ts`.
 
 ## What it does
 
