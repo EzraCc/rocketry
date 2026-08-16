@@ -1,7 +1,7 @@
-Status: in-progress
+Status: done
 Priority: high
 Type: new-feature
-Last updated: 2026-08-15
+Last updated: 2026-08-16
 
 # rocketry "embed mode" for the splashcast integration
 
@@ -118,7 +118,10 @@ pure logic in dedicated modules):
       `stability.margin` -- not `marginCalibers` -- matches). Error cases: bad windUrl (404), bad
       hour (not in data), and missing `parentOrigin` (inline error only, confirmed NO postMessage
       attempted) all behave exactly as designed.
-- [ ] Commit, push, verify live on GitHub Pages against production splashcast
+- [x] Commit, push, verify live on GitHub Pages against production splashcast --
+      `https://ezracc.github.io/rocketry/?embed=1&windUrl=...&hour=13&parentOrigin=
+      https://ezracc.github.io` confirmed live: wind loads, 6-model picker populates,
+      identical to local dev verification.
 
 ## Verification
 
