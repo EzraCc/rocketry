@@ -2930,13 +2930,8 @@ if (app) {
       <hgroup>
         <h1>🚀 rocketry — flight simulator</h1>
         <p>
-          A web flight simulator for basic rockets. Licensed GPLv3, matching
-          <a href="https://github.com/openrocket/openrocket" target="_blank" rel="noopener">OpenRocket</a>,
-          so physics can directly follow OpenRocket's own published algorithms (many ported
-          straight from its source, e.g. fin normal-force and center-of-pressure through transonic
-          and supersonic flight) rather than maintaining an independently re-derived model, with a
-          handful of deliberate, documented deviations where this project does something different
-          on purpose.
+          A web flight simulator for basic rockets. Licensed GPLv3, builds upon
+          <a href="https://github.com/openrocket/openrocket" target="_blank" rel="noopener">OpenRocket</a>. 
           Report issues and/or share real flight data with Ezra. Real data improves simulators.
           <a href="validation-report.html" target="_blank" rel="noopener">Validation report</a> ·
           <a href="deviations.html" target="_blank" rel="noopener">Deviations from OpenRocket</a>.
@@ -2944,8 +2939,7 @@ if (app) {
       </hgroup>
       <div class="alpha-notice">
         <strong>⚠ Alpha — presented for testing, not a replacement for established simulators.</strong>
-        This is an early-stage project shared for feedback, not a validated substitute for
-        OpenRocket, RockSim, or RASAero. Cross-check anything safety-relevant (stability margin,
+        This is an early-stage project shared for feedback. Cross-check anything safety-relevant (stability margin,
         motor selection) against a mature simulator before relying on it for a real flight.
       </div>
       ${orkSectionHtml}
