@@ -20,7 +20,7 @@ describe("parseEmbedParams", () => {
     expect(parseEmbedParams(new URLSearchParams("embed=yes&windUrl=x&hour=1&parentOrigin=y"))).toBeNull();
   });
 
-  it("parses a fully valid embed URL", () => {
+  it("parses a fully valid embed URL, autoSend defaulting to false when absent", () => {
     const params = parseEmbedParams(
       new URLSearchParams("embed=1&windUrl=https%3A%2F%2Fexample.com%2Fw.json&hour=13&parentOrigin=http%3A%2F%2Flocalhost%3A8000"),
     );
@@ -28,12 +28,27 @@ describe("parseEmbedParams", () => {
       windUrl: "https://example.com/w.json",
       hour: 13,
       parentOrigin: "http://localhost:8000",
+      autoSend: false,
     });
   });
 
   it("accepts a negative hour (no assumption that hour is always non-negative)", () => {
     const params = parseEmbedParams(new URLSearchParams("embed=1&windUrl=https://x&hour=-1&parentOrigin=http://y"));
-    expect(params).toEqual({ windUrl: "https://x", hour: -1, parentOrigin: "http://y" });
+    expect(params).toEqual({ windUrl: "https://x", hour: -1, parentOrigin: "http://y", autoSend: false });
+  });
+
+  it("autoSend=1 opts into skipping the manual review gate; any other value (or absence) keeps it required", () => {
+    const on = parseEmbedParams(new URLSearchParams("embed=1&windUrl=https://x&hour=9&parentOrigin=http://y&autoSend=1"));
+    expect(on).toMatchObject({ autoSend: true });
+
+    const off1 = parseEmbedParams(new URLSearchParams("embed=1&windUrl=https://x&hour=9&parentOrigin=http://y&autoSend=0"));
+    expect(off1).toMatchObject({ autoSend: false });
+
+    const off2 = parseEmbedParams(new URLSearchParams("embed=1&windUrl=https://x&hour=9&parentOrigin=http://y&autoSend=true"));
+    expect(off2).toMatchObject({ autoSend: false });
+
+    const absent = parseEmbedParams(new URLSearchParams("embed=1&windUrl=https://x&hour=9&parentOrigin=http://y"));
+    expect(absent).toMatchObject({ autoSend: false });
   });
 
   it("missing windUrl: error with parentOrigin preserved (postMessage-able)", () => {

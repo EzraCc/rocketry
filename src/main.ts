@@ -1859,11 +1859,13 @@ function mountFlightCharts(): void {
 
 /**
  * Embed mode's own "send to splashcast" button (see #embed-send-btn in the bootstrap template /
- * style.css) -- deliberately NOT automatic. Sending the moment a motor's picked gave a visitor no
- * chance to actually look over the flight-sim result (apogee, stability, charts) before it went to
- * splashcast; this button is now the ONLY thing that triggers runEmbedMultiModelSim/postToEmbedParent
- * on success. A cache-restored rocket+motor (restoreCachedConfigIfEmbedded) still auto-RUNS the
- * local sim for review -- it just no longer auto-SENDS either, same as any other trigger.
+ * style.css) -- deliberately NOT automatic BY DEFAULT. Sending the moment a motor's picked gave a
+ * visitor no chance to actually look over the flight-sim result (apogee, stability, charts) before
+ * it went to splashcast; this button (or, when embedState.autoSend is set, runFlightSim itself --
+ * see sendCurrentReviewToSplashcast's own call sites) is now the ONLY thing that triggers
+ * runEmbedMultiModelSim/postToEmbedParent on success. A cache-restored rocket+motor
+ * (restoreCachedConfigIfEmbedded) still auto-RUNS the local sim for review -- it doesn't auto-SEND
+ * either, unless autoSend is set.
  *
  * `sentForFlightResult` tracks WHICH result (by reference -- lastFlightResult is replaced wholesale
  * by every successful runFlightSim, never mutated in place) has actually been sent, so any new local
@@ -1895,20 +1897,23 @@ function updateEmbedSendButton(): void {
       : "📤 Send to splashcast";
 }
 
+/** The actual send step -- shared by the button's click handler and runFlightSim's own autoSend path (embedState.autoSend, see EmbedParams's own doc comment for who sets this and why). Always updates the button's visible state around the request, even in autoSend mode -- harmless (nobody's necessarily watching a background/prefetch load), and keeps it correct for anyone who IS. */
+async function sendCurrentReviewToSplashcast(rocket: Rocket): Promise<void> {
+  embedSendInFlight = true;
+  updateEmbedSendButton();
+  try {
+    await runEmbedMultiModelSim(rocket);
+    sentForFlightResult = lastFlightResult;
+  } finally {
+    embedSendInFlight = false;
+    updateEmbedSendButton();
+  }
+}
+
 function wireEmbedSendButton(): void {
   document.querySelector("#embed-send-btn")?.addEventListener("click", () => {
     if (embedSendInFlight || !lastFlightRocket) return;
-    void (async () => {
-      embedSendInFlight = true;
-      updateEmbedSendButton();
-      try {
-        await runEmbedMultiModelSim(lastFlightRocket!);
-        sentForFlightResult = lastFlightResult;
-      } finally {
-        embedSendInFlight = false;
-        updateEmbedSendButton();
-      }
-    })();
+    void sendCurrentReviewToSplashcast(lastFlightRocket);
   });
 }
 
@@ -1930,10 +1935,15 @@ async function runFlightSim(rocket: Rocket): Promise<void> {
     // This single-profile result is only for the local display above -- the actual splashcast
     // handoff runs its OWN independent sim per available forecast model (see runEmbedMultiModelSim's
     // own doc comment on why: splashcast wants every model's ascent path, not just whichever one
-    // happened to be active locally). Deliberately NOT triggered automatically here -- see
-    // #embed-send-btn's own doc comment (updateEmbedSendButton) for why a visitor gets to review
-    // this result first, and only the button itself calls runEmbedMultiModelSim.
-    updateEmbedSendButton();
+    // happened to be active locally). Not triggered automatically UNLESS splashcast explicitly asked
+    // for that (embedState.autoSend, its own background/prefetch loads -- see EmbedParams's doc
+    // comment) -- otherwise this just updates the button, leaving the actual send to that click (see
+    // #embed-send-btn's own doc comment for why a visitor gets to review first).
+    if (embedState?.autoSend) {
+      void sendCurrentReviewToSplashcast(rocket);
+    } else {
+      updateEmbedSendButton();
+    }
   } catch (err) {
     if (requestId !== flightSimRequestSeq) return;
     el.innerHTML = `<p><mark>Flight simulation failed: ${err instanceof Error ? err.message : String(err)}</mark></p>`;
@@ -2126,6 +2136,8 @@ interface EmbedState {
   windData: SplashcastWindData | null;
   /** A content hash (see src/ui/sim-result-cache.ts's hashString) of the raw fetched windUrl JSON text -- null until the fetch resolves, alongside windData. Used as the sim-result cache's own "did the forecast actually change" key, so a byte-identical refetch of the SAME hour still hits the cache while a genuinely updated forecast correctly forces a rerun. */
   windContentFingerprint: string | null;
+  /** From EmbedParams.autoSend (src/ui/embed.ts) -- splashcast's own explicit opt-in for a background/prefetch load, skipping the manual "Send to splashcast" review gate entirely (see runFlightSim's own use of this). */
+  autoSend: boolean;
 }
 let embedState: EmbedState | null = null;
 let embedConfigError: { message: string; parentOrigin: string | null } | null = null;
@@ -2686,7 +2698,7 @@ function resolveEmbedParamsAtBootstrap(): void {
     embedConfigError = { message: parsed.error, parentOrigin: parsed.parentOrigin };
     return;
   }
-  embedState = { parentOrigin: parsed.parentOrigin, windUrl: parsed.windUrl, hour: parsed.hour, windData: null, windContentFingerprint: null };
+  embedState = { parentOrigin: parsed.parentOrigin, windUrl: parsed.windUrl, hour: parsed.hour, windData: null, windContentFingerprint: null, autoSend: parsed.autoSend };
 }
 
 /** Re-renders just the #wind-body slot -- same targeted-update pattern as #motor-results/#library-results elsewhere in this file, so an async wind-data update doesn't disturb the rest of the (already-interacted-with) page. */

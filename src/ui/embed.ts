@@ -17,6 +17,18 @@ export interface EmbedParams {
   windUrl: string;
   hour: number;
   parentOrigin: string;
+  /**
+   * Opt-in, set by the CALLER (splashcast), not inferred here -- when `autoSend=1`, rocketry skips
+   * its own manual "Send to splashcast" review gate (see updateEmbedSendButton/
+   * sendCurrentReviewToSplashcast in main.ts) and posts the multi-model result the moment the local
+   * sim completes, same as clicking the button would. Meant for splashcast's own background
+   * prefetch loads (fetching OTHER hours' results ahead of time, with a rocket+motor the visitor has
+   * already reviewed and approved once interactively) -- nobody's watching those, so a button that's
+   * never clicked would just mean the prefetch never actually delivers anything. Defaults to false
+   * (require the manual click) whenever the param is absent or not exactly "1", so every existing
+   * caller keeps today's review-gated behavior unless it explicitly opts into skipping it.
+   */
+  autoSend: boolean;
 }
 
 /**
@@ -42,7 +54,7 @@ export function parseEmbedParams(search: URLSearchParams): EmbedParams | { error
     return { error: `Missing or invalid hour parameter (got ${hourRaw === null ? "nothing" : JSON.stringify(hourRaw)}).`, parentOrigin };
   }
 
-  return { windUrl, hour: Number.parseInt(hourRaw, 10), parentOrigin };
+  return { windUrl, hour: Number.parseInt(hourRaw, 10), parentOrigin, autoSend: search.get("autoSend") === "1" };
 }
 
 export interface ModelAscentResult {
