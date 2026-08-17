@@ -30,7 +30,15 @@ import { simulateFlight3DInWorker } from "./worker/sim-worker-client.js";
 import { windAt, constantWindProfile, type WindProfile } from "./model/wind.js";
 import { parseSplashcastWindData, type SplashcastWindData } from "./physics/wind/splashcast-import.js";
 import { buildAscentPath } from "./physics/sim/ascent-path.js";
-import { parseEmbedParams, buildAscentResultsMessage, buildErrorMessage, type EmbedParams, type ModelAscentResult } from "./ui/embed.js";
+import {
+  parseEmbedParams,
+  buildAscentResultsMessage,
+  buildErrorMessage,
+  buildOutboundDescentDevices,
+  type EmbedParams,
+  type ModelAscentResult,
+} from "./ui/embed.js";
+import { descentRate } from "./physics/mass/descent-rate.js";
 import {
   saveCachedConfig,
   loadCachedConfig,
@@ -1097,16 +1105,23 @@ function renderRocketSection(rocket: Rocket, mach: number, subtitle: string): st
   `;
 }
 
-const STANDARD_GRAVITY_MS2 = 9.80665; // matches isa-model.ts's own G0
+/**
+ * The descending mass for a recovery-device descent-rate calc: dry mass PLUS the spent motor casing
+ * (loaded mass minus propellant, since the propellant itself is long gone by the time a chute
+ * opens) -- not just dry mass, which would leave the spent casing's real weight out and understate
+ * the rate, and not full loaded mass either, which would still be carrying propellant that's already
+ * burned by then. Null when no motor's selected yet (nothing to compute against). Shared by
+ * renderDescentDevicesSection (display) and runEmbedMultiModelSim (the splashcast handoff) so both
+ * use the exact same mass convention.
+ */
+function descentMassKgFor(motor: SelectedMotor | null): number | null {
+  return motor ? activeDryMassKg + (motor.totalMassKg - motor.propellantMassKg) : null;
+}
 
 /**
  * Drogue/main descent rate for each recovery device found in the file (parseRocksimXml's own
- * descentDevices -- RockSim only, see activeDescentDevices' own doc comment), via the standard
- * terminal-velocity equation v = sqrt(2*m*g / (rho*Cd*A)). Requires a motor to be selected: the
- * descending mass is the rocket's dry mass PLUS the spent motor casing (loaded mass minus
- * propellant, since the propellant itself is long gone by the time a chute opens) -- not just dry
- * mass, which would leave the spent casing's real weight out and understate the rate, and not full
- * loaded mass either, which would still be carrying propellant that's already burned by then.
+ * descentDevices -- RockSim only, see activeDescentDevices' own doc comment), via descentRate()
+ * (src/physics/mass/descent-rate.ts).
  *
  * Air density is looked up at activeRocket.launchAltitude (site elevation MSL, the same field the
  * real ascent simulation already uses -- see engine3d.ts/derivatives.ts), NOT a hardcoded sea-level
@@ -1118,23 +1133,18 @@ const STANDARD_GRAVITY_MS2 = 9.80665; // matches isa-model.ts's own G0
  * nothing further to fix here. Deployment-altitude-specific density (drogue near apogee vs. main
  * much lower) is a further refinement this doesn't attempt.
  *
- * Requested specifically so these numbers can be handed to splashcast (the external launch-day
- * wind/drift predictor this project's own wind import already reads FROM -- see
- * splashcast-import.ts), which needs a descent rate per device to predict drift, not just canopy
- * area/CD.
+ * Also sent to splashcast -- see runEmbedMultiModelSim/buildOutboundDescentDevices -- which needs a
+ * descent rate per device to predict drift, not just canopy area/CD.
  */
 function renderDescentDevicesSection(): string {
   if (activeDescentDevices.length === 0) return "";
   const motor = lastMotorSelection ? buildSelectedMotor(lastMotorSelection) : null;
-  const descentMassKg = motor ? activeDryMassKg + (motor.totalMassKg - motor.propellantMassKg) : null;
+  const descentMassKg = descentMassKgFor(motor);
   const airDensityKgM3 = new IsaAtmosphere().at(activeRocket.launchAltitude).density;
 
   const rows = activeDescentDevices
     .map((d) => {
-      const rate =
-        descentMassKg !== null
-          ? Math.sqrt((2 * descentMassKg * STANDARD_GRAVITY_MS2) / (airDensityKgM3 * d.dragCoefficient * d.dragAreaM2))
-          : null;
+      const rate = descentMassKg !== null ? descentRate(d, descentMassKg, airDensityKgM3) : null;
       const label = `${d.role === "drogue" ? "Drogue" : "Main"} ${d.type}`;
       return `<tr><td>${label}</td><td>${d.dragAreaM2.toFixed(3)} m²</td><td>${d.dragCoefficient.toFixed(2)}</td><td>${rate !== null ? fmtVelocity(rate) : "—"}</td></tr>`;
     })
@@ -2850,7 +2860,17 @@ async function runEmbedMultiModelSim(rocket: Rocket): Promise<void> {
   const stability = computeLiftoffStability(rocket);
   const cachedConfig = loadCachedConfig();
   const rocketConfig = cachedConfig ? buildOutboundRocketConfig(cachedConfig) : undefined;
-  postToEmbedParent(buildAscentResultsMessage(rocket.name, activeParseWarnings, stability, results, rocketConfig));
+
+  // Same descending-mass/air-density convention renderDescentDevicesSection uses for its own local
+  // display (see descentMassKgFor's own doc comment) -- reused here so splashcast gets the identical
+  // numbers a visitor would have seen reviewing this result, not an independently-derived copy.
+  const descentMassKg = descentMassKgFor(rocket.motor);
+  const descentDevices =
+    activeDescentDevices.length > 0 && descentMassKg !== null
+      ? buildOutboundDescentDevices(activeDescentDevices, descentMassKg, new IsaAtmosphere().at(rocket.launchAltitude).density)
+      : undefined;
+
+  postToEmbedParent(buildAscentResultsMessage(rocket.name, activeParseWarnings, stability, results, rocketConfig, descentDevices));
 }
 
 /**

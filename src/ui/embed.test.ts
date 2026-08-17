@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildAscentResultsMessage, buildErrorMessage, parseEmbedParams, type ModelAscentResult } from "./embed.js";
+import { buildAscentResultsMessage, buildErrorMessage, buildOutboundDescentDevices, parseEmbedParams, type ModelAscentResult } from "./embed.js";
 import type { StabilityCheck } from "../physics/aero/stability-check.js";
 import type { AscentPath } from "../physics/sim/ascent-path.js";
 import type { OutboundRocketConfig } from "./rocket-cache.js";
+import type { DescentDevice } from "../formats/rocksim/parse.js";
 
 const EMPTY_ASCENT_PATH: AscentPath = {
   waypoints: [],
@@ -138,6 +139,59 @@ describe("buildAscentResultsMessage", () => {
     };
     const msg = buildAscentResultsMessage("Rocket", [], stability, [{ model: "gfs", ascentPath: EMPTY_ASCENT_PATH }], rocketConfig);
     expect(msg.rocketConfig).toEqual(rocketConfig);
+  });
+
+  it("omits descentDevices entirely when the caller has none to attach", () => {
+    const stability: StabilityCheck = { margin: 1.0, flyable: true, warnings: [] };
+    const msg = buildAscentResultsMessage("Rocket", [], stability, [{ model: "gfs", ascentPath: EMPTY_ASCENT_PATH }]);
+    expect(msg.descentDevices).toBeUndefined();
+    expect(JSON.parse(JSON.stringify(msg))).not.toHaveProperty("descentDevices");
+  });
+
+  it("carries descentDevices through untouched when provided, as a single top-level field (not per-model)", () => {
+    const stability: StabilityCheck = { margin: 1.0, flyable: true, warnings: [] };
+    const descentDevices = buildOutboundDescentDevices(
+      [{ type: "parachute", role: "drogue", dragAreaM2: 0.1, dragCoefficient: 0.8 }],
+      1.2,
+      1.225,
+    );
+    const msg = buildAscentResultsMessage(
+      "Rocket",
+      [],
+      stability,
+      [{ model: "gfs", ascentPath: EMPTY_ASCENT_PATH }],
+      undefined,
+      descentDevices,
+    );
+    expect(msg.descentDevices).toEqual(descentDevices);
+    expect("descentDevices" in msg.results[0]!).toBe(false);
+  });
+});
+
+describe("buildOutboundDescentDevices", () => {
+  it("computes a descent rate per device and always sets deployAltitudeM to null (no reliable source today)", () => {
+    const devices: DescentDevice[] = [
+      { type: "parachute", role: "drogue", dragAreaM2: 0.1, dragCoefficient: 0.8 },
+      { type: "parachute", role: "main", dragAreaM2: 1.0, dragCoefficient: 0.8 },
+    ];
+    const out = buildOutboundDescentDevices(devices, 1.5, 1.225);
+    expect(out).toHaveLength(2);
+    expect(out[0]).toMatchObject({ role: "drogue", type: "parachute", deployAltitudeM: null });
+    expect(out[1]).toMatchObject({ role: "main", type: "parachute", deployAltitudeM: null });
+    // Drogue (smaller canopy) falls faster than main (bigger canopy) for the same descending mass --
+    // the standard dual-deploy shape, confirming this isn't just echoing the input unchanged.
+    expect(out[0]!.descentRateMs).toBeGreaterThan(out[1]!.descentRateMs);
+    expect(out.every((d) => d.descentRateMs > 0 && Number.isFinite(d.descentRateMs))).toBe(true);
+  });
+
+  it("handles a single (main-only) device -- the common non-dual-deploy case", () => {
+    const out = buildOutboundDescentDevices([{ type: "parachute", role: "main", dragAreaM2: 0.8, dragCoefficient: 0.75 }], 1.2, 1.225);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.role).toBe("main");
+  });
+
+  it("returns an empty array for no devices, not an error", () => {
+    expect(buildOutboundDescentDevices([], 1.2, 1.225)).toEqual([]);
   });
 });
 

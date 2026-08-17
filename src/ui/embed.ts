@@ -1,6 +1,8 @@
 import type { StabilityCheck } from "../physics/aero/stability-check.js";
 import type { AscentPath } from "../physics/sim/ascent-path.js";
 import type { OutboundRocketConfig } from "./rocket-cache.js";
+import type { DescentDevice } from "../formats/rocksim/parse.js";
+import { descentRate } from "../physics/mass/descent-rate.js";
 
 /**
  * "Embed mode" -- gated behind `?embed=1` on the existing single-page app, for splashcast
@@ -63,6 +65,37 @@ export interface ModelAscentResult {
 }
 
 /**
+ * One recovery device's descent info, shaped for splashcast's own drift calculation -- it needs a
+ * descent rate per device to predict drift, not just canopy area/CD (which is what this project
+ * already computed for its own display -- see renderDescentDevicesSection in main.ts -- but never
+ * sent anywhere). `deployAltitudeM` is currently ALWAYS null: no parser in this project extracts a
+ * reliable design-time deployment altitude from any supported file format. RockSim (.rkt) design
+ * data has no such field on a `<Parachute>`/`<Streamer>` at all -- only a saved simulation run's own
+ * event log (`<SimulationEventList>`), which reflects whatever one specific past run happened to do,
+ * not general design intent, and isn't extracted here for that reason (confirmed OpenRocket's own
+ * RockSim importer doesn't attempt this either). Included as a field anyway (not omitted) so
+ * splashcast's own schema is stable now and doesn't need to change again if/when a real source shows
+ * up later -- splashcast is expected to let the visitor fill in/edit a real value on its own side
+ * when this is null, same as it would for a device this project couldn't compute a rate for at all.
+ */
+export interface OutboundDescentDevice {
+  role: "drogue" | "main";
+  type: "parachute" | "streamer";
+  descentRateMs: number;
+  deployAltitudeM: number | null;
+}
+
+/** Builds the descentDevices array for buildAscentResultsMessage from the active rocket's own parsed recovery devices (see DescentDevice) plus the same descending-mass/air-density inputs renderDescentDevicesSection already uses for its own display -- one shared descentRate() calculation, not two independently-maintained copies of the same physics. */
+export function buildOutboundDescentDevices(devices: DescentDevice[], descentMassKg: number, airDensityKgM3: number): OutboundDescentDevice[] {
+  return devices.map((d) => ({
+    role: d.role,
+    type: d.type,
+    descentRateMs: descentRate(d, descentMassKg, airDensityKgM3),
+    deployAltitudeM: null,
+  }));
+}
+
+/**
  * Assembles the `rocketry:ascentResults` (plural) postMessage envelope -- one ascent path PER
  * forecast model actually available for the requested hour (splashcast's own `selectedModels`
  * show/hide toggle already operates on "all available models, all start selected" for the descent
@@ -83,6 +116,13 @@ export interface ModelAscentResult {
  * field (splashcast's own listener, at time of writing) is entirely unaffected either way. Not yet
  * consumed on the inbound side by anything in this repo -- see rocket-cache.ts's own header comment
  * for the deferred "splashcast stores this and passes it back" follow-up this unlocks.
+ *
+ * `descentDevices` (optional, see OutboundDescentDevice's own doc comment) is likewise a single
+ * top-level field, not duplicated per model -- descent rate depends on descending mass and launch-
+ * site air density, neither of which varies by forecast model. Omitted when the active rocket has no
+ * parsed recovery devices at all (e.g. RASAero/.ork uploads -- descent-device extraction is RockSim-
+ * only today, see activeDescentDevices' own doc comment in main.ts), same "absent means nothing to
+ * attach" convention as rocketConfig.
  */
 export function buildAscentResultsMessage(
   rocketName: string,
@@ -90,6 +130,7 @@ export function buildAscentResultsMessage(
   stability: StabilityCheck,
   results: ModelAscentResult[],
   rocketConfig?: OutboundRocketConfig,
+  descentDevices?: OutboundDescentDevice[],
 ): {
   type: "rocketry:ascentResults";
   rocketName: string;
@@ -97,8 +138,9 @@ export function buildAscentResultsMessage(
   stability: StabilityCheck;
   results: ModelAscentResult[];
   rocketConfig?: OutboundRocketConfig;
+  descentDevices?: OutboundDescentDevice[];
 } {
-  return { type: "rocketry:ascentResults", rocketName, parseWarnings, stability, results, rocketConfig };
+  return { type: "rocketry:ascentResults", rocketName, parseWarnings, stability, results, rocketConfig, descentDevices };
 }
 
 /** Assembles the exact `rocketry:error` postMessage envelope. `message` should be specific enough to show directly to the splashcast visitor (see the contract's own guidance), not a raw stack trace. */
