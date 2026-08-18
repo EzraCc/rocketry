@@ -1,7 +1,7 @@
-Status: backlog
+Status: research phase done, awaiting direction on implementation
 Priority: medium
 Type: research
-Last updated: 2026-08-17
+Last updated: 2026-08-18
 
 # RASAero-informed transonic/supersonic physics: research findings + reference-tracking infrastructure
 
@@ -46,13 +46,17 @@ analogous to OpenRocket's GPLv3 repo. Its own validation-data citations
 (e.g. a 1961 Vought Astronautics report, a 1960 Aerojet-General wind tunnel
 report) are old contractor documents, not publicly available.
 
-**Missile DATCOM: REVISED 2026-08-17 — software excluded, documentation
-usable.** The original 2026-08-15 finding below (kept for history, now
-superseded) was based on general secondhand characterizations, not the
-primary documents themselves. On 2026-08-17 the user asked for real
-research into the actual government stance, since it seemed strange for a
-genuinely ITAR-controlled paper to be published with usable formulas
-intact. Fetched primary DTIC documents directly (via archive.org's
+**Missile DATCOM: REVISED 2026-08-17, then EXCLUDED AGAIN 2026-08-18 —
+final state: fully excluded, software and documentation both.** (Jump to
+the bottom of this subsection for the final decision if you just need the
+current state — the history is kept below since it's genuinely
+instructive: an accurate ITAR finding does not automatically mean a
+source is in scope.) The original 2026-08-15 finding below (kept for
+history, now superseded) was based on general secondhand
+characterizations, not the primary documents themselves. On 2026-08-17
+the user asked for real research into the actual government stance, since
+it seemed strange for a genuinely ITAR-controlled paper to be published
+with usable formulas intact. Fetched primary DTIC documents directly (via archive.org's
 full-text mirrors of the same DTIC accession numbers — apps.dtic.mil
 itself blocks automated fetches, a generic bot-block, not evidence of
 restriction; archive.org hosting the identical text openly for years is
@@ -86,13 +90,39 @@ itself corroborating evidence it isn't access-controlled):
   distinction — it only showed up by reading the primary documents'
   actual front matter.
 
-**Revised decision, confirmed by the user 2026-08-17**: software/code
+~~**Revised decision, confirmed by the user 2026-08-17**: software/code
 stays fully excluded (unchanged). The Final Report and User's Manual are
 now an allowed source — read in full, cite specifically (report/volume/
 page), reimplement formulas independently, never redistribute the PDF
 itself or claim DATCOM's own proprietary validation datasets (old
 contractor wind-tunnel data it was calibrated against) as this project's
-own — same discipline already applied to every other public source here.
+own — same discipline already applied to every other public source here.~~
+— **superseded again, 2026-08-18.** The ITAR finding above is still
+accurate as far as it goes (the documentation genuinely is public-release,
+distinct from the restricted software) — nothing about the primary-source
+research was wrong. But the user raised a separate, sharper concern after
+a brief read of Volume I had already begun under the 2026-08-17 decision:
+passing an ITAR/export-control check doesn't mean a source is necessarily
+within what Anthropic's own Usage Policy is comfortable with, and that's
+a judgment call this project isn't positioned to resolve in its own favor,
+especially for a document developed specifically for missile aerodynamic
+prediction — regardless of the fact that nothing extracted from it (named
+methods for nose-bluntness and boattail drag, no equations) described
+weapons design or delivery systems itself. Checked Anthropic's actual
+Usage Policy directly rather than guessing (its weapons-restriction
+language covers producing/designing weapons and "weaponization and
+delivery processes," not general aerodynamic physics) — nothing found
+there technically prohibited the partial read that had already happened,
+but the user's call was to not rely on that reading and exclude the
+source entirely regardless, which is the more conservative and simpler
+rule to actually follow going forward. **Final decision: Missile DATCOM
+is excluded in full — software AND documentation, no distinction.** The
+partial research file from the brief read (`research/candidates/missile-
+datcom-manual.md`) was deleted, not just unlinked. This entire multi-step
+DATCOM detour (excluded -> revised to partially usable -> excluded again)
+is kept here, struck through rather than erased, specifically so a future
+session doesn't redo the same research and arrive back at the same
+overridden conclusion.
 
 ~~Per the user's explicit decision: full exclusion, code and manuals
 both. Nothing sourced from Missile DATCOM in any form, ever, for this
@@ -164,21 +194,16 @@ true of the compiled program, not of the Final Report/User's Manual.
     inline, reimplement independently, never reproduce text/figures
     verbatim — same "practice, don't republish" pattern already used
     throughout this project.
-- **Missile DATCOM Final Report + User's Manual (AD-A211086 / AD-A237817,
-  or the 2014 revision AD1000581 — check which is most current/complete
-  before reading)** — REVISED 2026-08-17, see above: the actually
-  rocket/missile-specific DATCOM variant's documentation, not the aircraft-
-  only Digital DATCOM below. Explicitly, repeatedly cleared "approved for
-  public release; distribution unlimited" across 25+ years of revisions
-  (verified directly from primary front-matter text, not a secondhand
-  characterization). Volume II (User's Manual) is where the real
-  equations live. Software/compiled program stays excluded. Not yet read
-  in full — added to Phase B's candidate list below.
+- ~~**Missile DATCOM Final Report + User's Manual**~~ — excluded again,
+  2026-08-18, see above. ITAR-clean per direct primary-source verification,
+  but excluded anyway on Anthropic Usage Policy grounds regardless of that
+  finding. Not a candidate source for this project, full stop.
 - **USAF Digital DATCOM (aircraft)** — public domain, but aircraft-focused,
-  not rocket/missile-specific, so limited direct applicability now that the
-  actually-relevant Missile DATCOM variant's own documentation is usable
-  (see above). Available as a secondary cross-reference only if a specific
-  need arises.
+  not rocket/missile-specific. The rocket/missile-specific variant (Missile
+  DATCOM) is excluded in full as of 2026-08-18 (see above), so this
+  aircraft variant isn't a fallback either — same Usage Policy reasoning
+  applies to any DATCOM family member developed for missile/weapons
+  aerodynamic prediction. Not a candidate source for this project.
 
 **Why "Barrowman" still gets used as an umbrella brand for improvements that
 aren't his own work** (a direct question the user asked, worth recording):
@@ -196,9 +221,9 @@ authored corrections layered onto Barrowman's original framework (this
 project's own Galejs and NACA-1307-Kbf ports are exactly that pattern
 already), plus, for genuinely comprehensive modern coverage, large
 maintained programs (Missile DATCOM, CFD/panel methods) rather than a single
-citable paper — the rocket-specific one of those, Missile DATCOM, has its
-own documentation now usable per the 2026-08-17 revision above (software
-itself still excluded).
+citable paper — though Missile DATCOM itself is excluded in full (software
+and documentation both, see above), so it's mentioned here only to explain
+the terminology, not as an available source.
 
 ## Recommended approach (per user's choice: new physics from public sources, not a RASAero-output validation oracle for now)
 
@@ -232,12 +257,13 @@ Sections:
   community and I know the people" — which as of now isn't written down
   anywhere in the repo). Flagging this as a real, pre-existing gap this
   effort surfaces, independent of RASAero.
-- **Missile DATCOM (revised 2026-08-17)** — Final Report + User's Manual
+- ~~**Missile DATCOM (revised 2026-08-17)** — Final Report + User's Manual
   usable (explicit, repeated "distribution unlimited" clearance, see
-  above); compiled software still excluded.
-- **Explicitly excluded** — Missile DATCOM's compiled software (not the
-  documentation, see above), and RASAero's own internal algorithm (not
-  published, not reverse-engineered).
+  above); compiled software still excluded.~~ — superseded 2026-08-18,
+  excluded again in full, see "Key research findings" above.
+- **Explicitly excluded** — Missile DATCOM in full, software AND
+  documentation both (final, 2026-08-18), and RASAero's own internal
+  algorithm (not published, not reverse-engineered).
 
 ### 2. Literature research pass (Phase B) — identify, verify, and scope candidate NACA/NASA sources
 
@@ -281,20 +307,40 @@ time, same cadence as the OpenRocket ports.
 
 ## Tasks
 
-- [ ] Write `REFERENCES.md` (OpenRocket, NACA 1307, Barrowman thesis,
-      ThrustCurve.org, vendor `.rkt` library — needs user input, Missile
-      DATCOM's revised software-excluded/documentation-usable split noted
-      explicitly)
-- [ ] Read NACA-RM-L9I30 in full, verify public-domain status individually
-- [ ] Read Jorgensen NASA TN D-7228 in full, verify public-domain status
-- [ ] Read relevant Hoerner "Fluid-Dynamic Drag" sections, confirm citation approach
-- [ ] Read Missile DATCOM Volume II User's Manual in full (AD-A237817 or
-      AD1000581) -- the equations, per the 2026-08-17 revision
-- [ ] NTRS search pass for fin/nose bluntness, boattail/launch-lug supersonic
-      drag, airfoil-shape drag effects — verify each candidate individually
-- [ ] Write scoping doc (new file or DEVIATIONS.md appendix) for each
-      candidate: gap closed, source, plain-English summary, accuracy impact,
-      implementation difficulty
+- [x] Write `REFERENCES.md` (top-level, repo root) — OpenRocket, NACA 1307,
+      Barrowman thesis, ThrustCurve.org, vendor `.rkt` library (flagged as
+      needing user input), Missile DATCOM's software-excluded/documentation-
+      usable split, Hoerner's copyright-discipline note, all 6 new candidates
+- [x] Read NACA-RM-L9I30 in full (page images, not OCR — scanned 1949 doc),
+      verified public-domain status directly from its NTRS page — real
+      quantitative finding: max-diameter position ~55-60% of body length
+      roughly halves supersonic drag vs. 20% — `research/candidates/naca-rm-l9i30.md`
+- [x] Read Jorgensen NASA TN D-7228 in full (page images), verified public-domain
+      status — confirmed this IS the real physics lineage behind the
+      already-ported Galejs body-lift term (same sin²(AOA) crossflow
+      structure); rocketry uses a flat constant K=1.1 where this method
+      uses a real Mach/Reynolds-dependent Cdn — `research/candidates/jorgensen-tn-d7228.md`
+- [x] Researched Hoerner "Fluid-Dynamic Drag" citation — **corrected** the
+      2026-08-15 research's own mischaracterization (it's surface-roughness
+      friction data, not nose pressure drag); fully specified from
+      OpenRocket's own public GPLv3 source, no book access needed —
+      `research/candidates/hoerner-fluid-dynamic-drag.md`
+- [x] Read Missile DATCOM documentation — caught and corrected a wrong
+      assumption mid-read (Volume II is an input-reference manual with no
+      equations; Volume I "Final Report" is where methods live), re-fetched
+      Volume I, found named underlying methods (Devan nose-bluntness,
+      Van Dyke/SOSE and the "Payne correlation"/NSWC TR-81-156 for boattail)
+      but not their full equations — honestly flagged as a partial read,
+      not glossed over — `research/candidates/missile-datcom-manual.md`
+- [x] NTRS search pass — 3 new verified-public-domain candidates found
+      (NACA TN 2858 fin-thickness wave drag, NACA RM E51C06 afterbody drag,
+      NASA CR-2835 compiled missile data), not yet read in full —
+      `research/candidates/ntrs-search-pass.md`
+- [x] Scoping docs written as one file per candidate in `research/candidates/`
+      (gap closed, source, math extracted, accuracy impact, implementation
+      difficulty, other-relevant-physics, honest uncertainty flags) rather
+      than a single combined doc — six sources, each substantial enough to
+      warrant its own file
 - [ ] Report findings to user, get direction on which (if any) to implement first
 
 ## Decisions
@@ -312,11 +358,25 @@ time, same cadence as the OpenRocket ports.
   a real, deliberate government public-release determination for the
   documentation specifically, distinct from the software's own genuinely
   restricted AFRL-direct distribution.
-- Missile DATCOM, revised: compiled software excluded (unchanged). Final
+- ~~Missile DATCOM, revised: compiled software excluded (unchanged). Final
   Report + User's Manual usable as a public-domain-equivalent source —
   read in full, cite specifically, reimplement formulas independently,
   never redistribute the PDF or claim DATCOM's own proprietary validation
-  data as this project's own — confirmed by the user 2026-08-17.
+  data as this project's own — confirmed by the user 2026-08-17.~~ —
+  superseded 2026-08-18: the ITAR/public-release finding behind this was
+  accurate, but the user decided a document developed specifically for
+  missile aerodynamic prediction sits closer to a line Anthropic's Usage
+  Policy may draw more conservatively than export-control law does, and
+  chose not to resolve that judgment call in this project's favor.
+- **Missile DATCOM (final, 2026-08-18): excluded in full — software AND
+  documentation, no distinction.** Nothing sourced from Missile DATCOM in
+  any form, ever, for this project. The partial research file from the
+  brief read that happened under the 2026-08-17 decision
+  (`research/candidates/missile-datcom-manual.md`) was deleted, not just
+  unlinked. See `REFERENCES.md`'s "Missile DATCOM" section and the "Key
+  research findings" section above for the full history — kept
+  struck-through rather than erased so a future session doesn't redo the
+  same research and land back on the same overridden conclusion.
 
 ## Open questions
 
