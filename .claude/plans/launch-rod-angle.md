@@ -1,7 +1,7 @@
 Status: backlog
 Priority: medium
 Type: new-feature
-Last updated: 2026-08-16
+Last updated: 2026-08-17
 
 # Launch rod angle + direction (weathercocking mitigation)
 
@@ -46,6 +46,27 @@ vertical-only), just enough to size the work as plausibly small.
   (e.g. splashcast auto-suggesting a rod angle/direction from its own wind
   data), or is this manual-entry-only, out of scope for the splashcast
   handoff for now? Punt until the base feature exists.
+
+## Detours
+
+- **2026-08-17: trig-vs-full-sim check, done and answered.** Before
+  building any UI, ran a quick throwaway script (3 real rockets --
+  LOC-IV X2, Mach1 Chimera BT60, Wildman Wasserfall 4in -- real H/I/K
+  motors, real Hutto 8/15 wind) comparing a real physics rerun at a 5°
+  rod tilt (into the wind) against a naive "just rotate the apogee point
+  by h*tan(angle)" trig shortcut on top of one vertical sim. Result: trig
+  consistently UNDERESTIMATES real drift by 30-45% across all 3 (43%,
+  32%, 32%), because tilt-at-burnout roughly DOUBLES rather than just
+  adding the rod's own tilt on top -- rod tilt and wind-driven AOA
+  interact through the whole boost phase, not a static geometric
+  relationship. **Conclusion: this app needs a real rerun of the physics
+  engine per rod angle -- no cheap trig shortcut will hold up.** Directly
+  answers the sizing question this feature will face once built (can a
+  "try a few angles" UI reuse one cached sim, or does each angle need its
+  own worker run) -- it needs its own run, same cost as any other
+  rocket/motor/override change already does. Script was discarded (not
+  committed, was throwaway) once the answer was clear -- no need to keep
+  re-running it.
 
 ## Tasks
 
