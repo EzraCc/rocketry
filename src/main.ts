@@ -10,7 +10,6 @@ import { isBodyComponent, type Component } from "./model/component.js";
 import { unzipOrkXml } from "./formats/ork/unzip.js";
 import { parseOrkXml } from "./formats/ork/parse.js";
 import { parseRocksimXml, type DescentDevice } from "./formats/rocksim/parse.js";
-import { parseRasaeroXml } from "./formats/rasaero/parse.js";
 import { IsaAtmosphere } from "./physics/atmosphere/isa-model.js";
 import {
   searchMotors,
@@ -1103,7 +1102,7 @@ function renderRocketSection(rocket: Rocket, mach: number, subtitle: string): st
       ${renderInfoPanel(
         "cp-method-info",
         "How Computed CP is calculated",
-        `Computed by default independently from this rocket's geometry — never read from the source file (.ork/.rkt/.CDX1), regardless of format. Method: classical Barrowman component buildup (nose/transition/tube + fin CNa/CP), a corrected fin-body interference factor, the Galejs body-lift term, and OpenRocket's own transonic/supersonic fin CNa1 and CP-shift models (valid to Mach 5). Overridable (pencil icon) with a real measured/preferred value, or with the source file's own last-computed CP in one click ("Use simfile CP", shown only when the file has one) -- RockSim's proprietary extended-method CP for .rkt, OpenRocket's own saved post-rod-exit CP for .ork.`,
+        `Computed by default independently from this rocket's geometry — never read from the source file (.ork/.rkt), regardless of format. Method: classical Barrowman component buildup (nose/transition/tube + fin CNa/CP), a corrected fin-body interference factor, the Galejs body-lift term, and OpenRocket's own transonic/supersonic fin CNa1 and CP-shift models (valid to Mach 5). Overridable (pencil icon) with a real measured/preferred value, or with the source file's own last-computed CP in one click ("Use simfile CP", shown only when the file has one) -- RockSim's proprietary extended-method CP for .rkt, OpenRocket's own saved post-rod-exit CP for .ork.`,
       )}
       <figure class="schematic">
         ${renderSchematicSvg(rocket.components, displayCpX, hasCg ? activeLoadedCgM : undefined, schematicMotorInfo)}
@@ -2415,7 +2414,7 @@ const orkSectionHtml = `
     <header>
       <h2>Rocket</h2>
       <p>
-        Select a rocket simfile from the library, or upload your own (.ork, .rkt, or .CDX1). 
+        Select a rocket simfile from the library, or upload your own (.ork or .rkt).
       </p>
     </header>
     <details id="library-picker">
@@ -2429,7 +2428,7 @@ const orkSectionHtml = `
     </details>
     <div class="grid" style="margin-top:1em;">
       <label>Or upload a file
-        <input type="file" id="ork-file-input" accept=".ork,.rkt,.CDX1" />
+        <input type="file" id="ork-file-input" accept=".ork,.rkt" />
       </label>
     </div>
     <div id="ork-warnings"></div>
@@ -2482,19 +2481,24 @@ function wireOrkImport(): void {
 
     void (async () => {
       try {
-        // Only .ork carries an embedded motor reference -- RockSim and RASAero files have no
-        // motor data at all, only mount geometry (parseRocksimXml/parseRasaeroXml's results have
-        // no `motor` field to begin with). Widened to include every optional field
-        // applyParsedRocket/CachedParsedRocket can carry (not just the 4 always read directly
-        // below) so this same `parsed` can also be handed straight to saveCurrentConfigToCache
-        // without re-deriving a second, narrower view of the same parse result.
+        // RASAero (.CDX1) import is disabled for now -- built and tested around .ork/.rkt, and
+        // .CDX1 hasn't had the same real-file testing pass those two got this session. The parser
+        // itself (src/formats/rasaero/parse.ts) is untouched and still under test, just not
+        // reachable from this upload flow until it's had that pass.
+        if (lowerName.endsWith(".cdx1")) {
+          throw new Error("RASAero (.CDX1) import isn't supported yet -- this project is built and tested around .ork/.rkt files. Export your rocket as .ork or .rkt instead.");
+        }
+
+        // Only .ork carries an embedded motor reference -- RockSim files have no motor data at
+        // all, only mount geometry (parseRocksimXml's result has no `motor` field to begin with).
+        // Widened to include every optional field applyParsedRocket/CachedParsedRocket can carry
+        // (not just the 4 always read directly below) so this same `parsed` can also be handed
+        // straight to saveCurrentConfigToCache without re-deriving a second, narrower view of the
+        // same parse result.
         let parsed: CachedParsedRocket;
         let motor: { manufacturer: string; designation: string } | null;
         if (lowerName.endsWith(".rkt")) {
           parsed = parseRocksimXml(await file.text());
-          motor = null;
-        } else if (lowerName.endsWith(".cdx1")) {
-          parsed = parseRasaeroXml(await file.text(), file.name);
           motor = null;
         } else {
           const orkParsed = parseOrkXml(await unzipOrkXml(await file.arrayBuffer()));

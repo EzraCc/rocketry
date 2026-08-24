@@ -24,8 +24,10 @@ from the site's own footer), generated from `validation/`, regenerate with
 ## What it does
 
 - **Rocket library**: 339 real vendor `.rkt` (RockSim) simfiles (LOC Precision, Apogee, Mach1,
-  Wildman), browsable by vendor/diameter/name, or upload your own `.ork` (OpenRocket), `.rkt`
-  (RockSim), or `.CDX1` (RASAero) file.
+  Wildman), browsable by vendor/diameter/name, or upload your own `.ork` (OpenRocket) or `.rkt`
+  (RockSim) file. RASAero (`.CDX1`) import exists in the codebase (`src/formats/rasaero/`) but is
+  disabled in the UI for now — built and tested around `.ork`/`.rkt`, `.CDX1` hasn't had the same
+  real-file testing pass.
 - **Motor search**: live search against [ThrustCurve.org](https://www.thrustcurve.org)'s API
   (no backend, CORS is open) — thrust curve, mass curve (real per-sample propellant mass when the
   motor's own source file has one, otherwise derived from total/propellant weight), diameter
@@ -54,7 +56,7 @@ from the site's own footer), generated from `validation/`, regenerate with
 ## Project layout
 
 - `src/main.ts` — the whole UI (imperative DOM rendering, no framework).
-- `src/formats/` — `.rkt`/`.ork`/`.CDX1` parsers.
+- `src/formats/` — `.rkt`/`.ork`/`.CDX1` parsers (`.CDX1` import is disabled in the UI for now, see `wireOrkImport` in `src/main.ts`).
 - `src/physics/` — aero (Barrowman), mass/CG, motor, atmosphere, and the 3D sim engine.
 - `src/worker/` — Web Worker wrapper so the flight sim doesn't block the UI thread.
 - `public/library/` — the vendor `.rkt` library + generated manifest.
