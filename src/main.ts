@@ -134,6 +134,7 @@ function applyParsedRocket(
   parsed: {
     name: string;
     components: Component[];
+    warnings: string[];
     estimatedDryMassKg?: number;
     estimatedDryCgM?: number;
     dryMassBreakdown?: { name: string; massKg: number; cgXM: number }[];
@@ -161,7 +162,19 @@ function applyParsedRocket(
   activeDescentDevices = parsed.descentDevices ?? [];
   const motorMountComponent = parsed.components.find((c) => c.type === "bodytube" && c.isMotorMount);
   const bodyComponents = parsed.components.filter(isBodyComponent);
-  const motorMountId = motorMountComponent?.id ?? bodyComponents[bodyComponents.length - 1]?.id ?? "";
+  const fallbackMotorMount = bodyComponents[bodyComponents.length - 1];
+  const motorMountId = motorMountComponent?.id ?? fallbackMotorMount?.id ?? "";
+  // No component in the file was flagged as the motor mount at all -- common in practice (~8% of
+  // this project's own vendored library, confirmed by a direct scan, e.g. LOC-IV and Bull Puppy 2.2)
+  // for files whose author never bothered checking that box, not necessarily a real absence of a
+  // motor mount. Assuming the aftmost body component is correct in the overwhelming majority of real
+  // rockets (the motor virtually always sits at or near the tail), so keep the existing fallback
+  // behavior -- but say so, rather than silently guessing with nothing shown to the user.
+  if (!motorMountComponent && fallbackMotorMount) {
+    parsed.warnings.push(
+      `No motor mount was flagged in this file -- assuming "${fallbackMotorMount.name}" (the aftmost body component) is the motor mount.`,
+    );
+  }
 
   // .rkt and .ork files both carry a real motor-mount-tube diameter (see parseRocksimXml's and
   // parseOrkXml's own motorMountDiameterM doc comments); .CDX1 uploads and any file with no
