@@ -1,7 +1,7 @@
 Status: research phase done, awaiting direction on implementation
 Priority: medium
 Type: research
-Last updated: 2026-08-18
+Last updated: 2026-08-19
 
 # RASAero-informed transonic/supersonic physics: research findings + reference-tracking infrastructure
 
@@ -341,7 +341,42 @@ time, same cadence as the OpenRocket ports.
       difficulty, other-relevant-physics, honest uncertainty flags) rather
       than a single combined doc — six sources, each substantial enough to
       warrant its own file
-- [ ] Report findings to user, get direction on which (if any) to implement first
+- [x] Read NACA-TN-2858 in full (page-image rendering, same method as
+      NACA-RM-L9I30) — **negative finding**: delta-wing-specific (point
+      apex, zero tip chord) closed-form wave-drag result, doesn't generalize
+      to rocketry's trapezoidal/freeform fin shapes, and rocketry's data
+      model has no per-span thickness-ratio distribution to consume it even
+      if the planform matched. Closes out the "Gap 3" fin-thickness-drag
+      lead as a dead end, not left open — `research/candidates/naca-tn-2858.md`
+- [x] Read NASA TN D-6996 (Jorgensen, 1973 pub/Aug 1972 submitted) — found
+      opportunistically by chasing TN D-7228's own reference list (this
+      report is TN D-7228's "reference 9"), not part of the original
+      six-candidate list. Resolves the missing `Cdn(Mn, Ren)` crossflow-drag
+      data dependency flagged in `jorgensen-tn-d7228.md` — digitized
+      (coarse, eyeballed-off-plots) tables for Cdn vs. Mach, Cdn vs.
+      Reynolds (including the subcritical "drag crisis" trough), and the η
+      finite-cylinder correction vs. L/d. No closed-form fit in either
+      Jorgensen report — implementation difficulty stays medium, just no
+      longer blocked on missing data — `research/candidates/jorgensen-1972-cdn-curve.md`
+- [x] Read NACA-RM-E51C06 in full (page images for Table I geometry and key
+      figures, OCR text for prose) — **positive finding**: computed the
+      report's own boattail geometry from Table I and confirmed it's a
+      fineness-5.08 taper, well past rocketry's ported `boattailPressureCd()`
+      zero-cutoff at fineness≥3; the report's own measured `Cd,p` for that
+      geometry is ~0.02-0.06 (nonzero), a real, quantified gap — roughly a
+      quarter to a third of that configuration's total drag coefficient.
+      Also confirmed via NTRS the report was originally CONFIDENTIAL,
+      properly declassified — first source in this batch with that
+      provenance, verified rather than assumed —
+      `research/candidates/naca-rm-e51c06.md`
+- [x] Read NASA CR-2835 in full (OCR text for the 30-configuration survey
+      and method sections, page images for two data figures) — mostly out
+      of scope (guided-missile canard/tail control-surface effectiveness
+      data, no rocketry analog), but found one exception: TM X-2831, a
+      fin-stabilized 105-mm projectile with no control surfaces, gives a
+      clean, dimensioned Cd,o/CLα/Xac-vs-Mach validation dataset —
+      `research/candidates/nasa-cr-2835.md`
+- [x] Report findings to user, get direction on which (if any) to implement first
 
 ## Decisions
 
@@ -377,6 +412,21 @@ time, same cadence as the OpenRocket ports.
   research findings" section above for the full history — kept
   struck-through rather than erased so a future session doesn't redo the
   same research and land back on the same overridden conclusion.
+
+## Detours
+
+- **2026-08-19: plan/reality reconciliation after a frozen session.** A
+  prior session read NACA-TN-2858 and (opportunistically) NASA TN D-6996,
+  writing both up fully in `research/candidates/`, but froze before
+  updating this plan file, `index.md`, or `REFERENCES.md` to match —
+  `REFERENCES.md` still said TN-2858 was "not yet read," and D-6996 wasn't
+  referenced anywhere outside its own candidate file. Also discovered:
+  `REFERENCES.md` and the whole `research/` directory are untracked in
+  git, never committed. Reconciled by updating `REFERENCES.md`'s NACA/NASA
+  table and this file's task list above to reflect both reads; no new
+  research was done in this pass, just tracking catch-up. Flagging per
+  this project's own drift-guarding convention rather than silently
+  treating the stale plan as current.
 
 ## Open questions
 
