@@ -89,6 +89,44 @@ describe("parseOrkXml — real .ork fixtures from OpenRocket's own example rocke
   });
 });
 
+describe("parseOrkXml — motor mount diameter (a nested inner tube narrower than the outer airframe)", () => {
+  it("parses 'PML_Callisto.ork': motor mount diameter comes from the actual mount tube, not the outer 54mm airframe", async () => {
+    const bytes = fs.readFileSync(path.resolve(__dirname, "../../../sim-files/misc/PML_Callisto.ork"));
+    const xml = await unzipOrkXml(bytes);
+    const parsed = parseOrkXml(xml);
+
+    // The rocket flies a real 38mm motor (Cesaroni 247H143-13A) via an inner tube nested inside a
+    // ~57.8mm-outer-diameter ("54mm class") airframe -- motorMountDiameterM must reflect the inner
+    // tube's own inner diameter (outerradius 0.0206375 - thickness 0.0013335, doubled), not the
+    // outer body tube's much wider radius (which is what referenceDiameter/hasMotorMount's deep
+    // search would otherwise report -- see extractMotorMountDiameterM's own doc comment).
+    expect(parsed.motor).toEqual({ manufacturer: "Cesaroni Technology", designation: "247H143-13A" });
+    expect(parsed.motorMountDiameterM).toBeCloseTo(0.0386, 3);
+    expect(parsed.motorMountDiameterM).toBeLessThan(0.05); // sanity: nowhere near the 54mm-class outer airframe
+  });
+});
+
+describe("parseOrkXml — recovery devices (main/drogue)", () => {
+  it("parses 'PML_Callisto.ork': single parachute, no <isdrogue> flag -> stays 'main' (single-deploy)", async () => {
+    const bytes = fs.readFileSync(path.resolve(__dirname, "../../../sim-files/misc/PML_Callisto.ork"));
+    const xml = await unzipOrkXml(bytes);
+    const parsed = parseOrkXml(xml);
+
+    expect(parsed.descentDevices).toHaveLength(1);
+    expect(parsed.descentDevices[0]).toMatchObject({ type: "parachute", role: "main", dragCoefficient: 1.55 });
+    // 1.2192m diameter, full disk (OpenRocket's own parachute has no spill-hole concept).
+    expect(parsed.descentDevices[0]!.dragAreaM2).toBeCloseTo(Math.PI * (1.2192 / 2) ** 2, 6);
+  });
+
+  it("parses 'A simple model rocket.ork': single parachute with <cd>auto</cd> -> falls back to the 0.8 default", async () => {
+    const parsed = await loadAndParse("A simple model rocket.ork");
+
+    expect(parsed.descentDevices).toHaveLength(1);
+    expect(parsed.descentDevices[0]).toMatchObject({ type: "parachute", role: "main", dragCoefficient: 0.8 });
+    expect(parsed.descentDevices[0]!.dragAreaM2).toBeCloseTo(Math.PI * (0.3 / 2) ** 2, 6);
+  });
+});
+
 describe("parseOrkXml — error handling", () => {
   it("throws a clear error for XML that isn't a valid .ork rocket document", () => {
     expect(() => parseOrkXml("<not-a-rocket/>")).toThrow(/No <rocket> element/);

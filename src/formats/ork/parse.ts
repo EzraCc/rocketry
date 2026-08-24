@@ -1,5 +1,6 @@
 import type { Component, FinCrossSection, FreeformFinSet, TrapezoidalFinSet } from "../../model/component.js";
 import type { Shape } from "../../physics/geometry/shapes.js";
+import type { DescentDevice } from "../rocksim/parse.js";
 
 const DEG_TO_RAD = Math.PI / 180;
 const KNOWN_SHAPES: Shape[] = ["conical", "ogive", "ellipsoid", "power", "parabolic", "haack"];
@@ -14,6 +15,10 @@ export interface ParsedOrkRocket {
   components: Component[];
   /** The default flight configuration's motor (manufacturer+designation), for a ThrustCurve.org search — null if the file has no motor selected. */
   motor: OrkMotorRef | null;
+  /** The actual motor mount tube's own inner diameter (m), when one is found — see extractMotorMountDiameterM's own doc comment. Undefined if the file has no <motormount> tag at all. */
+  motorMountDiameterM?: number;
+  /** Recovery devices found in the imported (sustainer) stage, classified main/drogue — see extractDescentDevices's own doc comment for how. */
+  descentDevices: DescentDevice[];
   warnings: string[];
   /** OpenRocket's own last-computed CP (m from nose tip), read from a saved simulation's flight data -- see extractEmbeddedCpM's own doc comment. Undefined if the file has no saved simulation with a usable CP value. */
   embeddedCpM?: number;
@@ -163,6 +168,35 @@ function hasMotorMount(el: Element): boolean {
   return el.getElementsByTagName("motormount").length > 0;
 }
 
+/**
+ * The motor mount's own inner diameter (m) — the tube the motor actually slides into, which is
+ * routinely much narrower than the rocket's outer airframe (e.g. a 38mm motor riding in an inner
+ * tube inside a 54mm-airframe rocket, like PML's Callisto). Distinct from hasMotorMount's deep
+ * search: that flags whichever top-level Component (nosecone/bodytube/transition — this project has
+ * no separate inner-tube Component type) conceptually "owns" the motor, which for a real dual-deploy
+ * build is the OUTER body tube, not the actual mount. Used to pre-fill/constrain the ThrustCurve.org
+ * search's diameter filter — getting this wrong (falling back to the outer airframe diameter)
+ * silently returns zero search results for a real, correctly-loaded motor.
+ *
+ * Finds whichever element in the whole document has a direct <motormount> child (usually an
+ * <innertube>, occasionally the outer <bodytube> itself on a minimum-diameter build with no
+ * separate mount tube) and reads ITS OWN diameter/thickness tags -- <innertube> stores
+ * <outerradius>, <bodytube> stores <radius> (also nominally an outer radius, per this file's
+ * existing bodytube parsing above) -- inner diameter = 2 * (outer radius - wall thickness),
+ * matching parseRocksimXml's extractMotorMountDiameterM convention of using the mount tube's own
+ * inner diameter (RockSim stores that directly as <ID>; .ork doesn't have an inner-diameter field,
+ * so it's derived here instead).
+ */
+function extractMotorMountDiameterM(rocketEl: Element): number | undefined {
+  const tube = Array.from(rocketEl.getElementsByTagName("*")).find((el) => directChild(el, "motormount"));
+  if (!tube) return undefined;
+  const isInnerTube = tube.tagName.toLowerCase() === "innertube";
+  const outerRadius = isInnerTube ? number(tube, "outerradius", 0) : numberMaybeAuto(tube, "radius", 0);
+  const thickness = number(tube, "thickness", 0);
+  const innerRadius = outerRadius - thickness;
+  return innerRadius > 0 ? innerRadius * 2 : undefined;
+}
+
 const SUPPORTED_BODY_TAGS = new Set(["nosecone", "bodytube", "transition"]);
 const SKIPPED_BUT_KNOWN_TAGS = new Set([
   "stage", "parachute", "streamer", "shockcord", "masscomponent", "launchlug", "railbutton",
@@ -291,6 +325,65 @@ function extractEmbeddedCpM(doc: Document): number | undefined {
   return undefined;
 }
 
+/**
+ * Recovery devices (<parachute>/<streamer>) nested anywhere inside the given stage element,
+ * classified main/drogue. Unlike parseRocksimXml's own extractDescentDevices (which has to guess
+ * from the part's name, since RockSim's own file format has no drogue/main flag at all),
+ * OpenRocket's native .ork format writes an explicit `<isdrogue>true</isdrogue>` tag whenever a
+ * device is flagged as the drogue (confirmed directly against
+ * RecoveryDeviceSaver.java -- only ever written when true, omitted otherwise) -- read that first,
+ * and only fall back to the same size-based heuristic RockSim parsing uses (of multiple devices with
+ * no explicit flag at all, the smallest becomes the drogue) for files where isdrogue was never set
+ * on anything. A single device with nothing else present just stays "main" (the common
+ * single-deploy case) -- matches parseRocksimXml's own convention exactly, since both feed the same
+ * DescentDevice[] shape onward to the rest of this project (mass/descent-rate calc, splashcast
+ * payload).
+ *
+ * OpenRocket's own <parachute> has no spill-hole concept (confirmed against ParachuteSaver.java --
+ * unlike RockSim's own format, which does) -- full disk diameter is the whole drag area. <cd> is
+ * sometimes literally "auto" (OpenRocket computes it itself rather than storing a fixed value) --
+ * same "auto <value>|auto" pattern numberMaybeAuto already handles elsewhere in this file, but with
+ * no fallback OpenRocket-computed value available here, so this falls back to the same fixed
+ * defaults (0.8 parachute / 0.6 streamer) parseRocksimXml's own extractDescentDevices uses for its
+ * own "DragCoefficient" tag, which is never literally "auto" in that format but is sometimes just
+ * absent.
+ */
+function extractDescentDevices(stageEl: Element): DescentDevice[] {
+  const devices: { type: "parachute" | "streamer"; dragAreaM2: number; dragCoefficient: number; isDrogue: boolean }[] = [];
+
+  const cd = (el: Element, defaultCd: number): number => {
+    const raw = text(el, "cd");
+    if (raw === null || raw === "auto") return defaultCd;
+    const n = Number.parseFloat(raw);
+    return Number.isFinite(n) ? n : defaultCd;
+  };
+
+  for (const el of Array.from(stageEl.getElementsByTagName("parachute"))) {
+    const diameterM = number(el, "diameter", 0);
+    const areaM2 = Math.PI * (diameterM / 2) ** 2;
+    if (areaM2 <= 0) continue;
+    devices.push({ type: "parachute", dragAreaM2: areaM2, dragCoefficient: cd(el, 0.8), isDrogue: text(el, "isdrogue") === "true" });
+  }
+  for (const el of Array.from(stageEl.getElementsByTagName("streamer"))) {
+    const lengthM = number(el, "striplength", 0);
+    const widthM = number(el, "stripwidth", 0);
+    const areaM2 = lengthM * widthM;
+    if (areaM2 <= 0) continue;
+    devices.push({ type: "streamer", dragAreaM2: areaM2, dragCoefficient: cd(el, 0.6), isDrogue: text(el, "isdrogue") === "true" });
+  }
+
+  const explicitDrogues = devices.filter((d) => d.isDrogue);
+  const provisionalMains = devices.filter((d) => !d.isDrogue);
+  provisionalMains.sort((a, b) => b.dragAreaM2 - a.dragAreaM2);
+  const reassignedDrogue = explicitDrogues.length === 0 && provisionalMains.length > 1 ? provisionalMains.pop() : undefined;
+
+  const result: DescentDevice[] = [];
+  for (const d of explicitDrogues) result.push({ type: d.type, role: "drogue", dragAreaM2: d.dragAreaM2, dragCoefficient: d.dragCoefficient });
+  for (const d of provisionalMains) result.push({ type: d.type, role: "main", dragAreaM2: d.dragAreaM2, dragCoefficient: d.dragCoefficient });
+  if (reassignedDrogue) result.push({ type: reassignedDrogue.type, role: "drogue", dragAreaM2: reassignedDrogue.dragAreaM2, dragCoefficient: reassignedDrogue.dragCoefficient });
+  return result;
+}
+
 /** The manufacturer+designation of the DEFAULT flight configuration's motor, if any. */
 function findDefaultMotor(doc: Document): OrkMotorRef | null {
   const configs = Array.from(doc.getElementsByTagName("motorconfiguration"));
@@ -335,7 +428,9 @@ export function parseOrkXml(xmlText: string): ParsedOrkRocket {
 
   const components = walkStage(stages[0]!, warnings);
   const motor = findDefaultMotor(doc);
+  const motorMountDiameterM = extractMotorMountDiameterM(rocketEl);
+  const descentDevices = extractDescentDevices(stages[0]!);
   const embeddedCpM = extractEmbeddedCpM(doc);
 
-  return { name, components, motor, warnings, embeddedCpM };
+  return { name, components, motor, motorMountDiameterM, descentDevices, warnings, embeddedCpM };
 }

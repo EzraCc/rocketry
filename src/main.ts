@@ -146,6 +146,14 @@ function applyParsedRocket(
   source: string,
   displayName?: string,
 ): void {
+  // Reset first, then load -- a previously-selected motor belongs to whichever rocket was active
+  // before this call, not the one being loaded now. Left unset, its mass silently carries over into
+  // this rocket's own loaded-mass figure (dry mass resets below, but loadedMassKg = activeDryMassKg
+  // + motorLoadedMassKg(lastMotorSelection) does not) -- e.g. switching from a rocket flying a large
+  // motor to a small one keeps reporting the large motor's mass under the new, much lighter airframe.
+  lastMotorSelection = null;
+  const staleMotorDetailEl = document.querySelector<HTMLDivElement>("#motor-detail");
+  if (staleMotorDetailEl) staleMotorDetailEl.innerHTML = ""; // otherwise the previous rocket's selected-motor chart/stats linger onscreen with nothing pointing at them anymore
   activeUnsupportedFeatures = parsed.unsupportedFeatures ?? [];
   activeEstimatedDryCgM = parsed.estimatedDryCgM;
   activeEmbeddedCpM = parsed.embeddedCpM;
@@ -156,10 +164,10 @@ function applyParsedRocket(
   const bodyComponents = parsed.components.filter(isBodyComponent);
   const motorMountId = motorMountComponent?.id ?? bodyComponents[bodyComponents.length - 1]?.id ?? "";
 
-  // Only .rkt files carry a real motor-mount-tube diameter (see parseRocksimXml's
-  // motorMountDiameterM doc comment) -- .ork/.CDX1 uploads and files with no separately-flagged
-  // inner tube fall back to the reference (outer body) diameter, which for a minimum-diameter
-  // build genuinely IS what the motor sits in.
+  // .rkt and .ork files both carry a real motor-mount-tube diameter (see parseRocksimXml's and
+  // parseOrkXml's own motorMountDiameterM doc comments); .CDX1 uploads and any file with no
+  // separately-flagged mount tube fall back to the reference (outer body) diameter, which for a
+  // minimum-diameter build genuinely IS what the motor sits in.
   activeMotorMountDiameterMm = (parsed.motorMountDiameterM ?? referenceDiameter(parsed.components)) * 1000;
   syncMotorMountUi();
 
@@ -1306,6 +1314,70 @@ function optionsHtml(values: string[], selected?: string): string {
  */
 let standardMotorDiametersMm: number[] = [];
 
+/** ThrustCurve.org's own manufacturer name/abbrev pairs (fetched once by loadMotorMetadata) -- the
+ * #motor-mfg select's option values are the abbrev form (e.g. "AeroTech", "Cesaroni"), not the full
+ * name a .ork file's own <manufacturer> tag carries (e.g. "Cesaroni Technology") -- see
+ * resolveManufacturerAbbrev, which this list backs. Empty until the metadata fetch resolves; a
+ * lookup against an empty list just fails gracefully (falls through to the raw, unmapped string). */
+let motorManufacturersMeta: { name: string; abbrev: string }[] = [];
+
+/**
+ * Maps a raw manufacturer string (as OpenRocket/RockSim/vendor files spell it -- a full name, an
+ * abbreviation, or occasionally a shorthand a human typed by hand) to ThrustCurve.org's own abbrev
+ * value, so it can be assigned directly to the #motor-mfg select. Setting a <select>'s .value to
+ * anything that isn't one of its exact option values silently deselects it (reads back as "" from
+ * then on) rather than erroring -- so an unmapped manufacturer string was quietly turning into "no
+ * manufacturer filter" rather than the wrong-but-visible filter it looked like.
+ *
+ * Checks a small hardcoded alias table first for spellings ThrustCurve.org's own metadata doesn't
+ * cover at all (the user's own examples: "AT" for AeroTech, "CTI" for Cesaroni -- neither is
+ * ThrustCurve's own abbrev, which are "AeroTech" and "Cesaroni" respectively), then falls back to
+ * matching the live metadata list itself (exact name/abbrev match, then substring) -- covers every
+ * manufacturer ThrustCurve.org actually knows about without needing a full hardcoded thesaurus kept
+ * in sync by hand. Returns undefined (leave unmapped) if nothing matches.
+ */
+const MANUFACTURER_ALIASES: Record<string, string> = {
+  AT: "AeroTech",
+  CTI: "Cesaroni",
+};
+
+function resolveManufacturerAbbrev(raw: string): string | undefined {
+  const norm = (s: string) => s.trim().toUpperCase();
+  const target = norm(raw);
+  if (target === "") return undefined;
+
+  const alias = MANUFACTURER_ALIASES[target];
+  if (alias) {
+    const aliased = motorManufacturersMeta.find((m) => m.abbrev === alias);
+    if (aliased) return aliased.abbrev;
+  }
+
+  const exact = motorManufacturersMeta.find((m) => norm(m.name) === target || norm(m.abbrev) === target);
+  if (exact) return exact.abbrev;
+
+  const partial = motorManufacturersMeta.find((m) => norm(m.name).includes(target) || target.includes(norm(m.name)));
+  return partial?.abbrev;
+}
+
+/**
+ * CTI's own designation format packs total impulse, impulse class, average thrust, delay, and an
+ * adjustable-delay flag into one string with no separators between the first three (e.g.
+ * "247H143-13A" = 247 Ns total impulse + H-class + 143N average thrust, delay 13, adjustable) --
+ * ThrustCurve.org's commonName field wants just the impulse-class+thrust part ("H143"). Strips the
+ * trailing "-<delay><flags>" suffix (present on essentially every manufacturer's reload designation,
+ * not just CTI's -- e.g. AeroTech "J350W-14A" -> "J350W", Estes "C6-5" -> "C6") and then a leading
+ * run of digits immediately before a letter (CTI's own total-impulse prefix -- harmless no-op for
+ * designations that don't have one, since a genuine impulse-class letter is never itself preceded by
+ * digits with nothing between them). Deliberately leaves a leading fractional class like "1/4A3"
+ * alone -- the digit before the "/" isn't immediately followed by a letter, so the leading-digit
+ * strip doesn't fire, and "1/4A3" (after its own trailing-delay strip) is already the correct
+ * ThrustCurve.org commonName for that motor.
+ */
+function normalizeMotorDesignation(raw: string): string {
+  const noDelay = raw.includes("-") ? raw.slice(0, raw.lastIndexOf("-")) : raw;
+  return noDelay.replace(/^\d+(?=[A-Za-z])/, "");
+}
+
 /** Nearest entry in standardMotorDiametersMm to a raw (e.g. geometry-derived) mm value — needed because ThrustCurve.org's diameter filter only matches its own exact standard values, not arbitrary measured numbers. */
 function nearestStandardDiameterMm(mm: number): number | null {
   if (standardMotorDiametersMm.length === 0) return null;
@@ -1367,6 +1439,7 @@ async function loadMotorMetadata(): Promise<void> {
     typeEl.innerHTML = optionsHtml(metadata.types, urlFilterValue("type"));
     classEl.innerHTML = optionsHtml(metadata.impulseClasses, urlFilterValue("impulseClass"));
     standardMotorDiametersMm = metadata.diameters.filter((d) => d < 200).sort((a, b) => a - b);
+    motorManufacturersMeta = metadata.manufacturers;
     syncMotorMountUi();
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -2450,10 +2523,17 @@ function wireOrkImport(): void {
         if (motor) {
           const mfgEl = filterElement("manufacturer");
           const nameEl = filterElement("commonName");
-          if (mfgEl) mfgEl.value = motor.manufacturer;
-          // motor.designation is the .ork file's own <designation> value (e.g. "C6") -- simple
-          // enough in practice to work fine as a commonName search too, given forgiving matching.
-          if (nameEl) nameEl.value = motor.designation;
+          // motor.manufacturer is the .ork file's own <manufacturer> value (e.g. "Cesaroni
+          // Technology") -- ThrustCurve.org's own select uses its abbrev form ("Cesaroni") as the
+          // option value, so map through resolveManufacturerAbbrev rather than assigning the raw
+          // string directly (which would silently deselect the field instead of erroring).
+          const mfgAbbrev = resolveManufacturerAbbrev(motor.manufacturer);
+          if (mfgEl && mfgAbbrev) mfgEl.value = mfgAbbrev;
+          // motor.designation is the .ork file's own <designation> value -- some manufacturers
+          // (CTI in particular) pack total impulse and delay into it (e.g. "247H143-13A"), which
+          // ThrustCurve.org's commonName field won't match; normalizeMotorDesignation strips that
+          // down to the "H143" it actually wants.
+          if (nameEl) nameEl.value = normalizeMotorDesignation(motor.designation);
           syncFormToUrl();
           void performSearch();
           warningsEl.innerHTML += `<p><small>File's default motor was ${motor.manufacturer} ${motor.designation} — pre-filled the motor search below.</small></p>`;
