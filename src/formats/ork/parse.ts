@@ -19,6 +19,8 @@ export interface ParsedOrkRocket {
   motorMountDiameterM?: number;
   /** Recovery devices found in the imported (sustainer) stage, classified main/drogue — see extractDescentDevices's own doc comment for how. */
   descentDevices: DescentDevice[];
+  /** Total dry mass (kg) of the imported (sustainer) stage — see computeSectionMassKg's own doc comment. Undefined when the file's own overrides don't cover every component (this parser doesn't compute shape+material mass for un-overridden nosecone/bodytube/transition/finset/etc. — see the same doc comment), not a guess-and-hope-it's-close number. */
+  estimatedDryMassKg?: number;
   warnings: string[];
   /** OpenRocket's own last-computed CP (m from nose tip), read from a saved simulation's flight data -- see extractEmbeddedCpM's own doc comment. Undefined if the file has no saved simulation with a usable CP value. */
   embeddedCpM?: number;
@@ -384,6 +386,81 @@ function extractDescentDevices(stageEl: Element): DescentDevice[] {
   return result;
 }
 
+interface MassWalkResult {
+  massKg: number;
+  /** False if any un-overridden component along the way has no computable own mass -- see this function's own doc comment. A partial/undercounted total is worse than no number at all for something safety-relevant like dry mass, so callers should treat a false result as "don't trust this number," not "close enough." */
+  fullyAccounted: boolean;
+  /** Names (or tag names, if unnamed) of every component that couldn't be accounted for -- surfaced in a user-facing warning so "why is dry mass blank" has a concrete, actionable answer. */
+  unknownNames: string[];
+}
+
+/**
+ * Total mass (kg) of this element and everything nested inside its own <subcomponents> tree,
+ * reproducing OpenRocket's own override semantics exactly -- confirmed directly against
+ * RocketComponent.java's getMass()/getSectionMass(): an active <overridemass> replaces just THIS
+ * element's own contribution; <overridesubcomponentsmass>true</overridesubcomponentsmass>
+ * ADDITIONALLY replaces the whole subtree's total, short-circuiting before any children are even
+ * looked at (matches getSectionMass()'s own early return). <overridemass>/<overridesubcomponentsmass>
+ * are ONLY ever written when a component's override is actually active (confirmed against
+ * RocketComponentSaver.java's own isMassOverridden() guard), so their mere presence here is exactly
+ * OpenRocket's own "is this overridden" signal -- no separate enabled flag to check.
+ *
+ * Absent an override, this parser can only resolve a component's own mass in one case: a
+ * <masscomponent> always carries a literal, unconditional <mass> tag (its only defining property --
+ * confirmed against MassComponentSaver.java, unlike every shaped component, which OpenRocket
+ * recomputes live from material density x shape volume on every load rather than caching in the
+ * file at all -- confirmed by their savers writing no <mass> tag of their own: NoseConeSaver,
+ * TransitionSaver, BodyTubeSaver, the ring/tube savers, ParachuteSaver, StreamerSaver,
+ * ShockCordSaver). Reproducing THAT calculation (a distinct volume integral per nosecone/transition
+ * shape, plus simpler tube/ring/canopy-area formulas) isn't implemented here -- an un-overridden
+ * shaped component's own mass is "unknown," which poisons fullyAccounted for its whole containing
+ * subtree rather than silently contributing 0.
+ *
+ * <stage> itself is a pure grouping node with no shape/material of its own (its own mass, absent an
+ * override, is exactly 0 -- not "unknown"). <podset>/<parallelstage> are skipped entirely (return 0,
+ * fully accounted, no recursion) -- they represent a physically separate stage/booster that departs
+ * before the sustainer's own dry-mass-relevant flight phase, the same single-stage-only exclusion
+ * walkStage's own geometry parsing already applies (see its own doc comment) -- excluded on purpose,
+ * not a gap.
+ */
+function computeSectionMassKg(el: Element): MassWalkResult {
+  const tag = el.tagName.toLowerCase();
+  if (tag === "podset" || tag === "parallelstage") {
+    return { massKg: 0, fullyAccounted: true, unknownNames: [] };
+  }
+
+  const overrideEl = directChild(el, "overridemass");
+  const overrideVal = overrideEl ? Number.parseFloat((overrideEl.textContent ?? "").trim()) : Number.NaN;
+  const overridden = overrideEl !== null && Number.isFinite(overrideVal);
+
+  let ownMassKg = 0;
+  let ownKnown = true;
+  if (overridden) {
+    ownMassKg = overrideVal;
+  } else if (tag === "masscomponent") {
+    const m = number(el, "mass", Number.NaN);
+    if (Number.isFinite(m)) ownMassKg = m;
+    else ownKnown = false;
+  } else if (tag !== "stage") {
+    ownKnown = false; // shape+material mass, not yet computed by this parser -- see doc comment above
+  }
+
+  if (overridden && (directChild(el, "overridesubcomponentsmass")?.textContent ?? "").trim() === "true") {
+    return { massKg: ownMassKg, fullyAccounted: true, unknownNames: [] };
+  }
+
+  let totalMassKg = ownMassKg;
+  let fullyAccounted = ownKnown;
+  const unknownNames = ownKnown ? [] : [text(el, "name") ?? tag];
+  for (const child of subcomponentsOf(el)) {
+    const childResult = computeSectionMassKg(child);
+    totalMassKg += childResult.massKg;
+    fullyAccounted = fullyAccounted && childResult.fullyAccounted;
+    unknownNames.push(...childResult.unknownNames);
+  }
+  return { massKg: totalMassKg, fullyAccounted, unknownNames };
+}
+
 /** The manufacturer+designation of the DEFAULT flight configuration's motor, if any. */
 function findDefaultMotor(doc: Document): OrkMotorRef | null {
   const configs = Array.from(doc.getElementsByTagName("motorconfiguration"));
@@ -432,5 +509,13 @@ export function parseOrkXml(xmlText: string): ParsedOrkRocket {
   const descentDevices = extractDescentDevices(stages[0]!);
   const embeddedCpM = extractEmbeddedCpM(doc);
 
-  return { name, components, motor, motorMountDiameterM, descentDevices, warnings, embeddedCpM };
+  const massResult = computeSectionMassKg(stages[0]!);
+  const estimatedDryMassKg = massResult.fullyAccounted ? massResult.massKg : undefined;
+  if (!massResult.fullyAccounted) {
+    warnings.push(
+      `Dry mass couldn't be read from this file — ${massResult.unknownNames.join(", ")} ${massResult.unknownNames.length === 1 ? "has" : "have"} no mass override, and this importer doesn't yet compute mass from shape+material for un-overridden parts. Set dry mass manually below.`,
+    );
+  }
+
+  return { name, components, motor, motorMountDiameterM, descentDevices, warnings, embeddedCpM, estimatedDryMassKg };
 }

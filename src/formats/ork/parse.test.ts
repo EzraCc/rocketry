@@ -21,7 +21,11 @@ describe("parseOrkXml — real .ork fixtures from OpenRocket's own example rocke
     const parsed = await loadAndParse("A simple model rocket.ork");
 
     expect(parsed.name).toBe("A simple model rocket");
-    expect(parsed.warnings).toEqual([]); // single stage, everything supported -- no warnings expected
+    // Single stage, every geometry tag supported -- the one warning this file DOES get is the dry-
+    // mass one (no stage-level override, and this parser doesn't compute un-overridden shaped
+    // components' own mass -- see the dedicated "dry mass" describe block below).
+    expect(parsed.warnings).toHaveLength(1);
+    expect(parsed.warnings[0]).toMatch(/dry mass/i);
     expect(parsed.components.map((c) => c.type)).toEqual(["nosecone", "bodytube", "finset"]);
 
     const nose = parsed.components[0] as NoseCone;
@@ -124,6 +128,29 @@ describe("parseOrkXml — recovery devices (main/drogue)", () => {
     expect(parsed.descentDevices).toHaveLength(1);
     expect(parsed.descentDevices[0]).toMatchObject({ type: "parachute", role: "main", dragCoefficient: 0.8 });
     expect(parsed.descentDevices[0]!.dragAreaM2).toBeCloseTo(Math.PI * (0.3 / 2) ** 2, 6);
+  });
+});
+
+describe("parseOrkXml — dry mass (OpenRocket's own override semantics)", () => {
+  it("parses 'PML_Callisto.ork': a stage-level <overridemass>+<overridesubcomponentsmass>true</...> short-circuits to the exact override value, matching OpenRocket's own displayed dry mass (36.6oz)", async () => {
+    const bytes = fs.readFileSync(path.resolve(__dirname, "../../../sim-files/misc/PML_Callisto.ork"));
+    const xml = await unzipOrkXml(bytes);
+    const parsed = parseOrkXml(xml);
+
+    expect(parsed.estimatedDryMassKg).toBeCloseTo(1.0375925454600001, 9);
+    expect((parsed.estimatedDryMassKg ?? 0) * 35.27396194958).toBeCloseTo(36.6, 1);
+    // Individual per-component overrides exist further down this file's tree (nose cone, shock
+    // cord, parachute) -- the stage-level override must win outright without needing them at all,
+    // matching getSectionMass()'s own short-circuit (never even inspects children once
+    // overridesubcomponentsmass is true).
+    expect(parsed.warnings.some((w) => /dry mass/i.test(w))).toBe(false);
+  });
+
+  it("parses 'A simple model rocket.ork': no stage-level override -> nosecone/bodytube/fins/parachute are un-overridden shaped parts this parser doesn't compute mass for, so estimatedDryMassKg stays undefined with an explanatory warning rather than a silently-undercounted number", async () => {
+    const parsed = await loadAndParse("A simple model rocket.ork");
+
+    expect(parsed.estimatedDryMassKg).toBeUndefined();
+    expect(parsed.warnings.some((w) => /dry mass/i.test(w) && /mass override/i.test(w))).toBe(true);
   });
 });
 
